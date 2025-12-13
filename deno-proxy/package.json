@@ -1,0 +1,11 @@
+{
+    "name": "deno-proxy",
+    "version": "1.0.0",
+    "description": "Automata-JS Deno proxy",
+    "main": "index.js",
+    "scripts": {
+        "start": "deno run --allow-net index.js"
+    },
+    "author": "U2RE",
+    "license": "MIT"
+}

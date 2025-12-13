@@ -1,0 +1,9 @@
+{
+	"nativescript-betterwebsockets": {
+		"C:\\Projects\\Automata-JS\\client\\native-script\\node_modules\\nativescript-betterwebsockets\\platforms\\android\\include.gradle": "1f101a194158525229bf08133996ec6028afb9ee",
+		"C:\\Projects\\Automata-JS\\client\\native-script\\node_modules\\nativescript-betterwebsockets\\platforms\\android\\nativescript_betterwebsockets.aar": "52bcddd1d9f7682eb2f0359fcf458618ee3655d4"
+	},
+	"nativescript-childprocess": {
+		"C:\\Projects\\IOClientAndroid\\src\\node_modules\\nativescript-childprocess\\platforms\\android\\include.gradle": "c1984539639473461f9d6a81a603d4986b4b4a71"
+	}
+}

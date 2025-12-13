@@ -1,0 +1,6 @@
+./App_Resources
+App_Resources/
+android/
+ios/
+deno.lock
+platforms/

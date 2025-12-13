@@ -1,0 +1,12 @@
+{
+    "type": "node",
+    "request": "launch",
+    "name": "Debug NativeScript App",
+    "program": "${workspaceFolder}/app/index.js",
+    "runtimeExecutable": "tns",
+    "runtimeArgs": [
+        "debug",
+        "android"
+    ],
+    "port": 41000
+}

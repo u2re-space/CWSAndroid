@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.u2re.automata">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Contacts -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- SMS (best-effort; Android 10+ restricted unless default SMS app) -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+
+    <application
+        android:name="com.tns.NativeScriptApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="Automata"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:hardwareAccelerated="true">
+
+        <activity
+            android:name="com.tns.NativeScriptActivity"
+            android:label="Automata"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout|locale|uiMode"
+            android:launchMode="singleTask"
+            android:theme="@style/LaunchScreenTheme"
+            android:hardwareAccelerated="true"
+            android:exported="true">
+
+            <meta-data android:name="SET_THEME_ON_LAUNCH" android:resource="@style/AppTheme" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Share target -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+        </activity>
+
+        <activity android:name="com.tns.ErrorReportActivity" />
+    </application>
+</manifest>

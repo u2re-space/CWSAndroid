@@ -1,0 +1,45 @@
+{
+  "core": {
+    "mode": "native",
+    "endpointUrl": "http://localhost:6065",
+    "userId": "",
+    "userKey": "",
+    "encrypt": false,
+    "preferBackendSync": true,
+    "ops": {
+      "allowUnencrypted": false,
+      "httpTargets": [],
+      "wsTargets": [],
+      "syncTargets": []
+    }
+  },
+  "ai": {
+    "apiKey": "",
+    "baseUrl": "",
+    "model": "gpt-5.2",
+    "customModel": "",
+    "mcp": [],
+    "shareTargetMode": "analyze"
+  },
+  "webdav": {
+    "url": "http://localhost:6065",
+    "username": "",
+    "password": "",
+    "token": ""
+  },
+  "timeline": {
+    "source": ""
+  },
+  "appearance": {
+    "theme": "auto",
+    "color": ""
+  },
+  "speech": {
+    "language": "ru-RU"
+  },
+  "grid": {
+    "columns": 4,
+    "rows": 8,
+    "shape": "square"
+  }
+}

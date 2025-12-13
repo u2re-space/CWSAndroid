@@ -1,0 +1,34 @@
+{
+    "name": "com.u2re.automata",
+    "version": "1.0.0",
+    "description": "NativeScript background daemon for clipboard and platform API access",
+    "main": "app/main.ts",
+    "scripts": {
+        "build": "tsc && ns build android",
+        "dev": "tsc --watch",
+        "android:devices": "ns devices android",
+        "android:emu:list": "node -e \"const p=process.env.ANDROID_HOME; if(!p) throw new Error('ANDROID_HOME not set'); require('child_process').execFileSync(p+'\\\\\\\\emulator\\\\\\\\emulator.exe',['-list-avds'],{stdio:'inherit'});\"",
+        "android:emu:run": "ns run android --emulator",
+        "android:emu:debug": "ns debug android --emulator --inspect",
+        "android:adb:where": "pwsh -NoProfile -Command \"Get-Command adb -All | Format-Table -AutoSize\"",
+        "android:adb:reset": "pwsh -NoProfile -Command \"adb kill-server; Start-Sleep -Milliseconds 300; adb start-server; adb devices -l\"",
+        "android:log": "adb logcat -s NativeScript:V JS:V chromium:V"
+    },
+    "dependencies": {
+        "@nativescript-use/nativescript-clipboard": "^0.0.3",
+        "nativescript-childprocess": "^1.0.0",
+        "nativescript-clipboard": "^2.1.1",
+        "socket.io-client": "^4.7.5"
+    },
+    "devDependencies": {
+        "@nativescript/android": "^9.0.0",
+        "@nativescript/core": "^9.0.8",
+        "@nativescript/types": "^8.7.0",
+        "@nativescript/webpack": "^5.0.0",
+        "@types/node": "^20.10.0",
+        "typescript": "^5.3.3"
+    },
+    "nativescript": {
+        "id": "com.u2re.automata"
+    }
+}

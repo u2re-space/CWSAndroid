@@ -1,0 +1,13 @@
+// Custom gradle configuration for Automata app
+// This file is merged with the main app.gradle during build
+
+android {
+    // Ensure deno-proxy files are included in the APK assets
+    sourceSets {
+        main {
+            assets {
+                srcDirs = ['src/main/assets']
+            }
+        }
+    }
+}

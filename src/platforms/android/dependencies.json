@@ -1,0 +1,17 @@
+[
+    {
+        "name": "@nativescript-use/nativescript-clipboard",
+        "directory": "..\\..\\node_modules\\@nativescript-use\\nativescript-clipboard",
+        "dependencies": []
+    },
+    {
+        "name": "nativescript-childprocess",
+        "directory": "..\\..\\node_modules\\nativescript-childprocess",
+        "dependencies": []
+    },
+    {
+        "name": "nativescript-clipboard",
+        "directory": "..\\..\\node_modules\\nativescript-clipboard",
+        "dependencies": []
+    }
+]

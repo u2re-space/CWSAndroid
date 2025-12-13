@@ -1,0 +1,4 @@
+{
+    "vite.autoStart": false,
+    "powershell.startAutomatically": false
+}
