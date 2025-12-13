@@ -1,4 +1,0 @@
-C:\Projects\IOClientAndroid\src\platforms\android\app\src\main\assets\app\bundle.mjs
-C:\Projects\IOClientAndroid\src\platforms\android\app\src\main\assets\app\runtime.mjs
-C:\Projects\IOClientAndroid\src\platforms\android\app\src\main\assets\app\tns_modules\inspector_modules.mjs
-C:\Projects\IOClientAndroid\src\platforms\android\app\src\main\assets\app\vendor.mjs
