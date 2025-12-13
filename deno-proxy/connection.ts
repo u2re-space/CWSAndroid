@@ -95,6 +95,7 @@ export function proxyAtoB(
  * @param serverURL - Backend server WebSocket URL (e.g., "ws://localhost:9000")
  * @param serverPort - Backend server port (for SocketIO connection)
  * @param localPort - Local port for NativeScript WebSocket server
+ * @param localURL - Local bind URL/host (e.g. "ws://127.0.0.1" or "ws://127.0.0.1:9000")
  * @param deviceId - Device identifier (defaults to "ns-ep" if not provided)
  * @returns Object containing SocketIO client and WebSocket server
  */
@@ -102,9 +103,30 @@ export async function makeConnection(
     serverURL: string,
     serverPort: number,
     localPort: number,
-    localURL: string,
-    deviceId: string = "ns-ep"
+    localURLOrDeviceId: string,
+    deviceId?: string
 ): Promise<{ nativeScriptClient: SocketIOClient; localWebSocketServer: any }> {
+    // Backward compatibility:
+    // Older call sites passed only 4 args, omitting localURL.
+    // In that case, the 4th arg is actually the deviceId.
+    let localURL = localURLOrDeviceId;
+    let resolvedDeviceId = deviceId;
+    const looksLikeWsUrl = (s: string) => /^wss?:\/\//i.test((s || "").trim());
+    if (resolvedDeviceId === undefined && localURLOrDeviceId && !looksLikeWsUrl(localURLOrDeviceId)) {
+        resolvedDeviceId = localURLOrDeviceId;
+        localURL = "ws://127.0.0.1";
+    }
+    if (!localURL || !looksLikeWsUrl(localURL)) localURL = `ws://${(localURL || "127.0.0.1").trim()}`;
+    if (!resolvedDeviceId || !resolvedDeviceId.trim()) resolvedDeviceId = "ns-ep";
+
+    const localHostname = (() => {
+        try {
+            return new URL(localURL).hostname || "127.0.0.1";
+        } catch {
+            return localURL.replace(/^wss?:\/\//i, "").split(":")[0] || "127.0.0.1";
+        }
+    })();
+
     // Create SocketIO client for backend server (external connection)
     const socketIOUrl = serverURL.replace(/^ws/, "http").replace(/^wss/, "https");
     const nativeScriptClient = createSocketIOClient(socketIOUrl, {
@@ -116,13 +138,13 @@ export async function makeConnection(
 
     // Create WebSocket server for NativeScript to connect to (internal connection)
     // Using Deno's standard WebSocket server
-    const localWebSocketServer = await Deno.listen({ port: localPort, hostname: localURL.replace(/^ws:\/\//, "").replace(/^wss:\/\//, "") });
-    console.log(`[Connection] WebSocket server listening on ws://${localURL.replace(/^ws:\/\//, "").replace(/^wss:\/\//, "")}:${localPort}`);
+    const localWebSocketServer = await Deno.listen({ port: localPort, hostname: localHostname });
+    console.log(`[Connection] WebSocket server listening on ws://${localHostname}:${localPort}`);
 
     // Handle incoming WebSocket connections from NativeScript
     (async () => {
         for await (const conn of localWebSocketServer) {
-            handleNativeScriptConnection(conn, nativeScriptClient, deviceId);
+            handleNativeScriptConnection(conn, nativeScriptClient, resolvedDeviceId);
         }
     })();
 
@@ -218,12 +240,14 @@ export async function MAIN(args: {
     serverURL: string;
     port: number;
     localPort: number;
+    localURL?: string;
     deviceId?: string;
 }): Promise<{ nativeScriptClient: SocketIOClient; localWebSocketServer: any }> {
     return await makeConnection(
         args.serverURL,
         args.port,
         args.localPort,
+        args.localURL || `ws://127.0.0.1`,
         args.deviceId || "ns-ep"
     );
 }
