@@ -34,6 +34,12 @@ export type AutomataSettings = {
      */
     hubDispatchUrl: string;
 
+    /**
+     * Allow outgoing HTTPS requests even when cert/hostname is untrusted (trust-all).
+     * WARNING: insecure; use only on trusted LAN/Tailscale.
+     */
+    allowInsecureTls: boolean;
+
     clipboardSync: boolean;
     contactsSync: boolean;
     smsSync: boolean;
@@ -58,6 +64,7 @@ export const defaultSettings = (): AutomataSettings => ({
     tlsKeystoreType: "PKCS12",
     tlsKeystorePassword: "",
     hubDispatchUrl: "",
+    allowInsecureTls: false,
 
     clipboardSync: true,
     contactsSync: false,
@@ -88,6 +95,7 @@ export const loadSettings = (): AutomataSettings => {
         if (typeof (merged as any).tlsKeystoreAssetPath !== "string") merged.tlsKeystoreAssetPath = defaultSettings().tlsKeystoreAssetPath;
         if (typeof (merged as any).tlsKeystoreType !== "string") merged.tlsKeystoreType = defaultSettings().tlsKeystoreType;
         if (typeof (merged as any).tlsKeystorePassword !== "string") merged.tlsKeystorePassword = defaultSettings().tlsKeystorePassword;
+        if (typeof (merged as any).allowInsecureTls !== "boolean") merged.allowInsecureTls = defaultSettings().allowInsecureTls;
 
         // Ensure destinations is always a string[]
         if (!Array.isArray((merged as any).destinations)) {

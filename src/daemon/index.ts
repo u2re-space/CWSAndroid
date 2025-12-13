@@ -7,6 +7,7 @@ import { createClipboardWatcher } from "./clipboard";
 import { readContacts } from "./contacts";
 import { readSmsInbox } from "./sms";
 import { createLocalHttpServer, dispatchHttpRequests, sendSmsAndroid } from "./http-server";
+import { postJson, postText } from "./http-client";
 
 interface Daemon {
     start(): Promise<void>;
@@ -24,17 +25,24 @@ export const createDaemon = (): Daemon => {
     let httpServerHttp: ReturnType<typeof createLocalHttpServer> | null = null;
     let httpServerHttps: ReturnType<typeof createLocalHttpServer> | null = null;
 
-    const normalizeDestinationUrl = (raw: string): string | null => {
+    const normalizeUrl = (raw: string, defaultPath: string): string | null => {
         const trimmed = (raw || "").trim();
         if (!trimmed) return null;
-        // Allow host:port or full URL.
+
+        // Allow host:port[/path] or full URL.
+        // If user provides something like "192.168.0.200:8080/core/ops/http/dispatch",
+        // we still treat it as HTTP by default.
         const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
         try {
             const u = new URL(withProto);
-            // If user provided only base (no path or "/"), default to /clipboard.
+
+            // If user provided only base (no path or "/"), apply defaultPath.
             const path = (u.pathname || "").trim();
             const hasPath = path && path !== "/" && path !== "";
-            if (!hasPath) u.pathname = "/clipboard";
+            if (!hasPath) {
+                u.pathname = defaultPath.startsWith("/") ? defaultPath : `/${defaultPath}`;
+            }
+
             return u.toString();
         } catch {
             return null;
@@ -43,7 +51,7 @@ export const createDaemon = (): Daemon => {
 
     const postClipboardToPeers = async (text: string) => {
         const urls = (settings.destinations || [])
-            .map((s) => normalizeDestinationUrl(s))
+            .map((s) => normalizeUrl(s, "/clipboard"))
             .filter((u): u is string => !!u);
         if (urls.length === 0) return;
 
@@ -53,21 +61,16 @@ export const createDaemon = (): Daemon => {
         if (settings.authToken?.trim()) headers["x-auth-token"] = settings.authToken.trim();
 
         // Optional: send via hub dispatcher (MacroDroid-style /core/ops/http/dispatch).
-        const hub = (settings.hubDispatchUrl || "").trim();
+        const hub = normalizeUrl(settings.hubDispatchUrl || "", "/core/ops/http/dispatch") || "";
         if (hub) {
             // Match MacroDroid schema exactly:
             // { "requests": [ { "url": "...", "body": "...", "unencrypted": true } ] }
             // (No method/headers fields; hub decides defaults.)
             const requests = urls.map((url) => ({ url, body: text, unencrypted: true }));
             try {
-                const resp = await fetch(hub, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json; charset=utf-8" },
-                    body: JSON.stringify({ requests }),
-                });
-                if (!resp.ok) {
-                    const t = await resp.text().catch(() => "");
-                    log.warn("hub dispatch failed", hub, resp.status, t);
+                const r = await postJson(hub, { requests }, !!settings.allowInsecureTls, 10000);
+                if (!r.ok) {
+                    log.warn("hub dispatch failed", hub, r.status, r.body);
                 } else {
                     log.info("hub dispatch ok", hub, requests.length);
                 }
@@ -81,10 +84,9 @@ export const createDaemon = (): Daemon => {
         await Promise.all(
             urls.map(async (url) => {
                 try {
-                    const resp = await fetch(url, { method: "POST", headers, body: text });
-                    if (!resp.ok) {
-                        const t = await resp.text().catch(() => "");
-                        log.warn("clipboard broadcast failed", url, resp.status, t);
+                    const r = await postText(url, text, headers, !!settings.allowInsecureTls, 10000);
+                    if (!r.ok) {
+                        log.warn("clipboard broadcast failed", url, r.status, r.body);
                     }
                 } catch (e) {
                     log.warn("clipboard broadcast error", url, e);

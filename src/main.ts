@@ -9,12 +9,14 @@ import {
     Page,
     ScrollView,
     StackLayout,
+    Switch,
     TextField,
     TextView,
 } from "@nativescript/core";
 import { restartDaemon, state } from "./app";
 import { loadSettings, saveSettings } from "./daemon/settings";
 import { Clipboard } from "@nativescript-use/nativescript-clipboard";
+import { postJson } from "./daemon/http-client";
 
 // NativeScript Android still needs a root view for the Activity.
 // Keep the UI minimal while the daemon runs in the background.
@@ -119,6 +121,20 @@ const buildOutgoingSettingsPage = () => {
     hubUrl.autocapitalizationType = "none";
     root.addChild(hubUrl);
 
+    const insecureRow = new GridLayout();
+    insecureRow.columns = "*, auto";
+    insecureRow.marginTop = 8;
+    const insecureLabel = new Label();
+    insecureLabel.text = "Allow insecure TLS (trust all certs)";
+    insecureLabel.textWrap = true;
+    GridLayout.setColumn(insecureLabel, 0);
+    insecureRow.addChild(insecureLabel);
+    const insecureSwitch = new Switch();
+    insecureSwitch.checked = !!settings.allowInsecureTls;
+    GridLayout.setColumn(insecureSwitch, 1);
+    insecureRow.addChild(insecureSwitch);
+    root.addChild(insecureRow);
+
     const status = new Label();
     status.text = "";
     status.color = new Color("#666666");
@@ -135,13 +151,8 @@ const buildOutgoingSettingsPage = () => {
         }
         status.text = "Testing hub…";
         try {
-            const resp = await fetch(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json; charset=utf-8" },
-                body: JSON.stringify({ requests: [] }),
-            });
-            const body = await resp.text().catch(() => "");
-            status.text = `Hub response: ${resp.status}\n${body.slice(0, 200)}`;
+            const r = await postJson(url, { requests: [] }, !!insecureSwitch.checked, 8000);
+            status.text = `Hub response: ${r.status}\n${(r.body || "").slice(0, 200)}`;
         } catch (e: any) {
             status.text = `Hub error: ${e?.message || String(e)}`;
         }
@@ -159,6 +170,7 @@ const buildOutgoingSettingsPage = () => {
         saveSettings({
             destinations: destLines,
             hubDispatchUrl: (hubUrl.text || "").trim(),
+            allowInsecureTls: !!insecureSwitch.checked,
         });
 
         status.text = "Saved. Reconnecting…";

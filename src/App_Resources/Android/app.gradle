@@ -6,6 +6,9 @@ dependencies {
   // org.nativescript.widgets.* types (e.g. Worker.OnImageLoadedListener used by Image).
   implementation files("$rootDir/../..//node_modules/@nativescript/core/platforms/android/widgets-release.aar")
   implementation files("$rootDir/../..//node_modules/@nativescript/core/platforms/android/winter_tc-release.aar")
+
+  // Used by src/daemon/http-client.ts for outbound HTTP(S) with optional "trust all certs".
+  implementation "com.squareup.okhttp3:okhttp:4.12.0"
 }
 
 android {
