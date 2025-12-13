@@ -25,6 +25,31 @@ export const createDaemon = (): Daemon => {
     let httpServerHttp: ReturnType<typeof createLocalHttpServer> | null = null;
     let httpServerHttps: ReturnType<typeof createLocalHttpServer> | null = null;
 
+    const setClipboardBestEffort = async (text: string) => {
+        const t = (text || "").toString();
+        if (!t) return;
+        try {
+            // Prefer Android native clipboard to avoid UI-thread/plugin issues.
+            if (typeof globalThis !== "undefined" && !!(globalThis as any).android) {
+                const activity = Application.android.foregroundActivity || Application.android.startActivity;
+                const ctx = activity?.getApplicationContext?.();
+                if (ctx) {
+                    const cm = ctx.getSystemService((android as any).content.Context.CLIPBOARD_SERVICE);
+                    const clip = (android as any).content.ClipData.newPlainText("clipboard", t);
+                    cm?.setPrimaryClip?.(clip);
+                    return;
+                }
+            }
+        } catch {
+            // fall through
+        }
+        try {
+            await clipboard.copy(t);
+        } catch {
+            /* noop */
+        }
+    };
+
     const normalizeUrl = (raw: string, defaultPath: string): string | null => {
         const trimmed = (raw || "").trim();
         if (!trimmed) return null;
@@ -167,18 +192,50 @@ export const createDaemon = (): Daemon => {
 
         // Share intents
         if (settings.shareTarget) {
+            const extractIntentText = (intent: any): string => {
+                try {
+                    const Intent = (android as any)?.content?.Intent;
+                    const extraTextKey = Intent?.EXTRA_TEXT || "android.intent.extra.TEXT";
+                    const extraProcessTextKey = Intent?.EXTRA_PROCESS_TEXT || "android.intent.extra.PROCESS_TEXT";
+
+                    // Prefer explicit extras first.
+                    const fromExtra =
+                        intent.getStringExtra?.(extraTextKey) ||
+                        intent.getStringExtra?.(extraProcessTextKey) ||
+                        intent.getCharSequenceExtra?.(extraTextKey)?.toString?.() ||
+                        intent.getCharSequenceExtra?.(extraProcessTextKey)?.toString?.();
+                    if (typeof fromExtra === "string" && fromExtra.trim()) return fromExtra;
+
+                    // Fallback: ClipData (some apps provide text here).
+                    const cd = intent.getClipData?.();
+                    if (cd && cd.getItemCount?.() > 0) {
+                        const item = cd.getItemAt?.(0);
+                        const txt = item?.coerceToText?.(Application.android.context)?.toString?.();
+                        if (typeof txt === "string" && txt.trim()) return txt;
+                    }
+                } catch {
+                    // ignore
+                }
+                return "";
+            };
+
             const onIntent = async (intent: any) => {
                 try {
                     if (!intent) return;
                     const action = intent.getAction?.();
                     const type = intent.getType?.();
-                    if (action === (android as any).content.Intent.ACTION_SEND && type === "text/plain") {
-                        const extra = intent.getStringExtra?.((android as any).content.Intent.EXTRA_TEXT);
-                        if (extra && typeof extra === "string" && extra.trim()) {
-                            await clipboardWatcher?.setTextSilently(extra);
-                            await postClipboardToPeers(extra);
-                            log.info("handled share intent broadcast");
-                        }
+                    const Intent = (android as any).content.Intent;
+                    const isSend = action === Intent.ACTION_SEND && type === "text/plain";
+                    const isProcessText = action === (Intent.ACTION_PROCESS_TEXT || "android.intent.action.PROCESS_TEXT") && type === "text/plain";
+                    if (isSend || isProcessText) {
+                        const text = extractIntentText(intent);
+                        if (!text.trim()) return;
+
+                        // Update local clipboard (best effort) then broadcast to peers.
+                        if (clipboardWatcher) await clipboardWatcher.setTextSilently(text);
+                        else await setClipboardBestEffort(text);
+                        await postClipboardToPeers(text);
+                        log.info("handled share/process-text intent broadcast");
                     }
                 } catch (e) {
                     log.warn("intent handling failed", e);

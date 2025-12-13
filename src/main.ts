@@ -135,6 +135,20 @@ const buildOutgoingSettingsPage = () => {
     insecureRow.addChild(insecureSwitch);
     root.addChild(insecureRow);
 
+    const shareRow = new GridLayout();
+    shareRow.columns = "*, auto";
+    shareRow.marginTop = 8;
+    const shareLabel = new Label();
+    shareLabel.text = "Enable Share Target (send selected text into IOClient)";
+    shareLabel.textWrap = true;
+    GridLayout.setColumn(shareLabel, 0);
+    shareRow.addChild(shareLabel);
+    const shareSwitch = new Switch();
+    shareSwitch.checked = settings.shareTarget !== false;
+    GridLayout.setColumn(shareSwitch, 1);
+    shareRow.addChild(shareSwitch);
+    root.addChild(shareRow);
+
     const status = new Label();
     status.text = "";
     status.color = new Color("#666666");
@@ -171,6 +185,7 @@ const buildOutgoingSettingsPage = () => {
             destinations: destLines,
             hubDispatchUrl: (hubUrl.text || "").trim(),
             allowInsecureTls: !!insecureSwitch.checked,
+            shareTarget: !!shareSwitch.checked,
         });
 
         status.text = "Saved. Reconnecting…";
