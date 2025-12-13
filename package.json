@@ -1,50 +1,34 @@
 {
-    "name": "crossword-backend",
-    "version": "0.0.1",
-    "description": "",
-    "type": "module",
-    "engines": {
-        "node": ">=22"
-    },
-    "keywords": [
-        "crossword",
-        "backend"
-    ],
-    "imports": {
-        "@rs-core/*": "../core/*",
-        "@rs-frontend/*": "../frontend/*",
-        "@rs-shared/*": "../shared/*",
-        "@rs-test/*": "../test/*"
-    },
-    "license": "MIT",
-    "private": false,
+    "name": "com.u2re.ioclient",
+    "version": "1.0.0",
+    "description": "NativeScript background daemon for clipboard and platform API access",
+    "main": "src/main.ts",
     "scripts": {
-        "build": "npm install --include=dev",
-        "start": "node ./server.ts --port 8443 --address 0.0.0.0 --debug --options --esm",
-        "dev": "npm run start",
-        "test": "npm run test:dev",
-        "test:dev": "vite dev --config vite.config.ts",
-        "test:test": "echo 'No tests configured for fastify-server' && exit 0",
-        "deno:start": "deno run --allow-net --allow-env --allow-read --allow-write --allow-ffi --unstable ./server/server.ts",
-        "deno:dev": "deno run --allow-net --allow-env --allow-read --allow-write --allow-ffi --unstable --watch ./server/server.ts"
+        "build": "tsc && ns build android",
+        "dev": "tsc --watch",
+        "android:devices": "ns devices android",
+        "android:emu:list": "node -e \"const p=process.env.ANDROID_HOME; if(!p) throw new Error('ANDROID_HOME not set'); require('child_process').execFileSync(p+'\\\\\\\\emulator\\\\\\\\emulator.exe',['-list-avds'],{stdio:'inherit'});\"",
+        "android:emu:run": "ns run android --emulator",
+        "android:emu:debug": "ns debug android --emulator --inspect",
+        "android:adb:where": "pwsh -NoProfile -Command \"Get-Command adb -All | Format-Table -AutoSize\"",
+        "android:adb:reset": "pwsh -NoProfile -Command \"adb kill-server; Start-Sleep -Milliseconds 300; adb start-server; adb devices -l\"",
+        "android:log": "adb logcat -s NativeScript:V JS:V chromium:V"
     },
-    "target": "web",
     "dependencies": {
-        "@fastify/autoload": "^6.0.3",
-        "@fastify/caching": "^9.0.2",
-        "@fastify/compress": "^8.0.1",
-        "@fastify/cors": "^10.0.1",
-        "@fastify/etag": "^6.0.2",
-        "@fastify/static": "^8.0.3",
-        "@toon-format/toon": "^2.1.0",
-        "close-with-grace": "^2.1.0",
-        "dotenv": "^16.4.7",
-        "fastify": "^5.2.0",
-        "jsox": "^1.2.124",
-        "socket.io": "^4.8.1"
+        "@nativescript-use/nativescript-clipboard": "^0.0.3",
+        "nativescript-childprocess": "^1.0.0",
+        "nativescript-clipboard": "^2.1.1",
+        "socket.io-client": "^4.7.5"
     },
-    "browserslist": [
-        "last 1 chrome version",
-        "last 1 firefox version"
-    ]
+    "devDependencies": {
+        "@nativescript/android": "^9.0.0",
+        "@nativescript/core": "9.0.0",
+        "@nativescript/types": "^8.7.0",
+        "@nativescript/webpack": "^5.0.0",
+        "@types/node": "^20.10.0",
+        "typescript": "^5.3.3"
+    },
+    "nativescript": {
+        "id": "com.u2re.ioclient"
+    }
 }

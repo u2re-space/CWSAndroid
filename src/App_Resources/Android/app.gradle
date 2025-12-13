@@ -1,13 +1,32 @@
-// Custom gradle configuration for Automata app
-// This file is merged with the main app.gradle during build
+// You can add your native dependencies here
+dependencies {
+//  implementation 'androidx.multidex:multidex:2.0.1'
+  // NativeScript core ships these Android widget AARs, but they are not pulled automatically
+  // when using the local runtime AARs (flatDir). Without them, SBG fails resolving
+  // org.nativescript.widgets.* types (e.g. Worker.OnImageLoadedListener used by Image).
+  implementation files("$rootDir/../..//node_modules/@nativescript/core/platforms/android/widgets-release.aar")
+  implementation files("$rootDir/../..//node_modules/@nativescript/core/platforms/android/winter_tc-release.aar")
+}
 
 android {
-    // Ensure deno-proxy files are included in the APK assets
-    sourceSets {
-        main {
-            assets {
-                srcDirs = ['src/main/assets']
-            }
-        }
-    }
+  compileSdkVersion 35
+  buildToolsVersion "35"
+  // ndkVersion ""
+
+  defaultConfig {
+    // Keep this aligned with the NativeScript Android runtime baseline (NS 9 targets minSdk 21).
+    // If set higher (e.g. 24), installs will fail on devices/emulators below that API level.
+    minSdkVersion 21
+    targetSdkVersion 35
+
+    // Version Information
+    versionCode 1
+    versionName "1.0.0"
+    
+    generatedDensities = []
+  }
+
+  aaptOptions {
+    additionalParameters "--no-version-vectors"
+  }
 }
