@@ -1,0 +1,55 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+# Termux URL opener integration:
+# - Put this file at: ~/.termux/termux-url-opener
+# - chmod +x ~/.termux/termux-url-opener
+# - termux-reload-settings
+#
+# Supported:
+# - adb://<ip:port>   -> adb connect <ip:port>
+# - ssh://user@host[:port] -> ssh user@host -p port
+
+raw="${1:-}"
+raw="${raw//$'\r'/}"
+
+if [[ -z "$raw" ]]; then
+  echo "No input." >&2
+  exit 2
+fi
+
+if [[ "$raw" =~ ^adb:// ]]; then
+  addr="${raw#adb://}"
+  if ! command -v adb >/dev/null 2>&1; then
+    echo "Missing adb. Install (Termux): pkg install -y android-tools" >&2
+    exit 1
+  fi
+  echo "adb connect $addr"
+  adb connect "$addr"
+  exit 0
+fi
+
+if [[ "$raw" =~ ^ssh:// ]]; then
+  target="${raw#ssh://}"
+  port="22"
+  # allow ssh://user@host:2222
+  if [[ "$target" =~ ^([^/]+):([0-9]+)$ ]]; then
+    target="${BASH_REMATCH[1]}"
+    port="${BASH_REMATCH[2]}"
+  fi
+  if ! command -v ssh >/dev/null 2>&1; then
+    echo "Missing ssh. Install (Termux): pkg install -y openssh" >&2
+    exit 1
+  fi
+  echo "ssh -p $port $target"
+  exec ssh -p "$port" "$target"
+fi
+
+# Fallback: let Termux open it normally
+if command -v termux-open >/dev/null 2>&1; then
+  exec termux-open "$raw"
+fi
+
+echo "$raw"
+
+

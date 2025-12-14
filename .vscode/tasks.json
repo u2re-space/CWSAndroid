@@ -1,0 +1,62 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Android: Devices (ns + adb)",
+      "type": "shell",
+      "command": "npm run android:devices",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: ADB where",
+      "type": "shell",
+      "command": "npm run android:adb:where",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: ADB reset (kill/start)",
+      "type": "shell",
+      "command": "npm run android:adb:reset",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Emulator list AVDs",
+      "type": "shell",
+      "command": "npm run android:emu:list",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Emulator run",
+      "type": "shell",
+      "command": "npm run android:emu:run",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Emulator debug (inspect)",
+      "type": "shell",
+      "command": "npm run android:emu:debug",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Logcat (NativeScript/JS/Chromium)",
+      "type": "shell",
+      "command": "npm run android:log",
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "android-logcat",
+        "clear": false
+      }
+    },
+    {
+      "label": "Android: Install latest APK (adb install -r)",
+      "type": "shell",
+      "command": "pwsh -NoProfile -File .\\vbc-pack\\windows\\vbc-adb-install-latest-apk.ps1 -Reinstall",
+      "problemMatcher": []
+    }
+  ]
+}
+
+

@@ -1,12 +1,34 @@
 {
-    "type": "node",
-    "request": "launch",
-    "name": "Debug NativeScript App",
-    "program": "${workspaceFolder}/app/index.js",
-    "runtimeExecutable": "tns",
-    "runtimeArgs": [
-        "debug",
-        "android"
-    ],
-    "port": 41000
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "NativeScript: Debug Android (Emulator, Inspect)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "android:emu:debug"],
+      "console": "integratedTerminal",
+      "port": 41000,
+      "timeout": 60000
+    },
+    {
+      "name": "NativeScript: Run Android (Emulator)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "android:emu:run"],
+      "console": "integratedTerminal",
+      "timeout": 60000
+    },
+    {
+      "name": "NativeScript: Debug Android (Device, Inspect)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "ns",
+      "runtimeArgs": ["debug", "android", "--inspect"],
+      "console": "integratedTerminal",
+      "port": 41000,
+      "timeout": 60000
+    }
+  ]
 }
