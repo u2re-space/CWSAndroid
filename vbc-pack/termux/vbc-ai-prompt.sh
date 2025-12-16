@@ -4,6 +4,12 @@ set -euo pipefail
 APP_ID="${APP_ID:-com.u2re.ioclient}"
 MAX_LOG_LINES="${MAX_LOG_LINES:-250}"
 
+WIN_SSH_USER="${VBC_WIN_SSH_USER:-U2RE}"
+WIN_SSH_HOST="${VBC_WIN_SSH_HOST:-192.168.0.120}"
+WIN_SSH_PORT="${VBC_WIN_SSH_PORT:-22}"
+# Best-effort default: this repo's usual Windows workspace path.
+WIN_WORKDIR="${VBC_WIN_WORKDIR:-C:\\Projects\\IOClientAndroid}"
+
 have() { command -v "$1" >/dev/null 2>&1; }
 
 now_iso() {
@@ -41,6 +47,19 @@ out="$(mktemp)"
     adb version 2>/dev/null || true
     adb devices -l 2>/dev/null || true
   fi
+
+  section "Windows SSH (Cursor/cursor-agent)"
+  echo "- target: ${WIN_SSH_USER}@${WIN_SSH_HOST}:${WIN_SSH_PORT}"
+  echo "- workspace (Windows): ${WIN_WORKDIR}"
+  echo ""
+  echo "Commands (examples):"
+  echo "  ssh -p ${WIN_SSH_PORT} ${WIN_SSH_USER}@${WIN_SSH_HOST}"
+  echo "  ssh -t -p ${WIN_SSH_PORT} ${WIN_SSH_USER}@${WIN_SSH_HOST} 'powershell -NoProfile -NoExit -Command \"Set-Location -LiteralPath ''${WIN_WORKDIR}''\"'"
+  echo "  cursor-agent (example; adjust to your installed CLI):"
+  echo "    cursor-agent ssh ${WIN_SSH_USER}@${WIN_SSH_HOST} --port ${WIN_SSH_PORT} --cwd \"${WIN_WORKDIR}\""
+  echo ""
+  echo "Env overrides (set on Termux before running this script):"
+  echo "  VBC_WIN_SSH_USER / VBC_WIN_SSH_HOST / VBC_WIN_SSH_PORT / VBC_WIN_WORKDIR"
 
   section "Relevant logcat (best-effort)"
   pid=""

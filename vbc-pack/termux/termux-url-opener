@@ -9,6 +9,12 @@ set -euo pipefail
 # Supported:
 # - adb://<ip:port>   -> adb connect <ip:port>
 # - ssh://user@host[:port] -> ssh user@host -p port
+# - adbssh://<ip:port> -> adb connect <ip:port> via Windows SSH (see env vars below)
+# - (optional) route adb:// via Windows over SSH using env vars (see below/README)
+
+VBC_ADB_SSH_ENABLE="${VBC_ADB_SSH_ENABLE:-0}"
+VBC_ADB_SSH_TARGET="${VBC_ADB_SSH_TARGET:-U2RE@192.168.0.120}"
+VBC_ADB_SSH_PORT="${VBC_ADB_SSH_PORT:-22}"
 
 raw="${1:-}"
 raw="${raw//$'\r'/}"
@@ -18,14 +24,41 @@ if [[ -z "$raw" ]]; then
   exit 2
 fi
 
-if [[ "$raw" =~ ^adb:// ]]; then
-  addr="${raw#adb://}"
+adb_connect_local() {
+  local addr="$1"
   if ! command -v adb >/dev/null 2>&1; then
     echo "Missing adb. Install (Termux): pkg install -y android-tools" >&2
     exit 1
   fi
   echo "adb connect $addr"
   adb connect "$addr"
+}
+
+adb_connect_via_ssh() {
+  local addr="$1"
+  if ! command -v ssh >/dev/null 2>&1; then
+    echo "Missing ssh. Install (Termux): pkg install -y openssh" >&2
+    exit 1
+  fi
+  echo "adb via SSH: ${VBC_ADB_SSH_TARGET}:${VBC_ADB_SSH_PORT}"
+  echo "remote: adb connect $addr"
+  ssh -p "$VBC_ADB_SSH_PORT" "$VBC_ADB_SSH_TARGET" \
+    powershell -NoProfile -Command "adb connect $addr; echo ''; adb devices -l"
+}
+
+if [[ "$raw" =~ ^adbssh:// ]]; then
+  addr="${raw#adbssh://}"
+  adb_connect_via_ssh "$addr"
+  exit 0
+fi
+
+if [[ "$raw" =~ ^adb:// ]]; then
+  addr="${raw#adb://}"
+  if [[ "$VBC_ADB_SSH_ENABLE" == "1" ]]; then
+    adb_connect_via_ssh "$addr"
+  else
+    adb_connect_local "$addr"
+  fi
   exit 0
 fi
 
@@ -51,5 +84,3 @@ if command -v termux-open >/dev/null 2>&1; then
 fi
 
 echo "$raw"
-
-

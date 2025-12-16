@@ -1,6 +1,12 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
 
+VBC_ADB_SSH_ENABLE="${VBC_ADB_SSH_ENABLE:-0}"
+VBC_ADB_SSH_TARGET="${VBC_ADB_SSH_TARGET:-U2RE@192.168.0.120}"
+VBC_ADB_SSH_PORT="${VBC_ADB_SSH_PORT:-22}"
+
+# Supports optional "adb via Windows over SSH" mode (see README).
+
 require() {
   command -v "$1" >/dev/null 2>&1 || {
     echo "Missing '$1'. Install it (Termux): pkg install -y $2" >&2
@@ -8,7 +14,11 @@ require() {
   }
 }
 
-require adb android-tools
+if [[ "$VBC_ADB_SSH_ENABLE" == "1" ]]; then
+  require ssh openssh
+else
+  require adb android-tools
+fi
 
 clip=""
 if command -v termux-clipboard-get >/dev/null 2>&1; then
@@ -30,9 +40,14 @@ if [[ -z "$addr" ]]; then
   exit 2
 fi
 
-echo "adb connect $addr"
-adb connect "$addr"
-echo ""
-adb devices -l
-
-
+if [[ "$VBC_ADB_SSH_ENABLE" == "1" ]]; then
+  echo "adb via SSH: ${VBC_ADB_SSH_TARGET}:${VBC_ADB_SSH_PORT}"
+  echo "remote: adb connect $addr"
+  ssh -p "$VBC_ADB_SSH_PORT" "$VBC_ADB_SSH_TARGET" \
+    powershell -NoProfile -Command "adb connect $addr; echo ''; adb devices -l"
+else
+  echo "adb connect $addr"
+  adb connect "$addr"
+  echo ""
+  adb devices -l
+fi

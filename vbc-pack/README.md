@@ -44,6 +44,19 @@ When debugging, open Chrome:
 pwsh -NoProfile -File .\vbc-pack\windows\vbc-adb-pair.ps1
 ```
 
+### Pair (QR code)
+
+If you prefer **“Pair device with QR code”**, you can generate and use the pairing QR from Windows terminal:
+
+```powershell
+pwsh -NoProfile -File .\vbc-pack\windows\vbc-make-qr.ps1 -AdbQr
+```
+
+This will try (in order):
+
+- `adb-wireless pair` (install: `cargo install adb-wireless`)
+- `adb-wifi` / `python -m adb_wifi` (install: `python -m pip install adb-wifi-py`)
+
 ### Connect (after pairing)
 
 ```powershell
@@ -96,6 +109,22 @@ It will run:
 
 - `adb connect 192.168.1.50:39345`
 
+### Optional: route ADB connect through Windows (via SSH)
+
+If you want the **ADB connection to happen on Windows** (i.e. run `adb connect ...` on `U2RE@192.168.0.120`), enable:
+
+- `VBC_ADB_SSH_ENABLE=1`
+
+Optional overrides:
+
+- `VBC_ADB_SSH_TARGET` (default `U2RE@192.168.0.120`)
+- `VBC_ADB_SSH_PORT` (default `22`)
+
+Then:
+
+- Opening `adb://<ip:port>` will run `adb connect <ip:port>` **on Windows via SSH**
+- You can also force it per-link using: `adbssh://<ip:port>`
+
 If you prefer clipboard:
 
 ```sh
@@ -112,6 +141,11 @@ vbc-pack/termux/vbc-ai-prompt.sh
 
 This copies a ready-to-paste block into your clipboard (device info + recent `logcat` snippet).
 
+It also includes a **Windows SSH / cursor-agent** connection hint block (defaults to `U2RE@192.168.0.120:22` and `C:\Projects\IOClientAndroid`). You can override what it prints by setting (in Termux):
+
+- `VBC_WIN_SSH_USER`, `VBC_WIN_SSH_HOST`, `VBC_WIN_SSH_PORT`
+- `VBC_WIN_WORKDIR` (Windows path to the folder you opened in Cursor/VS Code)
+
 ---
 
 ## SSH Termux → Windows
@@ -125,7 +159,25 @@ pwsh -NoProfile -File .\vbc-pack\windows\vbc-ssh-server-setup.ps1
 ### Connect from Termux
 
 ```sh
-vbc-pack/termux/vbc-ssh-to-windows.sh <windowsUser> <windowsHostOrIP>
+# Default (configured for this repo/workflow):
+vbc-pack/termux/vbc-ssh-to-windows.sh
+
+# Override just the host (keeps default user/port):
+vbc-pack/termux/vbc-ssh-to-windows.sh 192.168.0.120
+
+# Explicit:
+vbc-pack/termux/vbc-ssh-to-windows.sh U2RE 192.168.0.120 22
+
+# Single-arg form:
+vbc-pack/termux/vbc-ssh-to-windows.sh U2RE@192.168.0.120:22
 ```
+
+It also supports environment overrides:
+
+- `VBC_SSH_USER`, `VBC_SSH_HOST`, `VBC_SSH_PORT`
+
+If you installed `~/.termux/termux-url-opener`, you can also “share/open” an SSH URL like:
+
+- `ssh://U2RE@192.168.0.120:22`
 
 
