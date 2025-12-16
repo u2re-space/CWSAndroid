@@ -42,5 +42,3 @@ Write-Host "  $($apk.FullName)"
 Write-Host ""
 Write-Host "Running: adb $($argsList -join ' ') $($installArgs -join ' ')"
 adb @argsList @installArgs
-
-

@@ -43,5 +43,3 @@ Write-Host ""
 Write-Host "SSH server should be running."
 Write-Host "Find your LAN IP via: ipconfig"
 Write-Host "From Termux: ssh <windowsUser>@<windowsIP>"
-
-

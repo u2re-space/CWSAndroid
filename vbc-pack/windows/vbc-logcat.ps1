@@ -26,5 +26,3 @@ $filterParts = $Filter.Split(" ", [System.StringSplitOptions]::RemoveEmptyEntrie
 
 Write-Host "Running: adb $($argsList -join ' ') logcat -s $Filter"
 adb @argsList logcat -s @filterParts
-
-

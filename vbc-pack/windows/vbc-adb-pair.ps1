@@ -30,5 +30,3 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host ""
 Write-Host "Paired. Current devices:"
 adb devices -l
-
-

@@ -98,5 +98,3 @@ Write-Host "Wrote: $generated"
 if (-not $NoOpen) {
   try { Start-Process $generated | Out-Null } catch {}
 }
-
-

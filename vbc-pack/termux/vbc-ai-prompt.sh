@@ -88,5 +88,3 @@ if have termux-clipboard-set; then
 else
   cat "$out"
 fi
-
-
