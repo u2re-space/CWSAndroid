@@ -1,62 +1,40 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+vbc_common_loaded="0"
+for f in \
+  "$SCRIPT_DIR/vbc-common.sh" \
+  "$HOME/.termux/vbc-common.sh" \
+  "$HOME/bin/vbc-common.sh" \
+  "${PREFIX:-}/bin/vbc-common.sh"
+do
+  if [[ -n "${f:-}" && -f "$f" ]]; then
+    # shellcheck source=/dev/null
+    . "$f"
+    vbc_common_loaded="1"
+    break
+  fi
+done
+if [[ "$vbc_common_loaded" != "1" ]]; then
+  echo "Missing vbc-common.sh. Keep it alongside this script, or install it in ~/.termux, ~/bin, or \$PREFIX/bin." >&2
+  exit 1
+fi
+
 VBC_ADB_SSH_ENABLE="${VBC_ADB_SSH_ENABLE:-0}"
 VBC_ADB_SSH_TARGET="${VBC_ADB_SSH_TARGET:-U2RE@192.168.0.120}"
 VBC_ADB_SSH_PORT="${VBC_ADB_SSH_PORT:-22}"
 VBC_ADB_LAST_FILE="${VBC_ADB_LAST_FILE:-$HOME/.vbc_last_adb_addr}"
+VBC_ADB_SSH_NO_CD="${VBC_ADB_SSH_NO_CD:-0}"
+VBC_ADB_SSH_WORKDIR="${VBC_ADB_SSH_WORKDIR:-${VBC_WIN_WORKDIR:-}}"
+VBC_WIN_PROJECTS_DIR="${VBC_WIN_PROJECTS_DIR:-C:\Projects}"
 
 # Supports optional "adb via Windows over SSH" mode (see README).
 
-require() {
-  command -v "$1" >/dev/null 2>&1 || {
-    echo "Missing '$1'. Install it (Termux): pkg install -y $2" >&2
-    exit 1
-  }
-}
-
-is_valid_addr() {
-  local a="${1:-}" ip port o1 o2 o3 o4
-
-  [[ -n "$a" ]] || return 1
-  [[ "$a" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]{1,5}$ ]] || return 1
-
-  ip="${a%:*}"
-  port="${a##*:}"
-  [[ "$port" =~ ^[0-9]+$ ]] || return 1
-  ((port >= 1 && port <= 65535)) || return 1
-
-  IFS='.' read -r o1 o2 o3 o4 <<<"$ip"
-  for o in "$o1" "$o2" "$o3" "$o4"; do
-    [[ "$o" =~ ^[0-9]+$ ]] || return 1
-    ((o >= 0 && o <= 255)) || return 1
-  done
-}
-
-extract_first_valid_addr() {
-  local s="${1:-}" a
-  # Accept raw "ip:port" anywhere in the text (also handles "adb://ip:port" because of the match).
-  while IFS= read -r a; do
-    if is_valid_addr "$a"; then
-      printf '%s\n' "$a"
-      return 0
-    fi
-  done < <(echo "$s" | tr -d '\r' | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]{1,5}' || true)
-  return 1
-}
-
-load_last_addr() {
-  local a=""
-  [[ -f "$VBC_ADB_LAST_FILE" ]] || return 1
-  a="$(tr -d '\r' < "$VBC_ADB_LAST_FILE" | head -n1 | xargs || true)"
-  is_valid_addr "$a" || return 1
-  printf '%s\n' "$a"
-}
-
 if [[ "$VBC_ADB_SSH_ENABLE" == "1" ]]; then
-  require ssh openssh
+  vbc_require ssh openssh
 else
-  require adb android-tools
+  vbc_require adb android-tools
 fi
 
 clip=""
@@ -64,14 +42,14 @@ if command -v termux-clipboard-get >/dev/null 2>&1; then
   clip="$(termux-clipboard-get 2>/dev/null || true)"
 fi
 
-addr="$(extract_first_valid_addr "$clip" || true)"
+addr="$(vbc_extract_first_valid_addr "$clip" || true)"
 if [[ -z "$addr" ]]; then
   read -r -p "Paste adb ip:port (blank = use last): " clip
-  addr="$(extract_first_valid_addr "$clip" || true)"
+  addr="$(vbc_extract_first_valid_addr "$clip" || true)"
 fi
 
 if [[ -z "$addr" ]]; then
-  addr="$(load_last_addr || true)"
+  addr="$(vbc_load_last_addr "$VBC_ADB_LAST_FILE" || true)"
   if [[ -n "$addr" ]]; then
     echo "Using last saved address: $addr"
   fi
@@ -85,8 +63,27 @@ fi
 if [[ "$VBC_ADB_SSH_ENABLE" == "1" ]]; then
   echo "adb via SSH: ${VBC_ADB_SSH_TARGET}:${VBC_ADB_SSH_PORT}"
   echo "remote: adb connect $addr"
+
+  win_workdir=""
+  if [[ "$VBC_ADB_SSH_NO_CD" != "1" ]]; then
+    win_workdir="$(vbc_strip_cr <<<"${VBC_ADB_SSH_WORKDIR:-}" | vbc_trim || true)"
+    if [[ -z "$win_workdir" ]]; then
+      win_workdir="$(vbc_infer_windows_workdir "$VBC_WIN_PROJECTS_DIR" || true)"
+    fi
+  fi
+  if [[ -n "$win_workdir" ]]; then
+    echo "remote: cd $win_workdir"
+  fi
+
+  # Escape single quotes for PowerShell single-quoted strings.
+  ps_workdir="$(vbc_ps_escape_single_quotes "$win_workdir")"
   ssh -p "$VBC_ADB_SSH_PORT" "$VBC_ADB_SSH_TARGET" \
-    powershell -NoProfile -Command "adb connect $addr; if (\$LASTEXITCODE -ne 0) { exit \$LASTEXITCODE }; echo ''; adb devices -l"
+    powershell -NoProfile -Command "\
+if ('$ps_workdir' -ne '') { Set-Location -LiteralPath '$ps_workdir' }; \
+adb connect $addr; \
+if (\$LASTEXITCODE -ne 0) { exit \$LASTEXITCODE }; \
+echo ''; \
+adb devices -l"
 else
   echo "adb connect $addr"
   adb connect "$addr"
@@ -95,5 +92,4 @@ else
 fi
 
 # Persist last successful address for future runs.
-mkdir -p "$(dirname "$VBC_ADB_LAST_FILE")" 2>/dev/null || true
-printf '%s\n' "$addr" > "$VBC_ADB_LAST_FILE" 2>/dev/null || true
+vbc_persist_last_addr "$VBC_ADB_LAST_FILE" "$addr"
