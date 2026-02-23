@@ -237,3 +237,10 @@ src/platforms/android
 
 #
 src/dist
+
+#
+.tmp-apk
+.tmp-aar 
+.tmp-aar2 
+.tmp-widgets
+.tmp-*
