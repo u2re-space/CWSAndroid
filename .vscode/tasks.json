@@ -38,6 +38,24 @@
       "problemMatcher": []
     },
     {
+      "label": "Android: Remote emulator connect (192.168.0.110)",
+      "type": "shell",
+      "command": "npm run android:adb:remote:connect",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Remote emulator disconnect (192.168.0.110)",
+      "type": "shell",
+      "command": "npm run android:adb:remote:disconnect",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Remote emulator status",
+      "type": "shell",
+      "command": "npm run android:devices:remote:only",
+      "problemMatcher": []
+    },
+    {
       "label": "Android: Logcat (NativeScript/JS/Chromium)",
       "type": "shell",
       "command": "npm run android:log",

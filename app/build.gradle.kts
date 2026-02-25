@@ -76,6 +76,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.gson)
     implementation(libs.okhttp)
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
     implementation(libs.timberkt)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

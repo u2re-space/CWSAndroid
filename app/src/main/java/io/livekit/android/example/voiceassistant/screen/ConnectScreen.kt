@@ -49,7 +49,8 @@ object ConnectRoute
 
 @Composable
 fun ConnectScreen(
-    navigateToVoiceAssistant: (VoiceAssistantRoute) -> Unit
+    navigateToVoiceAssistant: (VoiceAssistantRoute) -> Unit,
+    navigateToAutomataSettings: () -> Unit
 ) {
     Box(
         contentAlignment = Alignment.Center,
@@ -132,6 +133,15 @@ fun ConnectScreen(
                         )
                     )
                 }
+            }
+
+            Spacer(Modifier.size(12.dp))
+            Button(
+                colors = buttonColors,
+                shape = RoundedCornerShape(20),
+                onClick = navigateToAutomataSettings
+            ) {
+                Text("DAEMON SETTINGS")
             }
         }
     }
