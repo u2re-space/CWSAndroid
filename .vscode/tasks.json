@@ -2,7 +2,19 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Android: Devices (ns + adb)",
+      "label": "Android: Build debug",
+      "type": "shell",
+      "command": "npm run build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Dev install (adb)",
+      "type": "shell",
+      "command": "npm run dev",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Devices (adb)",
       "type": "shell",
       "command": "npm run android:devices",
       "problemMatcher": []
@@ -26,15 +38,80 @@
       "problemMatcher": []
     },
     {
-      "label": "Android: Emulator run",
+      "label": "Android: SSH Emulator list AVDs (192.168.0.110)",
       "type": "shell",
-      "command": "npm run android:emu:run",
+      "command": "npm run android:emu:ssh:list",
       "problemMatcher": []
     },
     {
-      "label": "Android: Emulator debug (inspect)",
+      "label": "Android: SSH Emulator start (192.168.0.110)",
       "type": "shell",
-      "command": "npm run android:emu:debug",
+      "command": "npm run android:emu:ssh:start",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: SSH Emulator start + connect (192.168.0.110)",
+      "type": "shell",
+      "command": "npm run android:emu:ssh:start:connect",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: SSH Emulator start + connect + install (192.168.0.110)",
+      "type": "shell",
+      "command": "npm run android:emu:ssh:start:connect:install",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: SSH Emulator start + connect + assemble + install (192.168.0.110)",
+      "type": "shell",
+      "command": "npm run android:emu:ssh:start:connect:assemble",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: SSH Emulator start + connect + build + install (192.168.0.110)",
+      "type": "shell",
+      "command": "npm run android:emu:ssh:start:connect:build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: SSH Emulator start + connect + build + install (prompt AVD)",
+      "type": "shell",
+      "command": "npm run android:emu:ssh:start:connect:build",
+      "options": {
+        "env": {
+          "ANDROID_REMOTE_AVD_NAME": "${input:androidEmuAvdName}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: SSH Emulator connect ADB (192.168.0.110)",
+      "type": "shell",
+      "command": "npm run android:emu:ssh:connect",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: SSH Emulator connect + install (192.168.0.110)",
+      "type": "shell",
+      "command": "npm run android:emu:ssh:connect:install",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: SSH Emulator connect + assemble + install (192.168.0.110)",
+      "type": "shell",
+      "command": "npm run android:emu:ssh:connect:assemble",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: SSH Emulator connect + build + install (192.168.0.110)",
+      "type": "shell",
+      "command": "npm run android:emu:ssh:connect:build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: SSH Emulator status",
+      "type": "shell",
+      "command": "npm run android:emu:ssh:status",
       "problemMatcher": []
     },
     {
@@ -56,7 +133,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Android: Logcat (NativeScript/JS/Chromium)",
+      "label": "Android: Logcat (Android runtime)",
       "type": "shell",
       "command": "npm run android:log",
       "problemMatcher": [],
@@ -73,6 +150,14 @@
       "type": "shell",
       "command": "pwsh -NoProfile -File .\\vbc-pack\\windows\\vbc-adb-install-latest-apk.ps1 -Reinstall",
       "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "androidEmuAvdName",
+      "type": "promptString",
+      "description": "AVD name for remote SSH emulator",
+      "default": "Pixel_7"
     }
   ]
 }

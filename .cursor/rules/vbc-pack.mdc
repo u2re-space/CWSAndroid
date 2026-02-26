@@ -1,5 +1,5 @@
 ---
-description: VBC pack workflow (NativeScript + ADB + Termux + Windows) for this repo
+description: VBC pack workflow (Android + ADB + Termux + Windows) for this repo
 globs:
   - "**/*"
 ---
@@ -7,8 +7,8 @@ globs:
 ## Repo context
 
 - App id: `com.u2re.ioclient`
-- NativeScript workflows live in `package.json` scripts:
-  - `npm run android:emu:debug` (emulator debug + inspect)
+- Android workflows live in `package.json` scripts:
+  - `npm run android:devices` (show adb devices)
   - `npm run android:log` (logcat filter)
   - `npm run android:adb:reset` (adb restart)
 
@@ -27,7 +27,7 @@ If the user pastes an `ip:port`, you can also tell them to copy it to clipboard 
 
 Prefer these first:
 
-- `npm run android:log` (or VSCode task: `Android: Logcat (NativeScript/JS/Chromium)`)
+- `npm run android:log` (or VSCode task: `Android: Logcat (Android runtime)`)
 - `npm run android:adb:reset` if devices show offline
 
 If the user is on-phone (Termux), ask them to run:

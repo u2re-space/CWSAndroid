@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant
+package space.u2re.service
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -12,17 +12,17 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.livekit.android.LiveKit
-import io.livekit.android.example.voiceassistant.screen.ConnectRoute
-import io.livekit.android.example.voiceassistant.screen.ConnectScreen
-import io.livekit.android.example.voiceassistant.screen.AutomataSettingsRoute
-import io.livekit.android.example.voiceassistant.screen.AutomataSettingsScreen
-import io.livekit.android.example.voiceassistant.screen.VoiceAssistantRoute
-import io.livekit.android.example.voiceassistant.screen.VoiceAssistantScreen
-import io.livekit.android.example.voiceassistant.reverse.ReverseGatewayClient
-import io.livekit.android.example.voiceassistant.reverse.ReverseGatewayConfigProvider
-import io.livekit.android.example.voiceassistant.daemon.AutomataDaemonController
-import io.livekit.android.example.voiceassistant.ui.theme.LiveKitVoiceAssistantExampleTheme
-import io.livekit.android.example.voiceassistant.viewmodel.VoiceAssistantViewModel
+import space.u2re.service.screen.ConnectRoute
+import space.u2re.service.screen.ConnectScreen
+import space.u2re.service.screen.AutomataSettingsRoute
+import space.u2re.service.screen.AutomataSettingsScreen
+import space.u2re.service.screen.VoiceAssistantRoute
+import space.u2re.service.screen.VoiceAssistantScreen
+import space.u2re.service.reverse.ReverseGatewayClient
+import space.u2re.service.reverse.ReverseGatewayConfigProvider
+import space.u2re.service.daemon.AutomataDaemonController
+import space.u2re.service.ui.theme.LiveKitVoiceAssistantExampleTheme
+import space.u2re.service.viewmodel.VoiceAssistantViewModel
 import io.livekit.android.util.LoggingLevel
 
 class MainActivity : ComponentActivity() {

@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $false)]
-  [string]$Filter = "NativeScript:V JS:V chromium:V",
+  [string]$Filter = "AndroidRuntime:V *:S",
 
   [Parameter(Mandatory = $false)]
   [string]$Serial

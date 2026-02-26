@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.daemon
+package space.u2re.service.daemon
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -8,6 +8,7 @@ import android.os.Looper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -23,7 +24,7 @@ interface ClipboardWatcher : Closeable {
 
 class ClipboardSyncWatcher(
     private val context: Context,
-    private val onChange: (String) -> Unit
+    private val onChange: suspend (String) -> Unit
 ) : ClipboardWatcher {
     private var pollJob: Job? = null
     private var suppressNext = false
@@ -83,7 +84,7 @@ class ClipboardSyncWatcher(
         return item?.coerceToText(context)?.toString() ?: ""
     }
 
-    private fun handleText(raw: String) {
+    private suspend fun handleText(raw: String) {
         val text = raw.ifBlank { return }
         if (suppressNext) {
             suppressNext = false

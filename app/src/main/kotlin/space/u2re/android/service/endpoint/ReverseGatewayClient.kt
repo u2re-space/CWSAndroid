@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.reverse
+package space.u2re.service.reverse
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException

@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.ui.theme
+package space.u2re.service.ui.theme
 
 import android.app.Activity
 import android.os.Build

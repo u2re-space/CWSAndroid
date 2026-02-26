@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.daemon
+package space.u2re.service.daemon
 
 import android.app.Application
 import android.app.Activity

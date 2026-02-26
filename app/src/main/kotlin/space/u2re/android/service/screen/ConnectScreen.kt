@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.screen
+package space.u2re.service.screen
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
@@ -37,11 +37,11 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.livekit.android.example.voiceassistant.R
-import io.livekit.android.example.voiceassistant.hardcodedToken
-import io.livekit.android.example.voiceassistant.hardcodedUrl
-import io.livekit.android.example.voiceassistant.sandboxID
-import io.livekit.android.example.voiceassistant.ui.theme.Blue500
+import space.u2re.service.R
+import space.u2re.service.hardcodedToken
+import space.u2re.service.hardcodedUrl
+import space.u2re.service.sandboxID
+import space.u2re.service.ui.theme.Blue500
 import kotlinx.serialization.Serializable
 
 @Serializable

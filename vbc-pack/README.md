@@ -1,6 +1,6 @@
 # vbc-pack (Vibe Coding Pack) — IOClientAndroid
 
-This pack is a small set of **Windows (PowerShell)** + **Android (Termux)** helper scripts to make NativeScript + ADB + logging workflows “one-command”.
+This pack is a small set of **Windows (PowerShell)** + **Android (Termux)** helper scripts to make ADB + logging workflows “one-command”.
 
 ## What this supports
 
@@ -10,7 +10,7 @@ This pack is a small set of **Windows (PowerShell)** + **Android (Termux)** help
   - Windows: install latest built APK via `adb install -r`.
   - Termux: connect using clipboard/shared text (for workflows where you keep the `ip:port` on-phone).
 - **SSH Termux → Windows**: helper script + a Windows setup script (optional).
-- **VSCode/Cursor**: `.vscode/tasks.json` (adb/devices/logcat/debug) + improved `.vscode/launch.json`.
+- **VSCode/Cursor**: `.vscode/tasks.json` (adb/devices/logcat) + `.vscode/launch.json`.
 
 > Repo app id: `com.u2re.ioclient`
 
@@ -19,13 +19,11 @@ This pack is a small set of **Windows (PowerShell)** + **Android (Termux)** help
 ## VSCode/Cursor quick workflow
 
 - **Tasks** (Cmd/Ctrl+Shift+P → “Tasks: Run Task”):
-  - `Android: Emulator debug (inspect)`
-  - `Android: Logcat (NativeScript/JS/Chromium)`
+  - `Android: Logcat (Android runtime)`
   - `Android: ADB reset (kill/start)`
   - `Android: Install latest APK (adb install -r)`
 
-- **Debug** (Run and Debug sidebar):
-  - `NativeScript: Debug Android (Emulator, Inspect)`
+-- **Debug**: use Android Studio or standard ADB-based workflows.
 
 When debugging, open Chrome:
 

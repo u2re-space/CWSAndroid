@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.screen
+package space.u2re.service.screen
 
 import android.app.Application
 import android.content.ClipboardManager
@@ -31,11 +31,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import io.livekit.android.example.voiceassistant.daemon.AutomataDaemonController
-import io.livekit.android.example.voiceassistant.daemon.AutomataSettings
-import io.livekit.android.example.voiceassistant.daemon.AutomataSettingsPatch
-import io.livekit.android.example.voiceassistant.daemon.AutomataSettingsStore
-import io.livekit.android.example.voiceassistant.daemon.postJson
+import space.u2re.service.daemon.AutomataDaemonController
+import space.u2re.service.daemon.AutomataSettings
+import space.u2re.service.daemon.AutomataSettingsPatch
+import space.u2re.service.daemon.AutomataSettingsStore
+import space.u2re.service.daemon.postJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

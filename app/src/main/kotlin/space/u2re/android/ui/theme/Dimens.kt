@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.livekit.android.example.voiceassistant.ui.theme
+package space.u2re.service.ui.theme
 
 import androidx.compose.ui.unit.dp
 

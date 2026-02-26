@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant
+package space.u2re.service
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect

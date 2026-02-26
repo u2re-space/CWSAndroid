@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.daemon
+package space.u2re.service.daemon
 
 import android.content.Context
 import androidx.annotation.Keep
@@ -69,11 +69,11 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                             var payload = bodyText
                             if (ct.contains("application/json")) {
                                 try {
-                                    val parsed = gson.fromJson(
+                                    val payloadMap = gson.fromJson<Map<String, Any>>(
                                         bodyText.ifBlank { "{}" },
                                         object : TypeToken<Map<String, Any>>() {}.type
                                     )
-                                    val textValue = parsed["text"] as? String ?: ""
+                                    val textValue = payloadMap["text"] as? String ?: ""
                                     if (textValue.isNotBlank()) payload = textValue
                                 } catch (_: Exception) {
                                     // ignore parse errors; keep raw

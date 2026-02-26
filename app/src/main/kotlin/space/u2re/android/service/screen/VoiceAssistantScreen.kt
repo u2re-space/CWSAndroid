@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.screen
+package space.u2re.service.screen
 
 import android.app.Activity
 import android.content.Context.MEDIA_PROJECTION_SERVICE
@@ -54,14 +54,14 @@ import io.livekit.android.compose.state.rememberLocalMedia
 import io.livekit.android.compose.state.rememberSession
 import io.livekit.android.compose.state.rememberSessionMessages
 import io.livekit.android.compose.ui.VideoTrackView
-import io.livekit.android.example.voiceassistant.rememberCanEnableCamera
-import io.livekit.android.example.voiceassistant.rememberCanEnableMic
-import io.livekit.android.example.voiceassistant.requirePermissions
-import io.livekit.android.example.voiceassistant.ui.AgentVisualization
-import io.livekit.android.example.voiceassistant.ui.ChatBar
-import io.livekit.android.example.voiceassistant.ui.ChatLog
-import io.livekit.android.example.voiceassistant.ui.ControlBar
-import io.livekit.android.example.voiceassistant.viewmodel.VoiceAssistantViewModel
+import space.u2re.service.rememberCanEnableCamera
+import space.u2re.service.rememberCanEnableMic
+import space.u2re.service.requirePermissions
+import space.u2re.service.ui.AgentVisualization
+import space.u2re.service.ui.ChatBar
+import space.u2re.service.ui.ChatLog
+import space.u2re.service.ui.ControlBar
+import space.u2re.service.viewmodel.VoiceAssistantViewModel
 import io.livekit.android.room.track.screencapture.ScreenCaptureParams
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

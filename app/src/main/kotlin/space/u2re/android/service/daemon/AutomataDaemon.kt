@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.daemon
+package space.u2re.service.daemon
 
 import android.app.Application
 import android.app.Activity
@@ -103,7 +103,11 @@ class AutomataDaemon(
 
     private fun startClipboardSync() {
         if (!settings.clipboardSync) return
-        val watcher = ClipboardSyncWatcher(application, ::postClipboardToPeers)
+        val watcher = ClipboardSyncWatcher(application) { text ->
+            scope.launch {
+                postClipboardToPeers(text)
+            }
+        }
         clipboardWatcher = watcher
         watcher.start()
     }

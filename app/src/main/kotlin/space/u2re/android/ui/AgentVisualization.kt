@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.ui
+package space.u2re.service.ui
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -26,7 +26,7 @@ import io.livekit.android.compose.state.Agent
 import io.livekit.android.compose.ui.ScaleType
 import io.livekit.android.compose.ui.VideoTrackView
 import io.livekit.android.compose.ui.audio.VoiceAssistantBarVisualizer
-import io.livekit.android.example.voiceassistant.ui.anim.CircleReveal
+import space.u2re.service.ui.anim.CircleReveal
 import kotlin.math.max
 import kotlin.math.roundToInt
 

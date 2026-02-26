@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.ui
+package space.u2re.service.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background

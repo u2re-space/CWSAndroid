@@ -25,7 +25,7 @@ $apk = Get-ChildItem -Path $SearchRoot -Recurse -File -Filter *.apk -ErrorAction
   Select-Object -First 1
 
 if (-not $apk) {
-  throw "No APK found under '$SearchRoot'. Build first (e.g. npm run build or ns build android)."
+  throw "No APK found under '$SearchRoot'. Build first (e.g. npm run build)."
 }
 
 $argsList = @()

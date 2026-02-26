@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.ui.anim
+package space.u2re.service.ui.anim
 
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.Spring

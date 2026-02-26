@@ -24,8 +24,9 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LiveKit Agents Example"
+rootProject.name = "space.u2re.service"
 include(":app")
+include(":audioswitch-stub")
 
 // For local development with the LiveKit Android SDK only.
 // includeBuild("../components-android")

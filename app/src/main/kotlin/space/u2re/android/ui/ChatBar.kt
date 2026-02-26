@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.ui
+package space.u2re.service.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -30,7 +30,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
-import io.livekit.android.example.voiceassistant.ui.theme.Blue500
+import space.u2re.service.ui.theme.Blue500
 
 @Composable
 fun ChatBar(

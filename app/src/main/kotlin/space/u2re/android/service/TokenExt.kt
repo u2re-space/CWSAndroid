@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant
+package space.u2re.service
 
 // TODO: Add your Sandbox ID here
 const val sandboxID = ""

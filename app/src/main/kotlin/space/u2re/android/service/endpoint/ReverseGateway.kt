@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.endpoint
+package space.u2re.service.endpoint
 
 import android.util.Base64
 import com.google.gson.Gson
@@ -161,7 +161,7 @@ class ReverseRelayCodec(
             val inner = JsonParser.parseString(innerJson)
             ParsedPayload(from, inner)
         } catch (e: RuntimeException) {
-            throw
+            throw e
         } catch (e: Exception) {
             throw IllegalStateException("Failed to parse payload", e)
         }
@@ -276,6 +276,7 @@ class ReverseGatewayClient(
 
     private companion object {
         const val WS_CLOSE_REASON_STOP = "client_stop"
+        val emptyPublicKeys: Map<String, String> = Collections.emptyMap()
     }
 
     private val codec: ReverseRelayCodec = ReverseRelayCodec(
@@ -468,9 +469,5 @@ class ReverseGatewayClient(
             lower.startsWith("https://") -> "wss://${trimmed.substring("https://".length)}"
             else -> "ws://$trimmed"
         }
-    }
-
-    companion object {
-        val emptyPublicKeys: Map<String, String> = Collections.emptyMap()
     }
 }

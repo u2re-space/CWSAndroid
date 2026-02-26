@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "io.livekit.android.example.voiceassistant"
+    namespace = "space.u2re.service"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "io.livekit.android.example.voiceassistant"
+        applicationId = "space.u2re.service"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -54,11 +54,19 @@ android {
     }
 }
 
+configurations.all {
+    resolutionStrategy.dependencySubstitution {
+        substitute(module("com.github.davidliu:audioswitch:89582c47c9a04c62f90aa5e57251af4800a62c9a"))
+            .using(project(":audioswitch-stub"))
+    }
+}
+
 dependencies {
 
     // For local development with the LiveKit Compose SDK only.
     // implementation("io.livekit:livekit-compose-components")
 
+    implementation(project(":audioswitch-stub"))
     implementation(libs.livekit.lib)
     implementation(libs.livekit.components)
 

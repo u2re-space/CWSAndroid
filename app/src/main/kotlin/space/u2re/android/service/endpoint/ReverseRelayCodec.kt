@@ -1,4 +1,4 @@
-package io.livekit.android.example.voiceassistant.reverse
+package space.u2re.service.reverse
 
 import com.google.gson.Gson
 import com.google.gson.JsonParser
@@ -47,7 +47,7 @@ object ReverseRelayCodec {
         return try {
             val raw = JsonParser.parseString(rawText).asJsonObject
             val from = raw.get("from")?.takeIf { it.isJsonPrimitive }?.asString ?: "server"
-            ReverseRelayDecoded(from, gson.fromJson(raw, mapType))
+            ReverseRelayDecoded(from, gson.fromJson<Map<String, Any>>(raw, mapType))
         } catch (_: Exception) {
             null
         }
@@ -115,7 +115,7 @@ object ReverseRelayCodec {
         val plain = cipher.doFinal(encrypted)
 
         val inner = JsonParser.parseString(String(plain, StandardCharsets.UTF_8)).let { element ->
-            gson.fromJson(element, mapType)
+            gson.fromJson<Map<String, Any>>(element, mapType)
         }
         return ReverseRelayDecoded(envelope.from, inner)
     }

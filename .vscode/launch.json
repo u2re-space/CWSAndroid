@@ -2,33 +2,34 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "NativeScript: Debug Android (Emulator, Inspect)",
-      "type": "node",
-      "request": "launch",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "android:emu:debug"],
-      "console": "integratedTerminal",
-      "port": 41000,
-      "timeout": 60000
+      "type": "android",
+      "request": "attach",
+      "name": "Android: Attach to process",
+      "appSrcRoot": "${workspaceRoot}/app/src/main",
+      "adbPort": 5037,
+      "processId": "${command:PickAndroidProcess}"
     },
     {
-      "name": "NativeScript: Run Android (Emulator)",
-      "type": "node",
-      "request": "launch",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "android:emu:run"],
-      "console": "integratedTerminal",
-      "timeout": 60000
+      "type": "android",
+      "request": "attach",
+      "name": "Android: Attach to 192.168.0.110",
+      "appSrcRoot": "${workspaceRoot}/app/src/main",
+      "adbPort": 5037,
+      "deviceId": "192.168.0.110:5555",
+      "preLaunchTask": "Android: SSH Emulator connect ADB (192.168.0.110)",
+      "processId": "${command:PickAndroidProcess}"
     },
     {
-      "name": "NativeScript: Debug Android (Device, Inspect)",
-      "type": "node",
+      "type": "android",
       "request": "launch",
-      "runtimeExecutable": "ns",
-      "runtimeArgs": ["debug", "android", "--inspect"],
-      "console": "integratedTerminal",
-      "port": 41000,
-      "timeout": 60000
+      "name": "Android: Launch on 192.168.0.110",
+      "packageName": "space.u2re.service",
+      "apkFile": "${workspaceRoot}/app/build/outputs/apk/debug/app-debug.apk",
+      "launchActivity": "space.u2re.service/.MainActivity",
+      "appSrcRoot": "${workspaceRoot}/app/src/main",
+      "adbPort": 5037,
+      "deviceId": "192.168.0.110:5555",
+      "preLaunchTask": "Android: SSH Emulator start + connect + build + install (192.168.0.110)"
     }
   ]
 }
