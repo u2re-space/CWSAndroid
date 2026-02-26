@@ -95,13 +95,19 @@ suspend fun postJson(
     url: String,
     json: Any,
     allowInsecureTls: Boolean,
-    timeoutMs: Int = 8000
+    timeoutMs: Int = 8000,
+    headers: Map<String, String> = emptyMap()
 ): HttpResult {
     val body = if (json is String) json else DaemonJson.toJson(json)
     val request = Request.Builder()
         .url(url)
         .post(body.toRequestBody(mediaTypeJson))
         .header("Content-Type", "application/json; charset=utf-8")
+        .apply {
+            headers.forEach { (key, value) ->
+                addHeader(key, value)
+            }
+        }
         .build()
     return executeRequest(request, allowInsecureTls, timeoutMs)
 }

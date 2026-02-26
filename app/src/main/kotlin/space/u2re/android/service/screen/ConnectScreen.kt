@@ -35,9 +35,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import space.u2re.service.R
+import space.u2re.service.daemon.AutomataSettingsStore
 import space.u2re.service.hardcodedToken
 import space.u2re.service.hardcodedUrl
 import space.u2re.service.sandboxID
@@ -50,8 +52,13 @@ object ConnectRoute
 @Composable
 fun ConnectScreen(
     navigateToVoiceAssistant: (VoiceAssistantRoute) -> Unit,
-    navigateToAutomataSettings: () -> Unit
+    navigateToAutomataSettings: () -> Unit,
+    navigateToLocalResponses: (ResponsesAssistantRoute) -> Unit
 ) {
+    val context = LocalContext.current
+    val daemonSettings = remember { AutomataSettingsStore.load(context.applicationContext) }
+    val hasAiConfig = daemonSettings.apiEndpoint.isNotBlank() && daemonSettings.apiKey.isNotBlank()
+
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
@@ -108,7 +115,10 @@ fun ConnectScreen(
                     val route = VoiceAssistantRoute(
                         sandboxId = sandboxID,
                         hardcodedUrl = hardcodedUrl,
-                        hardcodedToken = hardcodedToken
+                        hardcodedToken = hardcodedToken,
+                        apiEndpoint = daemonSettings.apiEndpoint,
+                        apiKey = daemonSettings.apiKey,
+                        aiAllowInsecureTls = daemonSettings.allowInsecureTls
                     )
                     navigateToVoiceAssistant(route)
                 }
@@ -142,6 +152,26 @@ fun ConnectScreen(
                 onClick = navigateToAutomataSettings
             ) {
                 Text("DAEMON SETTINGS")
+            }
+            Spacer(Modifier.size(12.dp))
+            Button(
+                colors = buttonColors,
+                shape = RoundedCornerShape(20),
+                enabled = hasAiConfig,
+                onClick = {
+                    if (!hasAiConfig) {
+                        return@Button
+                    }
+                    navigateToLocalResponses(
+                        ResponsesAssistantRoute(
+                            apiEndpoint = daemonSettings.apiEndpoint,
+                            apiKey = daemonSettings.apiKey,
+                            aiAllowInsecureTls = daemonSettings.allowInsecureTls
+                        )
+                    )
+                }
+            ) {
+                Text("START LOCAL AI")
             }
         }
     }

@@ -3,6 +3,7 @@ package space.u2re.service.reverse
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
+import android.util.Base64
 import java.nio.charset.StandardCharsets
 import java.security.KeyFactory
 import java.security.MessageDigest
@@ -10,7 +11,6 @@ import java.security.PublicKey
 import java.security.Signature
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
-import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -87,8 +87,8 @@ object ReverseRelayCodec {
         val signature = signBlock(block, signingPrivateKeyPem)
         return mapOf(
             "from" to deviceId,
-            "cipher" to Base64.getEncoder().encodeToString(block),
-            "sig" to Base64.getEncoder().encodeToString(signature)
+            "cipher" to encodeBase64(block),
+            "sig" to encodeBase64(signature)
         )
     }
 
@@ -98,8 +98,8 @@ object ReverseRelayCodec {
         peerPublicKeyPem: String?
     ): ReverseRelayDecoded? {
         if (aesMasterKey.isNullOrBlank()) return null
-        val block = try { Base64.getDecoder().decode(envelope.cipher) } catch (_: Exception) { return null }
-        val signature = try { Base64.getDecoder().decode(envelope.sig) } catch (_: Exception) { return null }
+        val block = try { decodeBase64(envelope.cipher) } catch (_: Exception) { return null }
+        val signature = try { decodeBase64(envelope.sig) } catch (_: Exception) { return null }
         if (!verifySignature(envelope.from, block, signature, peerPublicKeyPem)) {
             return null
         }
@@ -135,7 +135,7 @@ object ReverseRelayCodec {
             .replace("-----END PUBLIC KEY-----", "")
             .replace("\\s".toRegex(), "")
         if (normalized.isBlank()) return null
-        return try { Base64.getDecoder().decode(normalized) } catch (_: Exception) { null }
+        return try { decodeBase64(normalized) } catch (_: Exception) { null }
     }
 
     private fun signBlock(block: ByteArray, pem: String?): ByteArray {
@@ -172,7 +172,7 @@ object ReverseRelayCodec {
     private fun parseEnvelope(rawText: String): DenoPayloadEnvelope? {
         return try {
             val envelopeText = try {
-                val decoded = Base64.getDecoder().decode(rawText)
+                val decoded = decodeBase64(rawText)
                 String(decoded, StandardCharsets.UTF_8)
             } catch (_: Exception) {
                 rawText
@@ -186,4 +186,7 @@ object ReverseRelayCodec {
             null
         }
     }
+
+    private fun encodeBase64(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.NO_WRAP)
+    private fun decodeBase64(value: String): ByteArray = Base64.decode(value, Base64.NO_WRAP)
 }

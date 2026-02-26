@@ -1,3 +1,5 @@
+import org.gradle.api.GradleException
+
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.jetbrainsKotlinAndroid)
@@ -35,8 +37,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
-    kotlinOptions {
-        jvmTarget = "1.8"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
+        }
     }
     buildFeatures {
         compose = true
@@ -93,4 +97,94 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+}
+
+val launchPackageName = android.defaultConfig.applicationId.orEmpty()
+val debugAdbIp = "192.168.0.196:5555"
+
+fun Project.adbOutput(vararg args: String): Pair<Int, String> {
+    val process = ProcessBuilder("adb", *args).redirectErrorStream(true).start()
+    val output = process.inputStream.bufferedReader().readText()
+    val exitCode = process.waitFor()
+    return exitCode to output.trim()
+}
+
+fun Project.connectedAdbDevices(): List<String> {
+    val (exitCode, output) = adbOutput("devices")
+    if (exitCode != 0) {
+        return emptyList()
+    }
+    return output
+        .lines()
+        .drop(1)
+        .map { it.trim() }
+        .mapNotNull { line ->
+            val pieces = line.split('\t')
+            if (pieces.size >= 2 && pieces[1].trim() == "device") pieces[0].trim() else null
+        }
+        .filter { it.isNotEmpty() }
+}
+
+fun Project.resolveAdbSerial(preferredIp: String): String {
+    val requestedSerial = findProperty("adbSerial")?.toString()?.trim()
+    if (!requestedSerial.isNullOrEmpty()) {
+        return requestedSerial
+    }
+
+    val connected = connectedAdbDevices()
+    if (connected.isNotEmpty()) {
+        return connected.first()
+    }
+
+    logger.lifecycle("No connected ADB device found, connecting to $preferredIp")
+    adbOutput("disconnect", preferredIp)
+    adbOutput("connect", preferredIp)
+
+    val afterConnect = connectedAdbDevices()
+    if (afterConnect.isEmpty()) {
+        throw GradleException("No ADB device available. Connect one and retry.")
+    }
+    return afterConnect.first()
+}
+
+tasks.register("attachDebug") {
+    group = "android"
+    description = "Attach or launch debug on the first available ADB device."
+    dependsOn("assembleDebug")
+
+    doLast {
+        val adbSerial = project.resolveAdbSerial(debugAdbIp)
+        val debugApk = project.layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
+        if (!debugApk.exists()) {
+            throw GradleException("Debug APK not found: ${debugApk.absolutePath}")
+        }
+
+        val (installCode, installOutput) = adbOutput(
+            "-s",
+            adbSerial,
+            "install",
+            "-r",
+            debugApk.absolutePath
+        )
+        if (installCode != 0) {
+            throw GradleException("adb install failed with code $installCode: $installOutput")
+        }
+
+        val (launchCode, launchOutput) = adbOutput(
+            "-s",
+            adbSerial,
+            "shell",
+            "monkey",
+            "-p",
+            launchPackageName,
+            "-c",
+            "android.intent.category.LAUNCHER",
+            "1"
+        )
+        if (launchCode != 0) {
+            throw GradleException("adb launch failed with code $launchCode: $launchOutput")
+        }
+
+        logger.lifecycle("Launched ${launchPackageName} on $adbSerial")
+    }
 }

@@ -11,6 +11,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
 import io.livekit.android.LiveKit
 import space.u2re.service.screen.ConnectRoute
 import space.u2re.service.screen.ConnectScreen
@@ -18,6 +19,8 @@ import space.u2re.service.screen.AutomataSettingsRoute
 import space.u2re.service.screen.AutomataSettingsScreen
 import space.u2re.service.screen.VoiceAssistantRoute
 import space.u2re.service.screen.VoiceAssistantScreen
+import space.u2re.service.screen.ResponsesAssistantRoute
+import space.u2re.service.screen.ResponsesAssistantScreen
 import space.u2re.service.reverse.ReverseGatewayClient
 import space.u2re.service.reverse.ReverseGatewayConfigProvider
 import space.u2re.service.daemon.AutomataDaemonController
@@ -50,6 +53,11 @@ class MainActivity : ComponentActivity() {
                                         navController.navigate(voiceAssistantRoute)
                                     }
                                     },
+                                    navigateToLocalResponses = { localRoute ->
+                                        runOnUiThread {
+                                            navController.navigate(localRoute)
+                                        }
+                                    },
                                     navigateToAutomataSettings = {
                                         runOnUiThread {
                                             navController.navigate(AutomataSettingsRoute)
@@ -68,6 +76,16 @@ class MainActivity : ComponentActivity() {
                                 VoiceAssistantScreen(
                                     viewModel = viewModel,
                                     onEndCall = {
+                                        runOnUiThread { navController.navigateUp() }
+                                    }
+                                )
+                            }
+
+                            composable<ResponsesAssistantRoute> {
+                                val route = it.toRoute<ResponsesAssistantRoute>()
+                                ResponsesAssistantScreen(
+                                    route = route,
+                                    onClose = {
                                         runOnUiThread { navController.navigateUp() }
                                     }
                                 )

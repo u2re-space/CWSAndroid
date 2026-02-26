@@ -1,0 +1,43 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Android: Attach or launch debug (auto device)",
+      "type": "shell",
+      "command": "./gradlew",
+      "args": [":app:attachDebug"],
+      "windows": {
+        "command": "gradlew.bat"
+      },
+      "group": "build",
+      "detail": "Assembles and installs debug APK, then launches on first connected ADB device; falls back to 192.168.0.196:5555."
+    },
+    {
+      "label": "Android: Attach or launch debug (forced target)",
+      "type": "shell",
+      "command": "./gradlew",
+      "args": [":app:attachDebug", "-PadbSerial=${input:androidTargetSerial}"],
+      "windows": {
+        "command": "gradlew.bat"
+      },
+      "group": "build",
+      "detail": "Same as auto-device flow, but forces the given ADB serial/IP:port."
+    },
+    {
+      "label": "Android: Connected devices (ADB)",
+      "type": "shell",
+      "command": "adb",
+      "args": ["devices", "-l"],
+      "group": "build",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "androidTargetSerial",
+      "type": "promptString",
+      "description": "ADB serial/IP:port",
+      "default": "192.168.0.196:5555"
+    }
+  ]
+}

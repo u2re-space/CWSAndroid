@@ -35,6 +35,8 @@ import space.u2re.service.daemon.AutomataDaemonController
 import space.u2re.service.daemon.AutomataSettings
 import space.u2re.service.daemon.AutomataSettingsPatch
 import space.u2re.service.daemon.AutomataSettingsStore
+import space.u2re.service.daemon.normalizeHubDispatchUrl
+import space.u2re.service.daemon.normalizeResponsesEndpoint
 import space.u2re.service.daemon.postJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -57,6 +59,8 @@ fun AutomataSettingsScreen(
     var destinationText by rememberSaveable { mutableStateOf(settings.destinations.joinToString("\n")) }
     var hubDispatchUrl by rememberSaveable { mutableStateOf(settings.hubDispatchUrl) }
     var allowInsecure by rememberSaveable { mutableStateOf(settings.allowInsecureTls) }
+    var apiEndpoint by rememberSaveable { mutableStateOf(settings.apiEndpoint) }
+    var apiKey by rememberSaveable { mutableStateOf(settings.apiKey) }
     var shareTarget by rememberSaveable { mutableStateOf(settings.shareTarget) }
     var clipboardSync by rememberSaveable { mutableStateOf(settings.clipboardSync) }
     var contactsSync by rememberSaveable { mutableStateOf(settings.contactsSync) }
@@ -73,6 +77,7 @@ fun AutomataSettingsScreen(
 
     var message by rememberSaveable { mutableStateOf("Ready") }
     var testingHub by rememberSaveable { mutableStateOf(false) }
+    var testingAi by rememberSaveable { mutableStateOf(false) }
     var saving by rememberSaveable { mutableStateOf(false) }
     var localIps by remember { mutableStateOf(loadLocalIpAddresses()) }
 
@@ -89,6 +94,68 @@ fun AutomataSettingsScreen(
         Text("Automata daemon", style = MaterialTheme.typography.titleLarge)
         Text("Status: running")
         Spacer(Modifier.size(8.dp))
+
+        Text("AI /responses")
+        OutlinedTextField(
+            value = apiEndpoint,
+            onValueChange = { apiEndpoint = it },
+            label = { Text("AI endpoint URL") },
+            modifier = Modifier.fillMaxWidth(),
+            colors = OutlinedTextFieldDefaults.colors()
+        )
+        Spacer(Modifier.size(4.dp))
+        OutlinedTextField(
+            value = apiKey,
+            onValueChange = { apiKey = it },
+            label = { Text("AI API key") },
+            modifier = Modifier.fillMaxWidth(),
+            colors = OutlinedTextFieldDefaults.colors()
+        )
+        Spacer(Modifier.size(8.dp))
+        Button(
+            onClick = {
+                val endpoint = normalizeResponsesEndpoint(apiEndpoint)
+                if (endpoint.isNullOrBlank()) {
+                    message = "Set AI endpoint URL first"
+                    return@Button
+                }
+                if (apiKey.isBlank()) {
+                    message = "Set AI API key first"
+                    return@Button
+                }
+                testingAi = true
+                message = "Testing /responses endpoint…"
+                scope.launch {
+                    try {
+                        val response = withContext(Dispatchers.IO) {
+                            postJson(
+                                endpoint,
+                                mapOf(
+                                    "model" to "gpt-4o-mini",
+                                    "input" to "Reply with one short word: ready"
+                                ),
+                                allowInsecure,
+                                12_000,
+                                mapOf("Authorization" to "Bearer ${apiKey.trim()}")
+                            )
+                        }
+                        if (response.ok) {
+                            message = "AI endpoint test status: ${response.status}"
+                        } else {
+                            message = "AI endpoint test failed: ${response.status}"
+                        }
+                    } catch (e: Exception) {
+                        message = "AI endpoint test failed: ${e.message ?: "error"}"
+                    } finally {
+                        testingAi = false
+                    }
+                }
+            },
+            enabled = !testingAi
+        ) {
+            Text(if (testingAi) "Testing..." else "Test /responses")
+        }
+        Spacer(Modifier.size(16.dp))
 
         Text("Outgoing", style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(
@@ -194,7 +261,7 @@ fun AutomataSettingsScreen(
             Text("Device URLs")
             localIps.forEach { ip ->
                 val base = "http://$ip:${listenPortHttp.ifBlank { "8080" }}"
-                val withDispatch = "$base/core/ops/http/dispatch"
+                val withDispatch = "$base/api/broadcast"
                 val line = "$ip\n- $base/clipboard\n- $base/sms\n- $withDispatch"
                 Text(line)
                 TextButton(
@@ -211,7 +278,7 @@ fun AutomataSettingsScreen(
         Spacer(Modifier.size(16.dp))
         Button(
             onClick = {
-                val url = hubDispatchUrl.trim()
+                val url = normalizeHubDispatchUrl(hubDispatchUrl) ?: hubDispatchUrl.trim()
                 if (url.isBlank()) {
                     message = "Set Hub dispatch URL first"
                     return@Button
@@ -252,7 +319,7 @@ fun AutomataSettingsScreen(
                     listenPortHttp = nextHttp,
                     listenPortHttps = nextHttps,
                     destinations = nextDestinations,
-                    hubDispatchUrl = hubDispatchUrl.trim(),
+                    hubDispatchUrl = normalizeHubDispatchUrl(hubDispatchUrl) ?: hubDispatchUrl.trim(),
                     allowInsecureTls = allowInsecure,
                     shareTarget = shareTarget,
                     clipboardSync = clipboardSync,
@@ -261,6 +328,8 @@ fun AutomataSettingsScreen(
                     syncIntervalSec = nextSyncInterval,
                     authToken = authToken.trim(),
                     tlsEnabled = tlsEnabled,
+                    apiEndpoint = apiEndpoint.trim(),
+                    apiKey = apiKey.trim(),
                     tlsKeystoreAssetPath = tlsKeystorePath.trim(),
                     tlsKeystoreType = tlsKeystoreType.ifBlank { settings.tlsKeystoreType },
                     tlsKeystorePassword = tlsKeystorePassword,

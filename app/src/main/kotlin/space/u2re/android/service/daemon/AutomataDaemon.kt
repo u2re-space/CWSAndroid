@@ -10,7 +10,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.net.URI
 
 class AutomataDaemon(
     private val application: Application,
@@ -169,7 +168,7 @@ class AutomataDaemon(
 
     private suspend fun postClipboardToPeers(text: String) {
         val urls = settings.destinations
-            .mapNotNull { normalizeUrl(it, "/clipboard") }
+            .mapNotNull { normalizeEndpointUrl(it, "/clipboard") }
             .filter { it.isNotBlank() }
         if (urls.isEmpty()) return
 
@@ -180,7 +179,7 @@ class AutomataDaemon(
             }
         }
 
-        val hub = normalizeUrl(settings.hubDispatchUrl, "/core/ops/http/dispatch")
+        val hub = normalizeHubDispatchUrl(settings.hubDispatchUrl)
         if (!hub.isNullOrBlank()) {
             val payload = urls.map { DispatchRequest(url = it, body = text, unencrypted = true) }
             try {
@@ -207,28 +206,6 @@ class AutomataDaemon(
                     DaemonLog.warn("AutomataDaemon", "clipboard broadcast error $url", e)
                 }
             }
-        }
-    }
-
-    private fun normalizeUrl(raw: String, defaultPath: String): String? {
-        val trimmed = raw.trim()
-        if (trimmed.isBlank()) return null
-        val withProto = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-            trimmed
-        } else {
-            "http://$trimmed"
-        }
-        return try {
-            val uri = URI(withProto)
-            val base = if (uri.path.isNullOrBlank() || uri.path == "/") {
-                defaultPath
-            } else {
-                uri.path
-            }
-            val normalized = uri.toString().replace(uri.path, base)
-            normalized
-        } catch (_: Exception) {
-            null
         }
     }
 

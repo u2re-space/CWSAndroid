@@ -20,7 +20,7 @@ class VoiceAssistantViewModel(application: Application, savedStateHandle: SavedS
     val tokenSource: TokenSource
 
     init {
-        val (sandboxId, url, token) = savedStateHandle.toRoute<VoiceAssistantRoute>()
+        val (sandboxId, url, token, _apiEndpoint, _apiKey, _aiAllowInsecureTls) = savedStateHandle.toRoute<VoiceAssistantRoute>()
 
         tokenSource = if (sandboxId.isNotEmpty()) {
             TokenSource.fromSandboxTokenServer(sandboxId = sandboxId).cached()
