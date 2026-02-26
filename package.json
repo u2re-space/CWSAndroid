@@ -6,25 +6,7 @@
     "build": "bash ./scripts/android-build.sh",
     "dev": "./gradlew :app:installDebug",
     "assemble": "./gradlew :app:assembleDebug",
-    "android:devices": "adb devices -l",
-    "android:emu:list": "node -e \"const p=process.env.ANDROID_HOME; const emulatorPath=(p? `${p}/emulator/emulator` : 'emulator'); require('child_process').execFileSync(emulatorPath,['-list-avds'],{stdio:'inherit'});\"",
-    "android:emu:ssh:list": "bash ./scripts/android-emulator-remote.sh list",
-    "android:emu:ssh:start": "bash ./scripts/android-emulator-remote.sh start",
-    "android:emu:ssh:start:connect": "bash ./scripts/android-emulator-remote.sh start-connect",
-    "android:emu:ssh:start:connect:install": "npm run android:emu:ssh:start:connect && npm run dev",
-    "android:emu:ssh:start:connect:assemble": "npm run android:emu:ssh:start:connect && npm run assemble && npm run dev",
-    "android:emu:ssh:start:connect:build": "npm run android:emu:ssh:start:connect && npm run build && npm run dev",
-    "android:emu:ssh:connect": "bash ./scripts/android-emulator-remote.sh connect",
-    "android:emu:ssh:connect:install": "npm run android:emu:ssh:connect && npm run dev",
-    "android:emu:ssh:connect:assemble": "npm run android:emu:ssh:connect && npm run assemble && npm run dev",
-    "android:emu:ssh:connect:build": "npm run android:emu:ssh:connect && npm run build && npm run dev",
-    "android:emu:ssh:status": "bash ./scripts/android-emulator-remote.sh status",
-    "android:adb:remote:connect": "node -e \"const target=process.env.ADB_REMOTE_TARGET||'192.168.0.110:5555'; const { execFileSync } = require('child_process'); execFileSync('adb', ['connect', target], { stdio: 'inherit' });\"",
-    "android:adb:remote:disconnect": "node -e \"const target=process.env.ADB_REMOTE_TARGET||'192.168.0.110:5555'; const { execFileSync } = require('child_process'); execFileSync('adb', ['disconnect', target], { stdio: 'inherit' });\"",
-    "android:devices:remote:only": "node -e \"const target=process.env.ADB_REMOTE_TARGET||'192.168.0.110:5555'; const { execSync } = require('child_process'); const out=execSync('adb devices -l', { encoding:'utf8' }); console.log(out); const lines=out.split(/\\r?\\n/).filter(Boolean); const found=lines.find((line)=>line.startsWith(target)); if (found){ console.log('Found target:', found);} else { console.log('Target not connected:', target); }\"",
-    "android:adb:where": "pwsh -NoProfile -Command \"Get-Command adb -All | Format-Table -AutoSize\"",
-    "android:adb:reset": "pwsh -NoProfile -Command \"adb kill-server; Start-Sleep -Milliseconds 300; adb start-server; adb devices -l\"",
-    "android:log": "adb logcat -s AndroidRuntime:V *:S"
+    "android:devices": "adb devices -l"
   },
   "dependencies": {
     "socket.io-client": "^4.7.5"
