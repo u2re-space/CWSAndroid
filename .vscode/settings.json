@@ -1,5 +1,0 @@
-{
-    "vite.autoStart": false,
-    "powershell.startAutomatically": false,
-    "java.configuration.updateBuildConfiguration": "automatic"
-}
