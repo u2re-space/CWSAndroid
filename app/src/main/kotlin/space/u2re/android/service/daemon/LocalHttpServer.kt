@@ -13,6 +13,8 @@ import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocketFactory
 import javax.net.ssl.TrustManagerFactory
+import space.u2re.service.daemon.SmsItem
+import space.u2re.service.notifications.NotificationEvent
 
 data class TlsConfig(
     val enabled: Boolean,
@@ -29,7 +31,11 @@ data class HttpServerOptions(
     val setClipboardTextSync: (String) -> Unit,
     val setClipboardText: suspend (String) -> Unit,
     val dispatch: suspend (List<DispatchRequest>) -> List<DispatchResult>,
-    val sendSms: suspend (String, String) -> Unit
+    val sendSms: suspend (String, String) -> Unit,
+    val listSms: suspend (Int) -> List<SmsItem>,
+    val listNotifications: suspend (Int) -> List<NotificationEvent>,
+    val listDestinations: () -> List<String>,
+    val speakNotificationText: suspend (String) -> Unit
 )
 
 @Keep
@@ -82,6 +88,75 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                             if (payload.isBlank()) return text(400, "No text provided")
                             return try {
                                 opts.setClipboardTextSync(payload)
+                                json(200, mapOf("ok" to true))
+                            } catch (e: Exception) {
+                                json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
+                            }
+                        }
+                        "/devices" -> {
+                            val list = (opts.listDestinations() + "/sms" + "/notifications").toSet().toList().filter { it.isNotBlank() }
+                            return json(
+                                200,
+                                mapOf(
+                                    "ok" to true,
+                                    "destinations" to list,
+                                    "deviceId" to "android-cws"
+                                )
+                            )
+                        }
+                        "/sms" -> {
+                            if (method == "GET") {
+                                return try {
+                                    val rawLimit = session.parameters["limit"]?.firstOrNull()
+                                    val limit = rawLimit?.toIntOrNull()?.coerceIn(1, 200) ?: 50
+                                    val items = runBlocking { opts.listSms(limit) }
+                                    json(200, mapOf("ok" to true, "items" to items))
+                                } catch (e: Exception) {
+                                    json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
+                                }
+                            }
+                            if (method == "POST") {
+                                val parsed = readBody(session)
+                                val map = gson.fromJson(parsed.ifBlank { "{}" }, object : TypeToken<Map<String, Any>>() {}.type) as? Map<*, *>
+                                val number = map?.get("number")?.toString()?.trim().orEmpty()
+                                val content = map?.get("content")?.toString()?.trim().orEmpty()
+                                if (number.isBlank() || content.isBlank()) {
+                                    return text(400, "number/content required")
+                                }
+                                return try {
+                                    runBlocking { opts.sendSms(number, content) }
+                                    json(200, mapOf("ok" to true))
+                                } catch (e: Exception) {
+                                    json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
+                                }
+                            }
+                            return text(405, "Method Not Allowed")
+                        }
+                        "/notifications" -> {
+                            if (method != "GET") {
+                                return text(405, "Method Not Allowed")
+                            }
+                            return try {
+                                val rawLimit = session.parameters["limit"]?.firstOrNull()
+                                val limit = rawLimit?.toIntOrNull()?.coerceIn(1, 200) ?: 50
+                                val items = runBlocking { opts.listNotifications(limit) }
+                                json(200, mapOf("ok" to true, "items" to items))
+                            } catch (e: Exception) {
+                                json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
+                            }
+                        }
+                        "/notifications/speak" -> {
+                            if (method != "POST") {
+                                return text(405, "Method Not Allowed")
+                            }
+                            return try {
+                                val bodyText = readBody(session)
+                                val parsed = gson.fromJson(bodyText.ifBlank { "{}" }, object : TypeToken<Map<String, Any>>() {}.type) as? Map<*, *>
+                                val message = parsed?.get("text")?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: bodyText.trim()
+                                if (message.isBlank()) {
+                                    return json(400, mapOf("ok" to false, "error" to "text required"))
+                                }
+                                runBlocking { opts.speakNotificationText(message) }
                                 json(200, mapOf("ok" to true))
                             } catch (e: Exception) {
                                 json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))

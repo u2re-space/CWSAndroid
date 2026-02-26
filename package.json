@@ -1,9 +1,9 @@
 {
   "name": "space.u2re.service",
   "version": "1.0.0",
-  "description": "Automata is a multi-device synchronization system with encrypted communication, clipboard sharing, and command forwarding capabilities.",
+  "description": "CWS is a multi-device synchronization system with encrypted communication, clipboard sharing, and command forwarding capabilities.",
   "scripts": {
-    "build": "bash ./scripts/android-build.sh",
+    "build": "./gradlew build",
     "dev": "./gradlew :app:installDebug",
     "assemble": "./gradlew :app:assembleDebug",
     "android:devices": "adb devices -l"

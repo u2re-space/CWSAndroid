@@ -28,21 +28,21 @@ object DaemonLog {
 
     fun debug(tag: String, message: String, throwable: Throwable? = null) {
         if (!shouldLog(Level.DEBUG)) return
-        if (throwable != null) Log.d(tag, format("[automata]", message), throwable) else Log.d(tag, format("[automata]", message))
+        if (throwable != null) Log.d(tag, format("[cws]", message), throwable) else Log.d(tag, format("[cws]", message))
     }
 
     fun info(tag: String, message: String, throwable: Throwable? = null) {
         if (!shouldLog(Level.INFO)) return
-        if (throwable != null) Log.i(tag, format("[automata]", message), throwable) else Log.i(tag, format("[automata]", message))
+        if (throwable != null) Log.i(tag, format("[cws]", message), throwable) else Log.i(tag, format("[cws]", message))
     }
 
     fun warn(tag: String, message: String, throwable: Throwable? = null) {
         if (!shouldLog(Level.WARN)) return
-        if (throwable != null) Log.w(tag, format("[automata]", message), throwable) else Log.w(tag, format("[automata]", message))
+        if (throwable != null) Log.w(tag, format("[cws]", message), throwable) else Log.w(tag, format("[cws]", message))
     }
 
     fun error(tag: String, message: String, throwable: Throwable? = null) {
         if (!shouldLog(Level.ERROR)) return
-        if (throwable != null) Log.e(tag, format("[automata]", message), throwable) else Log.e(tag, format("[automata]", message))
+        if (throwable != null) Log.e(tag, format("[cws]", message), throwable) else Log.e(tag, format("[cws]", message))
     }
 }

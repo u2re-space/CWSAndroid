@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import java.util.UUID
 
-data class AutomataSettings(
+data class Settings(
     val listenPortHttps: Int,
     val listenPortHttp: Int,
     val destinations: List<String>,
@@ -27,7 +27,7 @@ data class AutomataSettings(
     val syncIntervalSec: Int,
 )
 
-data class AutomataSettingsPatch(
+data class SettingsPatch(
     val listenPortHttps: Int? = null,
     val listenPortHttp: Int? = null,
     val destinations: List<String>? = null,
@@ -49,13 +49,14 @@ data class AutomataSettingsPatch(
     val syncIntervalSec: Int? = null,
 )
 
-private const val PREF_NAME = "automata_settings_v1"
+private const val PREF_NAME = "settings_v1"
+private const val PREF_NAME_LEGACY = "settings_v1_legacy"
 
 private fun randomId(): String = "ns-${UUID.randomUUID().toString().replace("-", "").take(8)}"
 
 private fun normalizePort(value: Int, fallback: Int): Int = if (value > 0) value else fallback
 
-private fun defaultSettings(): AutomataSettings = AutomataSettings(
+private fun defaultSettings(): Settings = Settings(
     listenPortHttps = 8443,
     listenPortHttp = 8080,
     destinations = emptyList(),
@@ -77,15 +78,17 @@ private fun defaultSettings(): AutomataSettings = AutomataSettings(
     syncIntervalSec = 60
 )
 
-object AutomataSettingsStore {
+object SettingsStore {
     private val gson = Gson()
 
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
-    fun load(context: Context): AutomataSettings {
+    fun load(context: Context): Settings {
         return try {
-            val raw = prefs(context).getString(PREF_NAME, null) ?: return defaultSettings()
+            val raw = prefs(context).getString(PREF_NAME, null)
+                ?: prefs(context).getString(PREF_NAME_LEGACY, null)
+                ?: return defaultSettings()
             val parsed = gson.fromJson(raw, Map::class.java) as? Map<*, *> ?: emptyMap<String, Any>()
             val merged = defaultSettings().mergeFromMap(parsed)
             // Migration: carry legacy userKey into authToken if needed.
@@ -101,7 +104,7 @@ object AutomataSettingsStore {
         }
     }
 
-    fun save(context: Context, next: AutomataSettings): AutomataSettings {
+    fun save(context: Context, next: Settings): Settings {
         val normalized = next.copy(
             listenPortHttp = normalizePort(next.listenPortHttp, defaultSettings().listenPortHttp),
             listenPortHttps = normalizePort(next.listenPortHttps, defaultSettings().listenPortHttps),
@@ -120,7 +123,7 @@ object AutomataSettingsStore {
         return normalized
     }
 
-    fun update(context: Context, patch: AutomataSettingsPatch): AutomataSettings {
+    fun update(context: Context, patch: SettingsPatch): Settings {
         val current = load(context)
         val merged = current.copy(
             listenPortHttps = patch.listenPortHttps ?: current.listenPortHttps,
@@ -147,7 +150,7 @@ object AutomataSettingsStore {
     }
 }
 
-private fun AutomataSettings.mergeFromMap(raw: Map<*, *>): AutomataSettings {
+private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
     val defaults = defaultSettings()
     return copy(
         listenPortHttps = (raw["listenPortHttps"] as? Number)?.toInt() ?: defaults.listenPortHttps,

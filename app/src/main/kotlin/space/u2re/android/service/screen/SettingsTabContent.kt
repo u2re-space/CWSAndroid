@@ -1,0 +1,389 @@
+package space.u2re.service.screen
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+
+@Composable
+fun GeneralSettingsTab(
+    apiEndpoint: String,
+    onApiEndpointChange: (String) -> Unit,
+    apiKey: String,
+    onApiKeyChange: (String) -> Unit,
+    testingAi: Boolean,
+    onTestAi: () -> Unit
+) {
+    Text(
+        "General",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Text(
+        "AI /responses (GPT)",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    OutlinedTextField(
+        value = apiEndpoint,
+        onValueChange = onApiEndpointChange,
+        label = { Text("AI endpoint URL") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    OutlinedTextField(
+        value = apiKey,
+        onValueChange = onApiKeyChange,
+        label = { Text("AI API key") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    Button(
+        onClick = onTestAi,
+        enabled = !testingAi,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
+        )
+    ) {
+        Text(if (testingAi) "Testing..." else "Test /responses")
+    }
+    Spacer(Modifier.size(16.dp))
+    Text(
+        "Use Access for app/API/ports and device URL access.",
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Text(
+        "Use Hub for dispatch URL and server connectivity tests.",
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Text(
+        "Use Peers for destinations/devices/ids/apps/computers and hub selection from discovered targets.",
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    if (testingAi) {
+        Spacer(Modifier.size(8.dp))
+        Text("AI endpoint test is running...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+fun AccessTab(
+    shareTarget: Boolean,
+    onShareTargetChange: (Boolean) -> Unit,
+    clipboardSync: Boolean,
+    onClipboardSyncChange: (Boolean) -> Unit,
+    contactsSync: Boolean,
+    onContactsSyncChange: (Boolean) -> Unit,
+    smsSync: Boolean,
+    onSmsSyncChange: (Boolean) -> Unit,
+    listenPortHttp: String,
+    onListenPortHttpChange: (String) -> Unit,
+    listenPortHttps: String,
+    onListenPortHttpsChange: (String) -> Unit,
+    authToken: String,
+    onAuthTokenChange: (String) -> Unit,
+    tlsEnabled: Boolean,
+    onTlsEnabledChange: (Boolean) -> Unit,
+    tlsKeystoreType: String,
+    onTlsKeystoreTypeChange: (String) -> Unit,
+    tlsKeystorePath: String,
+    onTlsKeystorePathChange: (String) -> Unit,
+    tlsKeystorePassword: String,
+    onTlsKeystorePasswordChange: (String) -> Unit,
+    localIps: List<String>,
+    onCopyBaseUrl: (String) -> Unit
+) {
+    val switchColors = settingsSwitchColors()
+
+    Text(
+        "Incoming / local server",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    OutlinedTextField(
+        value = listenPortHttp,
+        onValueChange = onListenPortHttpChange,
+        label = { Text("HTTP port") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    OutlinedTextField(
+        value = listenPortHttps,
+        onValueChange = onListenPortHttpsChange,
+        label = { Text("HTTPS port") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    OutlinedTextField(
+        value = authToken,
+        onValueChange = onAuthTokenChange,
+        label = { Text("Auth token") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+
+    Text("TLS enabled", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = tlsEnabled, onCheckedChange = onTlsEnabledChange, colors = switchColors)
+    OutlinedTextField(
+        value = tlsKeystoreType,
+        onValueChange = onTlsKeystoreTypeChange,
+        label = { Text("TLS keystore type") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    OutlinedTextField(
+        value = tlsKeystorePath,
+        onValueChange = onTlsKeystorePathChange,
+        label = { Text("TLS keystore path") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    OutlinedTextField(
+        value = tlsKeystorePassword,
+        onValueChange = onTlsKeystorePasswordChange,
+        label = { Text("TLS keystore password") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+
+    Spacer(Modifier.size(16.dp))
+    Text("Device URLs", color = MaterialTheme.colorScheme.onSurface)
+    if (localIps.isNotEmpty()) {
+        localIps.forEach { ip ->
+            val base = "http://$ip:${listenPortHttp.ifBlank { "8080" }}"
+            Text("$ip")
+            Text("- $base/clipboard")
+            Text("- $base/sms")
+            Text("- $base/api/dispatch")
+            TextButton(onClick = { onCopyBaseUrl(ip) }) {
+                Text("Copy base URL")
+            }
+            Spacer(Modifier.size(8.dp))
+        }
+    }
+
+    Spacer(Modifier.size(16.dp))
+    Text(
+        "App/API access",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Text("Share target", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = shareTarget, onCheckedChange = onShareTargetChange, colors = switchColors)
+    Text("Clipboard sync", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = clipboardSync, onCheckedChange = onClipboardSyncChange, colors = switchColors)
+    Text("Contacts sync", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = contactsSync, onCheckedChange = onContactsSyncChange, colors = switchColors)
+    Text("SMS sync", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = smsSync, onCheckedChange = onSmsSyncChange, colors = switchColors)
+
+}
+
+@Composable
+fun HubTab(
+    hubDispatchUrl: String,
+    onHubDispatchUrlChange: (String) -> Unit,
+    allowInsecure: Boolean,
+    onAllowInsecureChange: (Boolean) -> Unit,
+    testingHub: Boolean,
+    onTestHub: () -> Unit,
+) {
+    val switchColors = settingsSwitchColors()
+    Text(
+        "Hub / dispatch",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    OutlinedTextField(
+        value = hubDispatchUrl,
+        onValueChange = onHubDispatchUrlChange,
+        label = { Text("Hub dispatch URL / selected server") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    Text("Allow insecure TLS", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = allowInsecure, onCheckedChange = onAllowInsecureChange, colors = switchColors)
+    Spacer(Modifier.size(8.dp))
+    Text(
+        "Peers and destination lists are configured on the Peers tab.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    Spacer(Modifier.size(16.dp))
+    Button(
+        onClick = onTestHub,
+        enabled = !testingHub,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
+        )
+    ) {
+        Text(if (testingHub) "Testing..." else "Test Hub")
+    }
+}
+
+@Composable
+fun PeersTab(
+    destinationText: String,
+    onDestinationTextChange: (String) -> Unit,
+    hubDispatchUrl: String,
+    localIps: List<String>,
+    onScanLocal: () -> Unit,
+    onAppendLocalAsDestinations: () -> Unit,
+    onSelectHubFromDestination: (String) -> Unit,
+) {
+    val discoveredTargets = remember(destinationText, localIps, hubDispatchUrl) {
+        buildDiscoveredTargets(destinationText, localIps, hubDispatchUrl)
+    }
+
+    Text(
+        "Destinations",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    OutlinedTextField(
+        value = destinationText,
+        onValueChange = onDestinationTextChange,
+        label = { Text("Destinations: IP / URL / hub:/server:/proxy:/tunnel:") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(
+            onClick = onScanLocal,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            )
+        ) {
+            Text("Scan local")
+        }
+        Button(
+            onClick = onAppendLocalAsDestinations,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            )
+        ) {
+            Text("Add local as destinations")
+        }
+    }
+
+    Spacer(Modifier.size(16.dp))
+    Text(
+        "Available devices/apps/hubs",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    if (discoveredTargets.isEmpty()) {
+        Text("No discovered targets yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    } else {
+        discoveredTargets.forEach { target ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("[${target.kind}] ${target.label}", color = MaterialTheme.colorScheme.onSurface)
+                TextButton(onClick = { onSelectHubFromDestination(target.value) }) {
+                    Text("Use as hub")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ControlCenterTab(
+    isRunning: Boolean,
+    testingDaemon: Boolean,
+    testingStop: Boolean,
+    onRestart: () -> Unit,
+    onStop: () -> Unit,
+    onStart: () -> Unit,
+    syncInterval: String,
+    onSyncIntervalChange: (String) -> Unit,
+) {
+    Text(
+        "Control Center",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Text(
+        "Daemon state: ${if (isRunning) "running" else "stopped"}",
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Spacer(Modifier.size(8.dp))
+
+    OutlinedTextField(
+        value = syncInterval,
+        onValueChange = { onSyncIntervalChange(it.filter { c -> c.isDigit() }) },
+        label = { Text("Sync interval (sec)") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+
+    Spacer(Modifier.size(12.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(
+            onClick = onRestart,
+            enabled = !testingDaemon,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            )
+        ) {
+            Text(if (testingDaemon) "Restarting..." else "Restart daemon")
+        }
+        Button(
+            onClick = onStop,
+            enabled = !testingStop && isRunning,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError
+            )
+        ) {
+            Text(if (testingStop) "Stopping..." else "Stop daemon")
+        }
+        Button(
+            onClick = onStart,
+            enabled = !isRunning,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            )
+        ) {
+            Text("Start daemon")
+        }
+    }
+}
+
+@Composable
+private fun settingsSwitchColors() = SwitchDefaults.colors(
+    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+    checkedTrackColor = MaterialTheme.colorScheme.primary,
+    checkedBorderColor = MaterialTheme.colorScheme.primary,
+    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+    uncheckedBorderColor = MaterialTheme.colorScheme.outline
+)

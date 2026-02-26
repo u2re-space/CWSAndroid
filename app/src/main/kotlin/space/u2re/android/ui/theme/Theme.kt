@@ -17,32 +17,69 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Blue500,
-    secondary = PurpleGrey80,
-    tertiary = Pink80,
-    background = Color(0xFF070707),
-    onBackground = Color(0xFFEEEEEE),
-    surface = Color(0xFF131313),
-    onSurface = Color(0xFFEEEEEE),
-    outline = Color(0xFF202020),
+    primary = GreenAccent,
+    onPrimary = Color(0xFF10210F),
+    primaryContainer = GreenDark,
+    onPrimaryContainer = NeutralText,
+    secondary = GreenDark,
+    onSecondary = NeutralText,
+    secondaryContainer = GreenEarth,
+    onSecondaryContainer = NeutralText,
+    tertiary = GreenLight,
+    onTertiary = Color(0xFF122111),
+    tertiaryContainer = GreenMoss,
+    onTertiaryContainer = NeutralText,
+    background = SurfaceDark,
+    onBackground = NeutralText,
+    surface = SurfaceDark,
+    onSurface = NeutralText,
+    surfaceVariant = SurfaceVariantDark,
+    onSurfaceVariant = NeutralText,
+    surfaceTint = GreenAccent,
+    outline = NeutralGray,
+    outlineVariant = GreenMossBorder,
+    inversePrimary = GreenMain,
+    error = Color(0xFFD92D20),
+    errorContainer = Color(0xFF7A1A1A),
+    onErrorContainer = NeutralText,
+    onError = NeutralText
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Blue500,
-    secondary = PurpleGrey40,
-    tertiary = Pink40,
-    background = Color(0xFFF9F9F6),
-    onBackground = Color(0xFF3B3B3B),
-    surface = Color(0xFFF3F3F1),
-    onSurface = Color(0xFF3B3B3B),
-    outline = Color(0xFFDBDBD8),
+    primary = GreenAccent,
+    onPrimary = Color(0xFF10210F),
+    primaryContainer = GreenFoliage,
+    onPrimaryContainer = Color(0xFF1E3A1D),
+    secondary = GreenMoss,
+    onSecondary = SurfaceLight,
+    secondaryContainer = Color(0xFFD9ECC9),
+    onSecondaryContainer = Color(0xFF1E3A1D),
+    tertiary = GreenDeep,
+    onTertiary = SurfaceLight,
+    tertiaryContainer = Color(0xFFE3F0D6),
+    onTertiaryContainer = Color(0xFF234122),
+    background = SurfaceLight,
+    onBackground = Color(0xFF29402A),
+    surface = SurfaceLight,
+    onSurface = Color(0xFF29402A),
+    surfaceVariant = SurfaceVariantLight,
+    onSurfaceVariant = Color(0xFF516252),
+    surfaceTint = GreenAccent,
+    outline = NeutralGray,
+    outlineVariant = Color(0xFFC4D5C1),
+    inversePrimary = GreenLight,
+    error = Color(0xFFD92D20),
+    errorContainer = Color(0xFFFEE4E2),
+    onErrorContainer = Color(0xFF5C1111),
+    onError = NeutralText
 )
 
 @Composable
+@Suppress("DEPRECATION")
 fun LiveKitVoiceAssistantExampleTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

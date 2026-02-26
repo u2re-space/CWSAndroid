@@ -1,6 +1,7 @@
 package space.u2re.service
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -13,34 +14,57 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import io.livekit.android.LiveKit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import space.u2re.service.screen.ConnectRoute
 import space.u2re.service.screen.ConnectScreen
-import space.u2re.service.screen.AutomataSettingsRoute
-import space.u2re.service.screen.AutomataSettingsScreen
+import space.u2re.service.screen.SettingsRoute
+import space.u2re.service.screen.SettingsScreen
 import space.u2re.service.screen.VoiceAssistantRoute
 import space.u2re.service.screen.VoiceAssistantScreen
 import space.u2re.service.screen.ResponsesAssistantRoute
 import space.u2re.service.screen.ResponsesAssistantScreen
 import space.u2re.service.reverse.ReverseGatewayClient
 import space.u2re.service.reverse.ReverseGatewayConfigProvider
-import space.u2re.service.daemon.AutomataDaemonController
+import space.u2re.service.daemon.DaemonController
+import space.u2re.service.daemon.SettingsStore
 import space.u2re.service.ui.theme.LiveKitVoiceAssistantExampleTheme
 import space.u2re.service.viewmodel.VoiceAssistantViewModel
 import io.livekit.android.util.LoggingLevel
+import space.u2re.service.reverse.AssistantNetworkBridge
 
 class MainActivity : ComponentActivity() {
     private var reverseGateway: ReverseGatewayClient? = null
+    private val assistantBridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LiveKit.loggingLevel = LoggingLevel.DEBUG
-        reverseGateway = ReverseGatewayClient(ReverseGatewayConfigProvider.load(application))
+        val settings = SettingsStore.load(application)
+        val reverseConfig = ReverseGatewayConfigProvider.load(application).copy(deviceId = settings.deviceId)
+        reverseGateway = ReverseGatewayClient(reverseConfig) { messageType, text, _ ->
+            assistantBridgeScope.launch {
+                runCatching {
+                    AssistantNetworkBridge.handleReverseMessage(
+                        context = application,
+                        messageType = messageType,
+                        rawPayload = text,
+                        config = reverseConfig
+                    )
+                }.onFailure { e ->
+                    Log.w("MainActivity", "reverse bridge failed", e)
+                }
+            }
+        }
         reverseGateway?.start()
-        AutomataDaemonController.start(application, this)
+        DaemonController.start(application, this)
 
         setContent {
             val navController = rememberNavController()
-            LiveKitVoiceAssistantExampleTheme(dynamicColor = false) {
+                LiveKitVoiceAssistantExampleTheme(dynamicColor = false) {
                 Scaffold { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding)) {
 
@@ -58,15 +82,15 @@ class MainActivity : ComponentActivity() {
                                             navController.navigate(localRoute)
                                         }
                                     },
-                                    navigateToAutomataSettings = {
+                                    navigateToSettings = {
                                         runOnUiThread {
-                                            navController.navigate(AutomataSettingsRoute)
+                                            navController.navigate(SettingsRoute)
                                         }
                                     }
                                 )
                             }
-                            composable<AutomataSettingsRoute> {
-                                AutomataSettingsScreen(
+                            composable<SettingsRoute> {
+                                SettingsScreen(
                                     navigateBack = { runOnUiThread { navController.navigateUp() } }
                                 )
                             }
@@ -98,8 +122,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        assistantBridgeScope.cancel()
         reverseGateway?.stop()
-        AutomataDaemonController.stop()
+        DaemonController.stop()
         super.onDestroy()
     }
 }

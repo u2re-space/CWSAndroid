@@ -15,15 +15,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.unit.dp
 import io.livekit.android.compose.types.ReceivedMessage
 import io.livekit.android.room.Room
 
 @Composable
 fun ChatLog(room: Room, messages: List<ReceivedMessage>, modifier: Modifier = Modifier) {
+    val surface = MaterialTheme.colorScheme.surface
     Box(modifier = modifier) {
         // Get and display the transcriptions.
         val displayTranscriptions = messages.asReversed()
@@ -44,9 +45,9 @@ fun ChatLog(room: Room, messages: List<ReceivedMessage>, modifier: Modifier = Mo
                 .drawWithContent {
                     // Fade top
                     val colors = arrayOf(
-                        0.0f to Color.Transparent,
-                        0.15f to Color.Black,
-                        1.0f to Color.Black,
+                    0.0f to surface.copy(alpha = 0f),
+                    0.15f to surface.copy(alpha = 0.85f),
+                    1.0f to surface,
                     )
                     drawContent()
                     drawRect(

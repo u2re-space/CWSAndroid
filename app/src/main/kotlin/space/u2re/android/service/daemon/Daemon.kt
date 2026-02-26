@@ -10,12 +10,15 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import space.u2re.service.notifications.NotificationEvent
+import space.u2re.service.notifications.NotificationEventStore
+import space.u2re.service.notifications.NotificationSpeaker
 
-class AutomataDaemon(
+class Daemon(
     private val application: Application,
     private val activityProvider: () -> Activity?
 ) {
-    private var settings: AutomataSettings = AutomataSettingsStore.load(application)
+    private var settings: Settings = SettingsStore.load(application)
     private val scope = CoroutineScope(Dispatchers.IO)
     private var clipboardWatcher: ClipboardSyncWatcher? = null
     private var syncTimer: Job? = null
@@ -36,15 +39,15 @@ class AutomataDaemon(
 
         scope.launch {
             try {
-                settings = AutomataSettingsStore.load(application)
+                settings = SettingsStore.load(application)
                 DaemonLog.setLogLevel(settings.logLevel)
                 startServers(createSyncCallbacks(activity))
                 startClipboardSync()
                 startPeriodicSync()
                 handleShareTarget(activity)
-                DaemonLog.info("AutomataDaemon", "daemon started")
+                DaemonLog.info("Daemon", "daemon started")
             } catch (e: Exception) {
-                DaemonLog.error("AutomataDaemon", "daemon start failed", e)
+                DaemonLog.error("Daemon", "daemon start failed", e)
                 running = false
             }
         }
@@ -61,7 +64,7 @@ class AutomataDaemon(
             httpServerHttps = null
             syncTimer?.cancel()
             syncTimer = null
-            DaemonLog.info("AutomataDaemon", "daemon stopped")
+            DaemonLog.info("Daemon", "daemon stopped")
         }
     }
 
@@ -80,7 +83,11 @@ class AutomataDaemon(
             setClipboardTextSync = syncCallbacks.setClipboardTextSync,
             setClipboardText = syncCallbacks.setClipboardText,
             dispatch = syncCallbacks.dispatch,
-            sendSms = syncCallbacks.sendSms
+            sendSms = syncCallbacks.sendSms,
+            listSms = syncCallbacks.listSms,
+            listNotifications = syncCallbacks.listNotifications,
+            listDestinations = { settings.destinations },
+            speakNotificationText = syncCallbacks.speakNotificationText
         )
 
         val httpsOptions = commonOptions.copy(
@@ -97,7 +104,7 @@ class AutomataDaemon(
         httpServerHttps = LocalHttpServer(httpsOptions)
         httpServerHttp?.start()
         httpServerHttps?.start()
-        DaemonLog.info("AutomataDaemon", "http servers started")
+        DaemonLog.info("Daemon", "http servers started")
     }
 
     private fun startClipboardSync() {
@@ -129,14 +136,14 @@ class AutomataDaemon(
         try {
             if (activity != null && settings.contactsSync) {
                 val contacts = readContacts(activity)
-                DaemonLog.info("AutomataDaemon", "synced contacts ${contacts.size}")
+                DaemonLog.info("Daemon", "synced contacts ${contacts.size}")
             }
             if (activity != null && settings.smsSync) {
                 val sms = readSmsInbox(activity)
-                DaemonLog.info("AutomataDaemon", "synced sms ${sms.size}")
+                DaemonLog.info("Daemon", "synced sms ${sms.size}")
             }
         } catch (e: Exception) {
-            DaemonLog.warn("AutomataDaemon", "sync tick failed", e)
+            DaemonLog.warn("Daemon", "sync tick failed", e)
         }
     }
 
@@ -154,6 +161,16 @@ class AutomataDaemon(
             sendSms = { number, content ->
                 if (activity == null) throw IllegalStateException("activity is unavailable")
                 sendSmsAndroid(activity, number, content)
+            },
+            listSms = { limit ->
+                if (activity == null) return@SyncCallbacks emptyList()
+                readSmsInbox(activity, limit)
+            },
+            listNotifications = { limit ->
+                NotificationEventStore.snapshot(limit)
+            },
+            speakNotificationText = { text ->
+                NotificationSpeaker.speak(application, text)
             }
         )
     }
@@ -162,7 +179,7 @@ class AutomataDaemon(
         try {
             clipboardTextFallback.setTextSilentlySync(text)
         } catch (e: Exception) {
-            DaemonLog.warn("AutomataDaemon", "setClipboardBestEffort failed", e)
+            DaemonLog.warn("Daemon", "setClipboardBestEffort failed", e)
         }
     }
 
@@ -185,12 +202,12 @@ class AutomataDaemon(
             try {
                 val result = postJson(hub, mapOf("requests" to payload), settings.allowInsecureTls, 10_000)
                 if (result.ok) {
-                    DaemonLog.info("AutomataDaemon", "hub dispatch ok")
+                    DaemonLog.info("Daemon", "hub dispatch ok")
                 } else {
-                    DaemonLog.warn("AutomataDaemon", "hub dispatch failed ${result.status}")
+                    DaemonLog.warn("Daemon", "hub dispatch failed ${result.status}")
                 }
             } catch (e: Exception) {
-                DaemonLog.warn("AutomataDaemon", "hub dispatch error", e)
+                DaemonLog.warn("Daemon", "hub dispatch error", e)
             }
             return
         }
@@ -200,10 +217,10 @@ class AutomataDaemon(
                 try {
                     val result = postText(url, text, headers, settings.allowInsecureTls, 10_000)
                     if (!result.ok) {
-                        DaemonLog.warn("AutomataDaemon", "clipboard broadcast failed ${result.status} $url")
+                        DaemonLog.warn("Daemon", "clipboard broadcast failed ${result.status} $url")
                     }
                 } catch (e: Exception) {
-                    DaemonLog.warn("AutomataDaemon", "clipboard broadcast error $url", e)
+                    DaemonLog.warn("Daemon", "clipboard broadcast error $url", e)
                 }
             }
         }
@@ -226,7 +243,7 @@ class AutomataDaemon(
                 setClipboardBestEffort(text)
             }
             postClipboardToPeers(text)
-            DaemonLog.info("AutomataDaemon", "handled share/process-text intent")
+            DaemonLog.info("Daemon", "handled share/process-text intent")
         }
     }
 
@@ -255,6 +272,9 @@ class AutomataDaemon(
         val setClipboardTextSync: (String) -> Unit,
         val setClipboardText: suspend (String) -> Unit,
         val dispatch: suspend (List<DispatchRequest>) -> List<DispatchResult>,
-        val sendSms: suspend (String, String) -> Unit
+        val sendSms: suspend (String, String) -> Unit,
+        val listSms: suspend (Int) -> List<SmsItem>,
+        val listNotifications: suspend (Int) -> List<NotificationEvent>,
+        val speakNotificationText: suspend (String) -> Unit
     )
 }

@@ -40,7 +40,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.takeOrElse
@@ -74,13 +73,13 @@ fun LKTextField(
     minLines: Int = 1,
     maxLines: Int = Int.MAX_VALUE,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-    shape: Shape = TextFieldDefaults.filledShape,
+    shape: Shape = TextFieldDefaults.shape,
     colors: TextFieldColors = TextFieldDefaults.colors(),
     contentPadding: PaddingValues = PaddingValues(0.dp)
 ) {
     // If color is not provided via the text style, use content color as a default
     val textColor = textStyle.color.takeOrElse {
-        Color.White
+        MaterialTheme.colorScheme.onSurface
     }
     val mergedTextStyle = textStyle.merge(TextStyle(color = textColor))
 
@@ -131,7 +130,7 @@ fun DecoratedTextFieldPreview() {
 
     Column(
         modifier = Modifier
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.surface)
             .fillMaxSize()
             .padding(16.dp)
     ) {
@@ -139,10 +138,10 @@ fun DecoratedTextFieldPreview() {
             value = message,
             onValueChange = { message = it },
             colors = TextFieldDefaults.colors().copy(
-                disabledTextColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                disabledIndicatorColor = Color.Transparent
+                disabledTextColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                focusedIndicatorColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                unfocusedIndicatorColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                disabledIndicatorColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f)
             ),
             modifier = Modifier
                 .fillMaxWidth()

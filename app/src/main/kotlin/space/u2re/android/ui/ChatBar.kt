@@ -23,14 +23,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
-import space.u2re.service.ui.theme.Blue500
 
 @Composable
 fun ChatBar(
@@ -40,8 +38,8 @@ fun ChatBar(
     modifier: Modifier = Modifier
 ) {
     val sendButtonColors = ButtonDefaults.buttonColors(
-        containerColor = Blue500,
-        contentColor = Color.White
+        containerColor = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary
     )
     ConstraintLayout(
         modifier = Modifier
@@ -59,12 +57,12 @@ fun ChatBar(
             onValueChange = onValueChange,
             textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface),
             colors = TextFieldDefaults.colors().copy(
-                disabledTextColor = Color.Transparent,
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                disabledIndicatorColor = Color.Transparent,
+                disabledTextColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                focusedIndicatorColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                unfocusedIndicatorColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                disabledIndicatorColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f),
             ),
             maxLines = 3,
             placeholder = {
@@ -98,7 +96,11 @@ fun ChatBar(
                     height = Dimension.preferredValue(32.dp)
                 }
         ) {
-            Icon(Icons.Default.ArrowUpward, contentDescription = "Send Message", tint = if(value.isEmpty()) MaterialTheme.colorScheme.onSurface else Color.White)
+            Icon(
+                Icons.Default.ArrowUpward,
+                contentDescription = "Send Message",
+                tint = if (value.isNotEmpty()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 

@@ -34,7 +34,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ChainStyle
@@ -264,13 +263,13 @@ fun VoiceAssistant(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(end = 8.dp, bottom = 8.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f), RoundedCornerShape(50))
                         .fillMaxWidth(.35f)
                         .aspectRatio(1f)
                 ) {
                     Icon(
                         Icons.Default.Cameraswitch,
-                        tint = Color.White.copy(alpha = 0.7f),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                         contentDescription = "Flip Camera",
                         modifier = Modifier.fillMaxSize(0.6f)
                     )

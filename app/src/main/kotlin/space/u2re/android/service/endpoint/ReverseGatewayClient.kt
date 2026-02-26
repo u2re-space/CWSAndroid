@@ -16,6 +16,7 @@ import okhttp3.Response
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
+import com.google.gson.Gson
 
 class ReverseGatewayClient(
     private val config: ReverseGatewayConfig,
@@ -36,9 +37,12 @@ class ReverseGatewayClient(
         socket?.send(message)
     }
 
-    fun sendRelay(type: String, data: Any?) {
+    fun sendRelay(type: String, data: Any?, target: String? = null, route: String? = null, namespace: String? = null) {
         val payload = mapOf(
             "type" to type,
+            "target" to (target ?: "broadcast"),
+            "route" to (route ?: "local"),
+            "namespace" to (namespace ?: config.namespace),
             "data" to data,
             "ts" to System.currentTimeMillis()
         )
@@ -91,11 +95,13 @@ class ReverseGatewayClient(
                     while (isActive) {
                         delay(20_000)
                         webSocket.send(
-                            """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","ts":${System.currentTimeMillis()}}"""
+                            """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(config.roles)}","ts":${System.currentTimeMillis()}}"""
                         )
                     }
                 }
-                webSocket.send("""{"type":"hello","deviceId":"${escapeJson(config.deviceId)}"}""")
+                webSocket.send(
+                    """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(config.roles)}"}"""
+                )
                 Log.i(LOG_TAG, "Reverse gateway connected");
             }
 
@@ -121,7 +127,10 @@ class ReverseGatewayClient(
                                 val type = inner["type"] as? String
                                 if (type != null) messageType = type
                                 val body = inner["body"] ?: inner["data"] ?: inner["text"] ?: inner
-                                body?.toString() ?: "{}"
+                        when (body) {
+                            is String -> body
+                            else -> gson.toJson(body)
+                        }
                             }
                             else -> inner?.toString() ?: "{}"
                         }
@@ -167,11 +176,13 @@ class ReverseGatewayClient(
         val encodedUserId = encodeQuery(config.userId)
         val encodedUserKey = encodeQuery(config.userKey)
         val encodedDeviceId = encodeQuery(config.deviceId)
+        val encodedNamespace = encodeQuery(config.namespace.ifBlank { "default" })
+        val encodedRoles = encodeQuery(config.roles.ifBlank { "endpoint,peer,node" })
         val normalized = config.endpointUrl.trimEnd('/')
             .replace("https://", "wss://")
             .replace("http://", "ws://")
         if (normalized.isBlank()) return null
-        val url = "$normalized/ws?mode=reverse&userId=$encodedUserId&userKey=$encodedUserKey&deviceId=$encodedDeviceId"
+        val url = "$normalized/ws?mode=reverse&userId=$encodedUserId&userKey=$encodedUserKey&deviceId=$encodedDeviceId&namespace=$encodedNamespace&roles=$encodedRoles"
         return Request.Builder().url(url).build()
     }
 
@@ -187,5 +198,6 @@ class ReverseGatewayClient(
 
     companion object {
         private const val LOG_TAG = "ReverseGateway"
+        private val gson = Gson()
     }
 }

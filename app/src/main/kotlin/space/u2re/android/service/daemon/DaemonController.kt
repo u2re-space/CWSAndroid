@@ -3,13 +3,13 @@ package space.u2re.service.daemon
 import android.app.Application
 import android.app.Activity
 
-object AutomataDaemonController {
-    private var daemon: AutomataDaemon? = null
+object DaemonController {
+    private var daemon: Daemon? = null
 
-    fun start(application: Application, activity: Activity? = null): AutomataDaemon {
+    fun start(application: Application, activity: Activity? = null): Daemon {
         val existing = daemon
         if (existing != null) return existing
-        val next = AutomataDaemon(application) { activity }
+        val next = Daemon(application) { activity }
         daemon = next
         next.start()
         return next
@@ -27,5 +27,5 @@ object AutomataDaemonController {
         }
     }
 
-    fun current(): AutomataDaemon? = daemon
+    fun current(): Daemon? = daemon
 }

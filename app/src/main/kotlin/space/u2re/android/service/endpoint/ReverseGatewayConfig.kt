@@ -12,7 +12,9 @@ data class ReverseGatewayConfig(
     val deviceId: String,
     val masterKey: String,
     val signingPrivateKeyPem: String,
-    val peerPublicKeyPem: String
+    val peerPublicKeyPem: String,
+    val namespace: String = "default",
+    val roles: String = "endpoint,peer,node"
 )
 
 object ReverseGatewayConfigProvider {
@@ -25,6 +27,8 @@ object ReverseGatewayConfigProvider {
     private const val PREF_MASTER_KEY = "reverse_master_key"
     private const val PREF_SIGNING_KEY = "reverse_signing_private_key"
     private const val PREF_PEER_PUBLIC_KEY = "reverse_peer_public_key"
+    private const val PREF_NAMESPACE = "reverse_namespace"
+    private const val PREF_ROLES = "reverse_roles"
 
     fun load(application: Application): ReverseGatewayConfig {
         val prefs = application.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -40,7 +44,9 @@ object ReverseGatewayConfigProvider {
             deviceId = deviceId,
             masterKey = prefs.getString(PREF_MASTER_KEY, "") ?: "",
             signingPrivateKeyPem = prefs.getString(PREF_SIGNING_KEY, "") ?: "",
-            peerPublicKeyPem = prefs.getString(PREF_PEER_PUBLIC_KEY, "") ?: ""
+            peerPublicKeyPem = prefs.getString(PREF_PEER_PUBLIC_KEY, "") ?: "",
+            namespace = prefs.getString(PREF_NAMESPACE, "default") ?: "default",
+            roles = prefs.getString(PREF_ROLES, "endpoint,peer,node") ?: "endpoint,peer,node"
         )
     }
 
