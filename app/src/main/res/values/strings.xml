@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">CWS</string>
+    <string name="accessibility_service_name">CWS clipboard accessibility service</string>
+    <string name="floating_button_service_name">CWS floating control</string>
 </resources>

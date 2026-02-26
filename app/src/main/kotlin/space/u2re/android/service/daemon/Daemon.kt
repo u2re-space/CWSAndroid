@@ -22,6 +22,7 @@ class Daemon(
     private val scope = CoroutineScope(Dispatchers.IO)
     private var clipboardWatcher: ClipboardSyncWatcher? = null
     private var syncTimer: Job? = null
+    private var clipboardFallbackTimer: Job? = null
     private var httpServerHttp: LocalHttpServer? = null
     private var httpServerHttps: LocalHttpServer? = null
     private val clipboardTextFallback = ClipboardSyncWatcher(application, ::setClipboardBestEffort)
@@ -43,6 +44,7 @@ class Daemon(
                 DaemonLog.setLogLevel(settings.logLevel)
                 startServers(createSyncCallbacks(activity))
                 startClipboardSync()
+                startClipboardPollingFallback()
                 startPeriodicSync()
                 handleShareTarget(activity)
                 DaemonLog.info("Daemon", "daemon started")
@@ -64,6 +66,8 @@ class Daemon(
             httpServerHttps = null
             syncTimer?.cancel()
             syncTimer = null
+            clipboardFallbackTimer?.cancel()
+            clipboardFallbackTimer = null
             DaemonLog.info("Daemon", "daemon stopped")
         }
     }
@@ -100,11 +104,45 @@ class Daemon(
             )
         )
 
-        httpServerHttp = LocalHttpServer(commonOptions)
-        httpServerHttps = LocalHttpServer(httpsOptions)
-        httpServerHttp?.start()
-        httpServerHttps?.start()
-        DaemonLog.info("Daemon", "http servers started")
+        httpServerHttp = startLocalServer(commonOptions, "HTTP")
+
+        httpServerHttps = if (settings.tlsEnabled) {
+            if (settings.listenPortHttps == settings.listenPortHttp) {
+                DaemonLog.warn(
+                    "Daemon",
+                    "TLS port matches HTTP port (${settings.listenPortHttp}); skipping HTTPS listener to avoid bind conflict"
+                )
+                null
+            } else {
+                startLocalServer(httpsOptions, "HTTPS")
+            }
+        } else {
+            null
+        }
+
+        if (httpServerHttp == null && httpServerHttps == null) {
+            throw IllegalStateException("Both HTTP and HTTPS local servers failed to start")
+        }
+
+        DaemonLog.info(
+            "Daemon",
+            "http servers started (http=${httpServerHttp != null}, https=${httpServerHttps != null})"
+        )
+    }
+
+    private fun startLocalServer(options: HttpServerOptions, label: String): LocalHttpServer? {
+        return try {
+            val server = LocalHttpServer(options)
+            server.start()
+            server
+        } catch (e: Exception) {
+            DaemonLog.warn(
+                "Daemon",
+                "$label local server failed on port=${options.port}",
+                e
+            )
+            null
+        }
     }
 
     private fun startClipboardSync() {
@@ -116,6 +154,36 @@ class Daemon(
         }
         clipboardWatcher = watcher
         watcher.start()
+    }
+
+    private fun startClipboardPollingFallback() {
+        if (!settings.clipboardSync) return
+        clipboardFallbackTimer?.cancel()
+        val intervalMs = (maxOf(1, settings.clipboardSyncIntervalSec) * 1000L).coerceAtLeast(1_000L)
+        clipboardFallbackTimer = scope.launch {
+            var lastSnapshot = clipboardTextFallback.lastSeenText().ifBlank {
+                clipboardTextFallback.readCurrentText().trim()
+            }
+            while (isActive) {
+                delay(intervalMs)
+                val snapshot = clipboardTextFallback.readCurrentText().trim()
+                if (snapshot.isNotBlank() && snapshot != lastSnapshot) {
+                    lastSnapshot = snapshot
+                    postClipboardToPeers(snapshot)
+                }
+            }
+        }
+    }
+
+    fun forceClipboardSyncNow() {
+        scope.launch {
+            val text = clipboardTextFallback.readCurrentText().trim()
+            if (text.isBlank()) {
+                DaemonLog.warn("Daemon", "manual clipboard sync skipped: clipboard is empty")
+                return@launch
+            }
+            postClipboardToPeers(text)
+        }
     }
 
     private fun startPeriodicSync() {
@@ -185,7 +253,7 @@ class Daemon(
 
     private suspend fun postClipboardToPeers(text: String) {
         val urls = settings.destinations
-            .mapNotNull { normalizeEndpointUrl(it, "/clipboard") }
+            .mapNotNull { normalizeDestinationUrl(it, "/clipboard") }
             .filter { it.isNotBlank() }
         if (urls.isEmpty()) return
 
@@ -198,9 +266,19 @@ class Daemon(
 
         val hub = normalizeHubDispatchUrl(settings.hubDispatchUrl)
         if (!hub.isNullOrBlank()) {
-            val payload = urls.map { DispatchRequest(url = it, body = text, unencrypted = true) }
+            val payload = urls.map {
+                DispatchRequest(
+                    url = it,
+                    body = text,
+                    unencrypted = it.startsWith("http://")
+                )
+            }
+            val requestBody = buildMap<String, Any> {
+                put("broadcastForceHttps", !settings.allowInsecureTls)
+                put("requests", payload)
+            }
             try {
-                val result = postJson(hub, mapOf("requests" to payload), settings.allowInsecureTls, 10_000)
+                val result = postJson(hub, requestBody, settings.allowInsecureTls, 10_000)
                 if (result.ok) {
                     DaemonLog.info("Daemon", "hub dispatch ok")
                 } else {

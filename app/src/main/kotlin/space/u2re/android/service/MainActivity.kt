@@ -1,5 +1,8 @@
 package space.u2re.service
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -8,6 +11,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -30,13 +35,19 @@ import space.u2re.service.screen.ResponsesAssistantScreen
 import space.u2re.service.reverse.ReverseGatewayClient
 import space.u2re.service.reverse.ReverseGatewayConfigProvider
 import space.u2re.service.daemon.DaemonController
+import space.u2re.service.daemon.DaemonForegroundService
 import space.u2re.service.daemon.SettingsStore
 import space.u2re.service.ui.theme.LiveKitVoiceAssistantExampleTheme
 import space.u2re.service.viewmodel.VoiceAssistantViewModel
 import io.livekit.android.util.LoggingLevel
 import space.u2re.service.reverse.AssistantNetworkBridge
+import space.u2re.service.overlay.FloatingButtonService
 
 class MainActivity : ComponentActivity() {
+    private companion object {
+        const val REQUEST_POST_NOTIFICATIONS = 7010
+    }
+
     private var reverseGateway: ReverseGatewayClient? = null
     private val assistantBridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -44,7 +55,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         LiveKit.loggingLevel = LoggingLevel.DEBUG
         val settings = SettingsStore.load(application)
-        val reverseConfig = ReverseGatewayConfigProvider.load(application).copy(deviceId = settings.deviceId)
+        val baseReverseConfig = ReverseGatewayConfigProvider.load(application).copy(deviceId = settings.deviceId)
+        val reverseConfig = baseReverseConfig.copy(
+            endpointUrl = baseReverseConfig.endpointUrl.ifBlank { settings.hubDispatchUrl },
+            userId = baseReverseConfig.userId.ifBlank { settings.deviceId },
+            userKey = baseReverseConfig.userKey.ifBlank { settings.authToken }
+        )
         reverseGateway = ReverseGatewayClient(reverseConfig) { messageType, text, _ ->
             assistantBridgeScope.launch {
                 runCatching {
@@ -60,7 +76,24 @@ class MainActivity : ComponentActivity() {
             }
         }
         reverseGateway?.start()
-        DaemonController.start(application, this)
+        if (settings.runDaemonForeground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val notificationPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            if (notificationPermission != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    REQUEST_POST_NOTIFICATIONS
+                )
+            }
+        }
+        if (settings.runDaemonForeground) {
+            DaemonForegroundService.start(this)
+        } else {
+            DaemonController.start(application, this)
+        }
+        if (settings.showFloatingButton) {
+            FloatingButtonService.start(this)
+        }
 
         setContent {
             val navController = rememberNavController()
@@ -124,7 +157,11 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         assistantBridgeScope.cancel()
         reverseGateway?.stop()
-        DaemonController.stop()
+        val latestSettings = SettingsStore.load(application)
+        if (!latestSettings.runDaemonForeground) {
+            DaemonController.stop()
+        }
+        FloatingButtonService.stop(this)
         super.onDestroy()
     }
 }

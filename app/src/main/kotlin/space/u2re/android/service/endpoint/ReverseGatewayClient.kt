@@ -13,6 +13,7 @@ import okhttp3.Request
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.Response
+import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
@@ -22,15 +23,18 @@ class ReverseGatewayClient(
     private val config: ReverseGatewayConfig,
     private val onMessage: (String, String, String?) -> Unit = { _, _, _ -> }
 ) {
+    private val configuredKeepAliveMs = config.keepAliveIntervalMs.coerceAtLeast(1_000L)
+    private val configuredReconnectMs = config.reconnectDelayMs.coerceAtLeast(500L)
+
     private val scope = CoroutineScope(Dispatchers.IO)
     private val client = OkHttpClient.Builder()
-        .pingInterval(30, TimeUnit.SECONDS)
+        .pingInterval(configuredKeepAliveMs, TimeUnit.MILLISECONDS)
         .build()
 
     private var socket: WebSocket? = null
     private var heartbeatJob: Job? = null
     private var reconnectJob: Job? = null
-    private var reconnectDelayMs = 1000L
+    private var reconnectDelayMs = configuredReconnectMs
     private var running = false
 
     fun send(message: String) {
@@ -57,8 +61,13 @@ class ReverseGatewayClient(
 
     fun start() {
         if (running) return;
-        if (config.endpointUrl.isBlank() || config.userId.isBlank() || config.userKey.isBlank()) {
-            Log.w(LOG_TAG, "Reverse gateway skipped: missing config");
+        val missingConfig = listOfNotNull(
+            if (config.endpointUrl.isBlank()) "endpointUrl" else null,
+            if (config.userId.isBlank()) "userId" else null,
+            if (config.userKey.isBlank()) "userKey" else null
+        )
+        if (missingConfig.isNotEmpty()) {
+            Log.w(LOG_TAG, "Reverse gateway skipped: missing config (${missingConfig.joinToString(", ")})");
             return;
         }
         if (!config.enabled) {
@@ -89,11 +98,11 @@ class ReverseGatewayClient(
         };
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                reconnectDelayMs = 1000L
+                reconnectDelayMs = configuredReconnectMs
                 heartbeatJob?.cancel()
                 heartbeatJob = scope.launch {
                     while (isActive) {
-                        delay(20_000)
+                        delay(configuredKeepAliveMs)
                         webSocket.send(
                             """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(config.roles)}","ts":${System.currentTimeMillis()}}"""
                         )
@@ -177,13 +186,50 @@ class ReverseGatewayClient(
         val encodedUserKey = encodeQuery(config.userKey)
         val encodedDeviceId = encodeQuery(config.deviceId)
         val encodedNamespace = encodeQuery(config.namespace.ifBlank { "default" })
-        val encodedRoles = encodeQuery(config.roles.ifBlank { "endpoint,peer,node" })
-        val normalized = config.endpointUrl.trimEnd('/')
-            .replace("https://", "wss://")
-            .replace("http://", "ws://")
-        if (normalized.isBlank()) return null
-        val url = "$normalized/ws?mode=reverse&userId=$encodedUserId&userKey=$encodedUserKey&deviceId=$encodedDeviceId&namespace=$encodedNamespace&roles=$encodedRoles"
-        return Request.Builder().url(url).build()
+        val encodedRoles = encodeQuery(config.roles.ifBlank { "endpoint,peer,node,app" })
+        val trimmed = config.endpointUrl.trim().trimStart('/')
+        if (trimmed.isBlank()) return null
+
+        val websocketBase = when {
+            trimmed.startsWith("ws://") || trimmed.startsWith("wss://") -> trimmed
+            trimmed.startsWith("http://") -> trimmed.replaceFirst("http://", "ws://")
+            trimmed.startsWith("https://") -> trimmed.replaceFirst("https://", "wss://")
+            else -> "wss://$trimmed"
+        }.trimEnd('/')
+        val parsed = try {
+            URI(websocketBase)
+        } catch (_: Exception) {
+            return null
+        }
+
+        val rawPath = parsed.path.orEmpty()
+        val hasWsPath = Regex("/ws(?:[/?#]|$)").containsMatchIn(rawPath)
+        val wsPath = when {
+            hasWsPath -> rawPath.ifBlank { "/ws" }
+            rawPath.isBlank() || rawPath == "/" -> "/ws"
+            rawPath == "/api/broadcast" || rawPath.startsWith("/api/broadcast/") -> "/ws"
+            else -> {
+                val normalized = if (rawPath.endsWith("/")) rawPath else "$rawPath/"
+                "${normalized}ws"
+            }
+        }
+        val websocketUrl = URI(
+            parsed.scheme,
+            parsed.userInfo,
+            parsed.host,
+            parsed.port,
+            wsPath,
+            null,
+            null
+        ).toString()
+
+        val url = "$websocketUrl?mode=reverse&userId=$encodedUserId&userKey=$encodedUserKey&deviceId=$encodedDeviceId&namespace=$encodedNamespace&roles=$encodedRoles"
+
+        return try {
+            Request.Builder().url(url).build()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun encodeQuery(value: String): String {

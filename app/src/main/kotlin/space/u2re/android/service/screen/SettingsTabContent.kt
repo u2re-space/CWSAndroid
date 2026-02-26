@@ -89,6 +89,16 @@ fun AccessTab(
     onShareTargetChange: (Boolean) -> Unit,
     clipboardSync: Boolean,
     onClipboardSyncChange: (Boolean) -> Unit,
+    useAccessibilityService: Boolean,
+    onUseAccessibilityServiceChange: (Boolean) -> Unit,
+    runDaemonOnBoot: Boolean,
+    onRunDaemonOnBootChange: (Boolean) -> Unit,
+    showFloatingButton: Boolean,
+    onShowFloatingButtonChange: (Boolean) -> Unit,
+    overlayPermissionGranted: Boolean,
+    onOpenOverlaySettings: () -> Unit,
+    accessibilityServiceEnabled: Boolean,
+    onOpenAccessibilitySettings: () -> Unit,
     contactsSync: Boolean,
     onContactsSyncChange: (Boolean) -> Unit,
     smsSync: Boolean,
@@ -191,6 +201,33 @@ fun AccessTab(
     Switch(checked = shareTarget, onCheckedChange = onShareTargetChange, colors = switchColors)
     Text("Clipboard sync", color = MaterialTheme.colorScheme.onSurface)
     Switch(checked = clipboardSync, onCheckedChange = onClipboardSyncChange, colors = switchColors)
+    Spacer(Modifier.size(12.dp))
+    Text("Use AccessibilityService for clipboard boost", color = MaterialTheme.colorScheme.onSurface)
+    Switch(
+        checked = useAccessibilityService,
+        onCheckedChange = onUseAccessibilityServiceChange,
+        colors = switchColors
+    )
+    Text(
+        "Service status in system: ${if (accessibilityServiceEnabled) "enabled" else "disabled"}",
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    TextButton(onClick = onOpenAccessibilitySettings) {
+        Text("Open accessibility settings")
+    }
+    Spacer(Modifier.size(12.dp))
+    Text("Show floating control button", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = showFloatingButton, onCheckedChange = onShowFloatingButtonChange, colors = switchColors)
+    Text(
+        "Overlay permission: ${if (overlayPermissionGranted) "granted" else "not granted"}",
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    TextButton(onClick = onOpenOverlaySettings) {
+        Text("Open overlay settings")
+    }
+    Spacer(Modifier.size(12.dp))
+    Text("Start daemon on boot", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = runDaemonOnBoot, onCheckedChange = onRunDaemonOnBootChange, colors = switchColors)
     Text("Contacts sync", color = MaterialTheme.colorScheme.onSurface)
     Switch(checked = contactsSync, onCheckedChange = onContactsSyncChange, colors = switchColors)
     Text("SMS sync", color = MaterialTheme.colorScheme.onSurface)
@@ -323,6 +360,11 @@ fun ControlCenterTab(
     onStart: () -> Unit,
     syncInterval: String,
     onSyncIntervalChange: (String) -> Unit,
+    clipboardSyncInterval: String,
+    onClipboardSyncIntervalChange: (String) -> Unit,
+    runDaemonForeground: Boolean,
+    onRunDaemonForegroundChange: (Boolean) -> Unit,
+    onForceClipboardSync: () -> Unit,
 ) {
     Text(
         "Control Center",
@@ -338,9 +380,25 @@ fun ControlCenterTab(
     OutlinedTextField(
         value = syncInterval,
         onValueChange = { onSyncIntervalChange(it.filter { c -> c.isDigit() }) },
-        label = { Text("Sync interval (sec)") },
+        label = { Text("Background contacts/sms interval (sec)") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
+    )
+
+    Spacer(Modifier.size(12.dp))
+    OutlinedTextField(
+        value = clipboardSyncInterval,
+        onValueChange = { onClipboardSyncIntervalChange(it.filter { c -> c.isDigit() }) },
+        label = { Text("Clipboard polling interval (sec)") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(12.dp))
+    Text("Keep daemon as foreground service", color = MaterialTheme.colorScheme.onSurface)
+    Switch(
+        checked = runDaemonForeground,
+        onCheckedChange = onRunDaemonForegroundChange,
+        colors = settingsSwitchColors()
     )
 
     Spacer(Modifier.size(12.dp))
@@ -375,6 +433,16 @@ fun ControlCenterTab(
         ) {
             Text("Start daemon")
         }
+    }
+    Spacer(Modifier.size(12.dp))
+    Button(
+        onClick = onForceClipboardSync,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.tertiary,
+            contentColor = MaterialTheme.colorScheme.onTertiary
+        )
+    ) {
+        Text("Force clipboard sync now")
     }
 }
 

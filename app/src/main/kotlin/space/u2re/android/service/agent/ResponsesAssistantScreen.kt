@@ -27,14 +27,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import space.u2re.service.agent.parseResponsesText
+import space.u2re.service.agent.sendResponsesRequest
 import space.u2re.service.daemon.normalizeResponsesEndpoint
-import space.u2re.service.daemon.postJson
 
 @Serializable
 data class ResponsesAssistantRoute(
@@ -73,17 +70,14 @@ fun ResponsesAssistantScreen(
             status = "Sending to /responses…"
 
             try {
-                val response = withContext(Dispatchers.IO) {
-                    postJson(
-                        url = endpoint,
-                        json = mapOf("input" to normalizedPrompt, "model" to "gpt-4o-mini"),
-                        allowInsecureTls = allowInsecure,
-                        timeoutMs = 15_000,
-                        headers = mapOf("Authorization" to "Bearer ${apiKey.trim()}")
-                    )
-                }
+                val response = sendResponsesRequest(
+                    endpoint = endpoint,
+                    apiKey = apiKey,
+                    prompt = normalizedPrompt,
+                    allowInsecureTls = allowInsecure
+                )
                 if (response.ok) {
-                    val content = extractResponsesText(response.body).ifBlank { response.body }
+                    val content = parseResponsesText(response.body).ifBlank { response.body }
                     messages.value = messages.value + UiMessage("assistant", content)
                     status = "Response ${response.status}"
                 } else {
@@ -167,27 +161,5 @@ fun ResponsesAssistantScreen(
                 Text("Close")
             }
         }
-    }
-}
-
-private val responsesGson = Gson()
-
-private fun extractResponsesText(raw: String): String {
-    return try {
-        val root = responsesGson.fromJson(raw, object : TypeToken<Map<String, Any>>() {}.type) as? Map<*, *> ?: return raw
-        val output = root["output"] as? List<*> ?: run {
-            val choices = root["choices"] as? List<*> ?: return raw
-            val first = choices.firstOrNull() as? Map<*, *> ?: return raw
-            val message = first["message"] as? Map<*, *> ?: return raw
-            return (message["content"] as? String)?.trim().orEmpty().ifBlank { raw }
-        }
-        val firstMessage = output.firstOrNull() as? Map<*, *> ?: return raw
-        val content = firstMessage["content"] as? List<*> ?: return raw
-        val text = content.mapNotNull { item ->
-            (item as? Map<*, *>)?.let { it["text"] as? String }
-        }.joinToString("\n")
-        text.ifBlank { raw }
-    } catch (_: Exception) {
-        raw
     }
 }

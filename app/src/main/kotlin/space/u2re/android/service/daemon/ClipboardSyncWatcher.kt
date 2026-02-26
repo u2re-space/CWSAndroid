@@ -20,6 +20,8 @@ interface ClipboardWatcher : Closeable {
     fun stop()
     suspend fun setTextSilently(text: String)
     fun setTextSilentlySync(text: String)
+    fun readCurrentText(): String
+    fun lastSeenText(): String
 }
 
 class ClipboardSyncWatcher(
@@ -83,6 +85,14 @@ class ClipboardSyncWatcher(
         val item = clip.getItemAt(0)
         return item?.coerceToText(context)?.toString() ?: ""
     }
+
+    override fun readCurrentText(): String = try {
+        readClipboardText()
+    } catch (_: Exception) {
+        ""
+    }
+
+    override fun lastSeenText(): String = lastText
 
     private suspend fun handleText(raw: String) {
         val text = raw.ifBlank { return }

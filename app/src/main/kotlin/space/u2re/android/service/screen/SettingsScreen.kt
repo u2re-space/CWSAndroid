@@ -4,6 +4,12 @@ import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ComponentName
+import android.content.Intent
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.net.Uri
+import android.provider.Settings as AndroidSettings
+import android.view.accessibility.AccessibilityManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,6 +46,10 @@ import space.u2re.service.daemon.DaemonController
 import space.u2re.service.daemon.Settings
 import space.u2re.service.daemon.SettingsPatch
 import space.u2re.service.daemon.SettingsStore
+import space.u2re.service.agent.sendResponsesRequest
+import space.u2re.service.daemon.DaemonForegroundService
+import space.u2re.service.overlay.FloatingButtonService
+import space.u2re.service.accessibility.ClipboardAccessibilityService
 import space.u2re.service.daemon.normalizeHubDispatchUrl
 import space.u2re.service.daemon.normalizeResponsesEndpoint
 import space.u2re.service.daemon.postJson
@@ -63,6 +73,13 @@ fun SettingsScreen(
     var contactsSync by rememberSaveable { mutableStateOf(settings.contactsSync) }
     var smsSync by rememberSaveable { mutableStateOf(settings.smsSync) }
     var syncInterval by rememberSaveable { mutableStateOf(settings.syncIntervalSec.toString()) }
+    var clipboardSyncInterval by rememberSaveable { mutableStateOf(settings.clipboardSyncIntervalSec.toString()) }
+    var runDaemonForeground by rememberSaveable { mutableStateOf(settings.runDaemonForeground) }
+    var runDaemonOnBoot by rememberSaveable { mutableStateOf(settings.runDaemonOnBoot) }
+    var useAccessibilityService by rememberSaveable { mutableStateOf(settings.useAccessibilityService) }
+    var accessibilityServiceEnabled by rememberSaveable { mutableStateOf(isClipboardAccessibilityEnabled(context)) }
+    var showFloatingButton by rememberSaveable { mutableStateOf(settings.showFloatingButton) }
+    var overlayPermissionGranted by rememberSaveable { mutableStateOf(isFloatingOverlayEnabled(context)) }
 
     var listenPortHttp by rememberSaveable { mutableStateOf(settings.listenPortHttp.toString()) }
     var listenPortHttps by rememberSaveable { mutableStateOf(settings.listenPortHttps.toString()) }
@@ -113,15 +130,12 @@ fun SettingsScreen(
                 scope.launch {
                     try {
                         val response = withContext(Dispatchers.IO) {
-                            postJson(
-                                endpoint,
-                                mapOf(
-                                    "model" to "gpt-4o-mini",
-                                    "input" to "Reply with one short word: ready"
-                                ),
-                                allowInsecure,
-                                12_000,
-                                mapOf("Authorization" to "Bearer ${apiKey.trim()}")
+                            sendResponsesRequest(
+                                endpoint = endpoint,
+                                apiKey = apiKey,
+                                prompt = "Reply with one short word: ready",
+                                allowInsecureTls = allowInsecure,
+                                timeoutMs = 12_000
                             )
                         }
                         message = if (response.ok) {
@@ -173,6 +187,31 @@ fun SettingsScreen(
                 onShareTargetChange = { shareTarget = it },
                 clipboardSync = clipboardSync,
                 onClipboardSyncChange = { clipboardSync = it },
+                useAccessibilityService = useAccessibilityService,
+                onUseAccessibilityServiceChange = { useAccessibilityService = it },
+                runDaemonOnBoot = runDaemonOnBoot,
+                onRunDaemonOnBootChange = { runDaemonOnBoot = it },
+                showFloatingButton = showFloatingButton,
+                onShowFloatingButtonChange = { showFloatingButton = it },
+                overlayPermissionGranted = overlayPermissionGranted,
+                onOpenOverlaySettings = {
+                    context.startActivity(
+                        Intent(AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                    )
+                    overlayPermissionGranted = isFloatingOverlayEnabled(context)
+                },
+                accessibilityServiceEnabled = accessibilityServiceEnabled,
+                onOpenAccessibilitySettings = {
+                    context.startActivity(
+                        Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                    )
+                    accessibilityServiceEnabled = isClipboardAccessibilityEnabled(context)
+                },
                 contactsSync = contactsSync,
                 onContactsSyncChange = { contactsSync = it },
                 smsSync = smsSync,
@@ -207,9 +246,9 @@ fun SettingsScreen(
                 onAllowInsecureChange = { allowInsecure = it },
                 testingHub = testingHub,
                 onTestHub = {
-                    val url = normalizeHubDispatchUrl(hubDispatchUrl) ?: hubDispatchUrl.trim()
-                    if (url.isBlank()) {
-                        message = "Set Hub dispatch URL first"
+                    val normalizedHubUrl = normalizeHubDispatchUrl(hubDispatchUrl)
+                    if (normalizedHubUrl.isNullOrBlank()) {
+                        message = "Set a valid Hub dispatch URL (for example http://192.168.0.200/api/broadcast)"
                         return@HubTab
                     }
                     testingHub = true
@@ -217,7 +256,12 @@ fun SettingsScreen(
                     scope.launch {
                         try {
                             val response = withContext(Dispatchers.IO) {
-                                postJson(url, mapOf("requests" to emptyList<Any>()), allowInsecure, 8000)
+                                postJson(
+                                    url = normalizedHubUrl,
+                                    json = mapOf("requests" to emptyList<Any>()),
+                                    allowInsecureTls = allowInsecure,
+                                    timeoutMs = 8000
+                                )
                             }
                             message = "Hub test status: ${response.status}"
                         } catch (e: Exception) {
@@ -297,7 +341,19 @@ fun SettingsScreen(
                     }
                 },
                 syncInterval = syncInterval,
-                onSyncIntervalChange = { syncInterval = it }
+                onSyncIntervalChange = { syncInterval = it },
+                clipboardSyncInterval = clipboardSyncInterval,
+                onClipboardSyncIntervalChange = { clipboardSyncInterval = it },
+                runDaemonForeground = runDaemonForeground,
+                onRunDaemonForegroundChange = { runDaemonForeground = it },
+                onForceClipboardSync = {
+                    val daemon = DaemonController.current()
+                    if (daemon == null) {
+                        DaemonController.start(app)
+                    } else {
+                        daemon.forceClipboardSyncNow()
+                    }
+                }
             )
         }
 
@@ -310,6 +366,8 @@ fun SettingsScreen(
                 val nextHttp = listenPortHttp.toIntOrNull() ?: settings.listenPortHttp
                 val nextHttps = listenPortHttps.toIntOrNull() ?: settings.listenPortHttps
                 val nextSyncInterval = syncInterval.toIntOrNull() ?: settings.syncIntervalSec
+                val nextClipboardSyncInterval = clipboardSyncInterval.toIntOrNull() ?: settings.clipboardSyncIntervalSec
+                val nextRunDaemonForeground = runDaemonForeground
                 val nextDestinations = destinationText
                     .lineSequence()
                     .map { it.trim() }
@@ -327,6 +385,11 @@ fun SettingsScreen(
                     contactsSync = contactsSync,
                     smsSync = smsSync,
                     syncIntervalSec = nextSyncInterval,
+                    clipboardSyncIntervalSec = nextClipboardSyncInterval,
+                    runDaemonForeground = nextRunDaemonForeground,
+                    runDaemonOnBoot = runDaemonOnBoot,
+                    useAccessibilityService = useAccessibilityService,
+                    showFloatingButton = showFloatingButton,
                     authToken = authToken.trim(),
                     tlsEnabled = tlsEnabled,
                     apiEndpoint = apiEndpoint.trim(),
@@ -341,7 +404,22 @@ fun SettingsScreen(
                 scope.launch {
                     try {
                         SettingsStore.update(app, patch)
-                        DaemonController.current()?.restart()
+                        if (nextRunDaemonForeground) {
+                            DaemonForegroundService.start(app)
+                        } else {
+                            DaemonForegroundService.stop(app)
+                        }
+                        if (showFloatingButton && isFloatingOverlayEnabled(app)) {
+                            FloatingButtonService.start(app)
+                        } else {
+                            FloatingButtonService.stop(app)
+                        }
+                        val current = DaemonController.current()
+                        if (current == null) {
+                            DaemonController.start(app)
+                        } else {
+                            current.restart()
+                        }
                         message = "Saved and restarted"
                     } catch (e: Exception) {
                         message = "Save failed: ${e.message ?: "error"}"
@@ -374,3 +452,15 @@ fun SettingsScreen(
         Text(message, color = MaterialTheme.colorScheme.onSurface)
     }
 }
+
+private fun isClipboardAccessibilityEnabled(context: Context): Boolean {
+    val manager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager ?: return false
+    val serviceName = ComponentName(context, ClipboardAccessibilityService::class.java).let {
+        "${it.packageName}/${it.className}"
+    }
+    val enabledServices = manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+    return enabledServices.any { it.id == serviceName }
+}
+
+private fun isFloatingOverlayEnabled(context: Context): Boolean =
+    AndroidSettings.canDrawOverlays(context)

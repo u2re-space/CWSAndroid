@@ -25,6 +25,11 @@ data class Settings(
     val shareTarget: Boolean,
     val logLevel: String,
     val syncIntervalSec: Int,
+    val clipboardSyncIntervalSec: Int,
+    val runDaemonForeground: Boolean,
+    val runDaemonOnBoot: Boolean,
+    val useAccessibilityService: Boolean,
+    val showFloatingButton: Boolean,
 )
 
 data class SettingsPatch(
@@ -47,6 +52,11 @@ data class SettingsPatch(
     val shareTarget: Boolean? = null,
     val logLevel: String? = null,
     val syncIntervalSec: Int? = null,
+    val clipboardSyncIntervalSec: Int? = null,
+    val runDaemonForeground: Boolean? = null,
+    val runDaemonOnBoot: Boolean? = null,
+    val useAccessibilityService: Boolean? = null,
+    val showFloatingButton: Boolean? = null,
 )
 
 private const val PREF_NAME = "settings_v1"
@@ -75,7 +85,12 @@ private fun defaultSettings(): Settings = Settings(
     smsSync = false,
     shareTarget = true,
     logLevel = "debug",
-    syncIntervalSec = 60
+    syncIntervalSec = 60,
+    clipboardSyncIntervalSec = 3,
+    runDaemonForeground = true,
+    runDaemonOnBoot = true,
+    useAccessibilityService = false,
+    showFloatingButton = false
 )
 
 object SettingsStore {
@@ -109,6 +124,11 @@ object SettingsStore {
             listenPortHttp = normalizePort(next.listenPortHttp, defaultSettings().listenPortHttp),
             listenPortHttps = normalizePort(next.listenPortHttps, defaultSettings().listenPortHttps),
             syncIntervalSec = if (next.syncIntervalSec > 0) next.syncIntervalSec else defaultSettings().syncIntervalSec,
+            clipboardSyncIntervalSec = if (next.clipboardSyncIntervalSec > 0) next.clipboardSyncIntervalSec else defaultSettings().clipboardSyncIntervalSec,
+            runDaemonForeground = next.runDaemonForeground,
+            runDaemonOnBoot = next.runDaemonOnBoot,
+            useAccessibilityService = next.useAccessibilityService,
+            showFloatingButton = next.showFloatingButton,
             tlsEnabled = next.tlsEnabled,
             tlsKeystoreAssetPath = next.tlsKeystoreAssetPath.ifBlank { defaultSettings().tlsKeystoreAssetPath },
             tlsKeystoreType = next.tlsKeystoreType.ifBlank { defaultSettings().tlsKeystoreType },
@@ -145,6 +165,11 @@ object SettingsStore {
             shareTarget = patch.shareTarget ?: current.shareTarget,
             logLevel = patch.logLevel ?: current.logLevel,
             syncIntervalSec = patch.syncIntervalSec ?: current.syncIntervalSec,
+            clipboardSyncIntervalSec = patch.clipboardSyncIntervalSec ?: current.clipboardSyncIntervalSec,
+            runDaemonForeground = patch.runDaemonForeground ?: current.runDaemonForeground,
+            runDaemonOnBoot = patch.runDaemonOnBoot ?: current.runDaemonOnBoot,
+            useAccessibilityService = patch.useAccessibilityService ?: current.useAccessibilityService,
+            showFloatingButton = patch.showFloatingButton ?: current.showFloatingButton,
         )
         return save(context, merged)
     }
@@ -172,5 +197,10 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
         shareTarget = raw["shareTarget"] as? Boolean ?: defaults.shareTarget,
         logLevel = raw["logLevel"] as? String ?: defaults.logLevel,
         syncIntervalSec = (raw["syncIntervalSec"] as? Number)?.toInt() ?: defaults.syncIntervalSec,
+        clipboardSyncIntervalSec = (raw["clipboardSyncIntervalSec"] as? Number)?.toInt() ?: defaults.clipboardSyncIntervalSec,
+        runDaemonForeground = raw["runDaemonForeground"] as? Boolean ?: defaults.runDaemonForeground,
+        runDaemonOnBoot = raw["runDaemonOnBoot"] as? Boolean ?: defaults.runDaemonOnBoot,
+        useAccessibilityService = raw["useAccessibilityService"] as? Boolean ?: defaults.useAccessibilityService,
+        showFloatingButton = raw["showFloatingButton"] as? Boolean ?: defaults.showFloatingButton,
     )
 }

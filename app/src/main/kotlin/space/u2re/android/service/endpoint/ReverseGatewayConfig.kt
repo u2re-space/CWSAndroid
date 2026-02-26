@@ -14,7 +14,9 @@ data class ReverseGatewayConfig(
     val signingPrivateKeyPem: String,
     val peerPublicKeyPem: String,
     val namespace: String = "default",
-    val roles: String = "endpoint,peer,node"
+    val roles: String = "endpoint,peer,node,app",
+    val keepAliveIntervalMs: Long = 20_000L,
+    val reconnectDelayMs: Long = 1_000L
 )
 
 object ReverseGatewayConfigProvider {
@@ -29,12 +31,16 @@ object ReverseGatewayConfigProvider {
     private const val PREF_PEER_PUBLIC_KEY = "reverse_peer_public_key"
     private const val PREF_NAMESPACE = "reverse_namespace"
     private const val PREF_ROLES = "reverse_roles"
+    private const val PREF_KEEPALIVE_MS = "reverse_keepalive_ms"
+    private const val PREF_RECONNECT_MS = "reverse_reconnect_ms"
 
     fun load(application: Application): ReverseGatewayConfig {
         val prefs = application.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         val deviceId = prefs.getString(PREF_DEVICE_ID, null) ?: generateDeviceId().also { generated ->
             prefs.edit().putString(PREF_DEVICE_ID, generated).apply()
         }
+        val keepAlive = prefs.getString(PREF_KEEPALIVE_MS, null)?.toLongOrNull() ?: 20_000L
+        val reconnect = prefs.getString(PREF_RECONNECT_MS, null)?.toLongOrNull() ?: 1_000L
 
         return ReverseGatewayConfig(
             enabled = prefs.getBoolean(PREF_ENABLED, false),
@@ -46,7 +52,9 @@ object ReverseGatewayConfigProvider {
             signingPrivateKeyPem = prefs.getString(PREF_SIGNING_KEY, "") ?: "",
             peerPublicKeyPem = prefs.getString(PREF_PEER_PUBLIC_KEY, "") ?: "",
             namespace = prefs.getString(PREF_NAMESPACE, "default") ?: "default",
-            roles = prefs.getString(PREF_ROLES, "endpoint,peer,node") ?: "endpoint,peer,node"
+            roles = prefs.getString(PREF_ROLES, "endpoint,peer,node,app") ?: "endpoint,peer,node,app",
+            keepAliveIntervalMs = if (keepAlive > 0L) keepAlive else 20_000L,
+            reconnectDelayMs = if (reconnect > 0L) reconnect else 1_000L
         )
     }
 
@@ -54,6 +62,23 @@ object ReverseGatewayConfigProvider {
         application.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(PREF_DEVICE_ID, deviceId)
+            .apply()
+    }
+
+    fun save(application: Application, config: ReverseGatewayConfig) {
+        application.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(PREF_ENABLED, config.enabled)
+            .putString(PREF_ENDPOINT, config.endpointUrl.trim())
+            .putString(PREF_USER_ID, config.userId.trim())
+            .putString(PREF_USER_KEY, config.userKey.trim())
+            .putString(PREF_MASTER_KEY, config.masterKey.trim())
+            .putString(PREF_SIGNING_KEY, config.signingPrivateKeyPem.trim())
+            .putString(PREF_PEER_PUBLIC_KEY, config.peerPublicKeyPem.trim())
+            .putString(PREF_NAMESPACE, config.namespace.ifBlank { "default" })
+            .putString(PREF_ROLES, config.roles.ifBlank { "endpoint,peer,node,app" })
+            .putString(PREF_KEEPALIVE_MS, config.keepAliveIntervalMs.coerceAtLeast(1_000L).toString())
+            .putString(PREF_RECONNECT_MS, config.reconnectDelayMs.coerceAtLeast(500L).toString())
             .apply()
     }
 
