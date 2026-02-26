@@ -1,8 +1,7 @@
 {
-    "name": "com.u2re.ioclient",
+    "name": "space.u2re.service",
     "version": "1.0.0",
-    "description": "NativeScript background daemon for clipboard and platform API access",
-    "main": "src/main.ts",
+    "description": "Automata is a multi-device synchronization system with encrypted communication, clipboard sharing, and command forwarding capabilities.",
     "scripts": {
         "build": "tsc && ns build android",
         "dev": "tsc --watch",
@@ -18,20 +17,10 @@
         "android:log": "adb logcat -s NativeScript:V JS:V chromium:V"
     },
     "dependencies": {
-        "@nativescript-use/nativescript-clipboard": "^0.0.3",
-        "nativescript-childprocess": "^1.0.0",
-        "nativescript-clipboard": "^2.1.1",
         "socket.io-client": "^4.7.5"
     },
     "devDependencies": {
-        "@nativescript/android": "^9.0.0",
-        "@nativescript/core": "9.0.0",
-        "@nativescript/types": "^8.7.0",
-        "@nativescript/webpack": "^5.0.0",
         "@types/node": "^20.10.0",
         "typescript": "^5.3.3"
-    },
-    "nativescript": {
-        "id": "com.u2re.ioclient"
     }
 }
