@@ -30,6 +30,8 @@ data class Settings(
     val runDaemonOnBoot: Boolean,
     val useAccessibilityService: Boolean,
     val showFloatingButton: Boolean,
+    val quickActionCopyOnly: Boolean,
+    val quickActionHandleImage: Boolean,
 )
 
 data class SettingsPatch(
@@ -57,6 +59,8 @@ data class SettingsPatch(
     val runDaemonOnBoot: Boolean? = null,
     val useAccessibilityService: Boolean? = null,
     val showFloatingButton: Boolean? = null,
+    val quickActionCopyOnly: Boolean? = null,
+    val quickActionHandleImage: Boolean? = null,
 )
 
 private const val PREF_NAME = "settings_v1"
@@ -90,7 +94,9 @@ private fun defaultSettings(): Settings = Settings(
     runDaemonForeground = true,
     runDaemonOnBoot = true,
     useAccessibilityService = false,
-    showFloatingButton = false
+    showFloatingButton = false,
+    quickActionCopyOnly = false,
+    quickActionHandleImage = false
 )
 
 object SettingsStore {
@@ -129,6 +135,8 @@ object SettingsStore {
             runDaemonOnBoot = next.runDaemonOnBoot,
             useAccessibilityService = next.useAccessibilityService,
             showFloatingButton = next.showFloatingButton,
+            quickActionCopyOnly = next.quickActionCopyOnly,
+            quickActionHandleImage = next.quickActionHandleImage,
             tlsEnabled = next.tlsEnabled,
             tlsKeystoreAssetPath = next.tlsKeystoreAssetPath.ifBlank { defaultSettings().tlsKeystoreAssetPath },
             tlsKeystoreType = next.tlsKeystoreType.ifBlank { defaultSettings().tlsKeystoreType },
@@ -170,6 +178,8 @@ object SettingsStore {
             runDaemonOnBoot = patch.runDaemonOnBoot ?: current.runDaemonOnBoot,
             useAccessibilityService = patch.useAccessibilityService ?: current.useAccessibilityService,
             showFloatingButton = patch.showFloatingButton ?: current.showFloatingButton,
+            quickActionCopyOnly = patch.quickActionCopyOnly ?: current.quickActionCopyOnly,
+            quickActionHandleImage = patch.quickActionHandleImage ?: current.quickActionHandleImage,
         )
         return save(context, merged)
     }
@@ -202,5 +212,7 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
         runDaemonOnBoot = raw["runDaemonOnBoot"] as? Boolean ?: defaults.runDaemonOnBoot,
         useAccessibilityService = raw["useAccessibilityService"] as? Boolean ?: defaults.useAccessibilityService,
         showFloatingButton = raw["showFloatingButton"] as? Boolean ?: defaults.showFloatingButton,
+        quickActionCopyOnly = raw["quickActionCopyOnly"] as? Boolean ?: defaults.quickActionCopyOnly,
+        quickActionHandleImage = raw["quickActionHandleImage"] as? Boolean ?: defaults.quickActionHandleImage,
     )
 }

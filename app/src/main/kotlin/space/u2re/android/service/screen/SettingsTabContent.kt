@@ -89,6 +89,10 @@ fun AccessTab(
     onShareTargetChange: (Boolean) -> Unit,
     clipboardSync: Boolean,
     onClipboardSyncChange: (Boolean) -> Unit,
+    quickActionCopyOnly: Boolean,
+    onQuickActionCopyOnlyChange: (Boolean) -> Unit,
+    quickActionHandleImage: Boolean,
+    onQuickActionHandleImageChange: (Boolean) -> Unit,
     useAccessibilityService: Boolean,
     onUseAccessibilityServiceChange: (Boolean) -> Unit,
     runDaemonOnBoot: Boolean,
@@ -201,6 +205,13 @@ fun AccessTab(
     Switch(checked = shareTarget, onCheckedChange = onShareTargetChange, colors = switchColors)
     Text("Clipboard sync", color = MaterialTheme.colorScheme.onSurface)
     Switch(checked = clipboardSync, onCheckedChange = onClipboardSyncChange, colors = switchColors)
+    Text(
+        "Quick action mode: ${if (quickActionCopyOnly) "close-only" else "copy + sync"}",
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Switch(checked = !quickActionCopyOnly, onCheckedChange = { onQuickActionCopyOnlyChange(!it) }, colors = switchColors)
+    Text("Handle image payloads (future pipeline)", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = quickActionHandleImage, onCheckedChange = onQuickActionHandleImageChange, colors = switchColors)
     Spacer(Modifier.size(12.dp))
     Text("Use AccessibilityService for clipboard boost", color = MaterialTheme.colorScheme.onSurface)
     Switch(

@@ -80,6 +80,8 @@ fun SettingsScreen(
     var accessibilityServiceEnabled by rememberSaveable { mutableStateOf(isClipboardAccessibilityEnabled(context)) }
     var showFloatingButton by rememberSaveable { mutableStateOf(settings.showFloatingButton) }
     var overlayPermissionGranted by rememberSaveable { mutableStateOf(isFloatingOverlayEnabled(context)) }
+    var quickActionCopyOnly by rememberSaveable { mutableStateOf(settings.quickActionCopyOnly) }
+    var quickActionHandleImage by rememberSaveable { mutableStateOf(settings.quickActionHandleImage) }
 
     var listenPortHttp by rememberSaveable { mutableStateOf(settings.listenPortHttp.toString()) }
     var listenPortHttps by rememberSaveable { mutableStateOf(settings.listenPortHttps.toString()) }
@@ -187,6 +189,10 @@ fun SettingsScreen(
                 onShareTargetChange = { shareTarget = it },
                 clipboardSync = clipboardSync,
                 onClipboardSyncChange = { clipboardSync = it },
+                quickActionCopyOnly = quickActionCopyOnly,
+                onQuickActionCopyOnlyChange = { quickActionCopyOnly = it },
+                quickActionHandleImage = quickActionHandleImage,
+                onQuickActionHandleImageChange = { quickActionHandleImage = it },
                 useAccessibilityService = useAccessibilityService,
                 onUseAccessibilityServiceChange = { useAccessibilityService = it },
                 runDaemonOnBoot = runDaemonOnBoot,
@@ -390,6 +396,8 @@ fun SettingsScreen(
                     runDaemonOnBoot = runDaemonOnBoot,
                     useAccessibilityService = useAccessibilityService,
                     showFloatingButton = showFloatingButton,
+                    quickActionCopyOnly = quickActionCopyOnly,
+                    quickActionHandleImage = quickActionHandleImage,
                     authToken = authToken.trim(),
                     tlsEnabled = tlsEnabled,
                     apiEndpoint = apiEndpoint.trim(),
