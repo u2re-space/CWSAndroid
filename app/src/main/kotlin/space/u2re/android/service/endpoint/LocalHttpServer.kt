@@ -72,22 +72,24 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                         "/clipboard" -> {
                             val bodyText = readBody(session)
                             val ct = getHeader(session.headers, "content-type")?.lowercase() ?: ""
-                            var payload = bodyText
-                            if (ct.contains("application/json")) {
-                                try {
-                                    val payloadMap = gson.fromJson<Map<String, Any>>(
-                                        bodyText.ifBlank { "{}" },
-                                        object : TypeToken<Map<String, Any>>() {}.type
-                                    )
-                                    val textValue = payloadMap["text"] as? String ?: ""
-                                    if (textValue.isNotBlank()) payload = textValue
-                                } catch (_: Exception) {
-                                    // ignore parse errors; keep raw
-                                }
-                            }
+                            val payload = parseClipboardPayload(bodyText, ct)
                             if (payload.isBlank()) return text(400, "No text provided")
                             return try {
-                                opts.setClipboardTextSync(payload)
+                                runBlocking { opts.setClipboardText(payload) }
+                                DaemonLog.info("LocalHttpServer", "clipboard request applied")
+                                json(200, mapOf("ok" to true))
+                            } catch (e: Exception) {
+                                json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
+                            }
+                        }
+                        "/clipboard/" -> {
+                            val bodyText = readBody(session)
+                            val ct = getHeader(session.headers, "content-type")?.lowercase() ?: ""
+                            val payload = parseClipboardPayload(bodyText, ct)
+                            if (payload.isBlank()) return text(400, "No text provided")
+                            return try {
+                                runBlocking { opts.setClipboardText(payload) }
+                                DaemonLog.info("LocalHttpServer", "clipboard request applied")
                                 json(200, mapOf("ok" to true))
                             } catch (e: Exception) {
                                 json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
@@ -292,6 +294,59 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    private fun parseClipboardPayload(body: String, contentType: String): String {
+        val ct = contentType.lowercase()
+        val trimmedBody = body.trim()
+        val raw = if (ct.contains("application/json")) {
+            trimmedBody.ifBlank { "{}" }
+        } else {
+            trimmedBody
+        }
+
+        if (!ct.contains("application/json")) {
+            return raw
+        }
+
+        return try {
+            val bodyMap = gson.fromJson<Any>(
+                raw,
+                object : TypeToken<Any>() {}.type
+            )
+
+            if (bodyMap is String) {
+                return bodyMap.trim()
+            }
+
+            val jsonObject = bodyMap as? Map<*, *> ?: return raw.ifBlank { "" }.trim()
+
+            val candidates = listOf(
+                "text",
+                "body",
+                "data",
+                "payload",
+                "clipboard",
+                "content",
+                "value",
+            )
+            val byKey = candidates.firstNotNullOfOrNull { key ->
+                val value = jsonObject[key]
+                when (value) {
+                    null -> null
+                    is String -> value.takeIf { it.isNotBlank() }
+                    is Map<*, *> -> value["text"]?.toString()?.takeIf { it.isNotBlank() }
+                    else -> value.toString().takeIf { it.isNotBlank() }
+                }
+            }
+
+            when {
+                byKey.isNullOrBlank() || byKey == "{}" || byKey == "[]" -> ""
+                else -> byKey
+            }
+        } catch (_: Exception) {
+            raw.ifBlank { "" }
+        }.trim()
     }
 
     private fun getHeader(headers: Map<String, String>?, name: String): String? {
