@@ -6,11 +6,14 @@ fun normalizeEndpointUrl(raw: String, defaultPath: String): String? {
     val trimmed = raw.trim().trimStart('/')
     if (trimmed.isBlank()) return null
 
-    val withProto = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    var withProto = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
         trimmed
     } else {
         "http://$trimmed"
     }
+    
+    // Fix double colons if user entered something like ":192.168.0.110"
+    withProto = withProto.replace("http://:", "http://").replace("https://:", "https://")
 
     return try {
         val uri = URI(withProto)
@@ -40,7 +43,7 @@ private fun stripKnownDestinationPrefix(raw: String): String {
     if (trimmed.contains("://")) return trimmed
 
     val rawLower = trimmed.lowercase()
-    val knownPrefixes = listOf("hub:", "server:", "proxy:", "tunnel:", "device:", "local-device:")
+    val knownPrefixes = listOf("hub:", "server:", "proxy:", "tunnel:", "device:", "local-device:", "id:")
     for (prefix in knownPrefixes) {
         if (rawLower.startsWith(prefix)) {
             return trimmed.substring(prefix.length).trimStart()

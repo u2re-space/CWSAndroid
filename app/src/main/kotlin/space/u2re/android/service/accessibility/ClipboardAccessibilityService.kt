@@ -41,9 +41,9 @@ class ClipboardAccessibilityService : AccessibilityService() {
         val daemon = DaemonController.current()
         if (daemon == null) {
             DaemonController.start(application)
-            DaemonController.current()?.forceClipboardSyncNow()
+            DaemonController.current()?.forceClipboardSyncNow(currentText)
         } else {
-            daemon.forceClipboardSyncNow()
+            daemon.forceClipboardSyncNow(currentText)
         }
     }
 

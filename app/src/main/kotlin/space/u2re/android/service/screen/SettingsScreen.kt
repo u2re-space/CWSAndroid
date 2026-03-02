@@ -65,6 +65,8 @@ fun SettingsScreen(
 
     var destinationText by rememberSaveable { mutableStateOf(settings.destinations.joinToString("\n")) }
     var hubDispatchUrl by rememberSaveable { mutableStateOf(settings.hubDispatchUrl) }
+    var hubClientId by rememberSaveable { mutableStateOf(settings.hubClientId.ifBlank { settings.deviceId }) }
+    var hubToken by rememberSaveable { mutableStateOf(settings.hubToken.ifBlank { settings.authToken }) }
     var allowInsecure by rememberSaveable { mutableStateOf(settings.allowInsecureTls) }
     var apiEndpoint by rememberSaveable { mutableStateOf(settings.apiEndpoint) }
     var apiKey by rememberSaveable { mutableStateOf(settings.apiKey) }
@@ -248,6 +250,10 @@ fun SettingsScreen(
             SettingsTab.HUB -> HubTab(
                 hubDispatchUrl = hubDispatchUrl,
                 onHubDispatchUrlChange = { hubDispatchUrl = it },
+                hubClientId = hubClientId,
+                onHubClientIdChange = { hubClientId = it },
+                hubToken = hubToken,
+                onHubTokenChange = { hubToken = it },
                 allowInsecure = allowInsecure,
                 onAllowInsecureChange = { allowInsecure = it },
                 testingHub = testingHub,
@@ -264,7 +270,13 @@ fun SettingsScreen(
                             val response = withContext(Dispatchers.IO) {
                                 postJson(
                                     url = normalizedHubUrl,
-                                    json = mapOf("requests" to emptyList<Any>()),
+                                json = buildMap<String, Any> {
+                                    put("requests", emptyList<Any>())
+                                    val trimmedClientId = hubClientId.ifBlank { settings.deviceId }
+                                    val trimmedToken = hubToken.ifBlank { settings.authToken }
+                                    if (trimmedClientId.isNotBlank()) put("clientId", trimmedClientId)
+                                    if (trimmedToken.isNotBlank()) put("token", trimmedToken)
+                                },
                                     allowInsecureTls = allowInsecure,
                                     timeoutMs = 8000
                                 )
@@ -292,7 +304,7 @@ fun SettingsScreen(
                         .filter { it.isNotBlank() }
                         .toMutableList()
                     localIps
-                        .map { ip -> "device:$ip:${listenPortHttp.ifBlank { "8080" }}" }
+                        .map { ip -> "id:$ip:${listenPortHttp.ifBlank { "8080" }}" }
                         .filterNot(existing::contains)
                         .forEach(existing::add)
                     destinationText = existing.joinToString("\n")
@@ -405,6 +417,8 @@ fun SettingsScreen(
                     tlsKeystoreAssetPath = tlsKeystorePath.trim(),
                     tlsKeystoreType = tlsKeystoreType.ifBlank { settings.tlsKeystoreType },
                     tlsKeystorePassword = tlsKeystorePassword,
+                    hubClientId = hubClientId.ifBlank { settings.deviceId },
+                    hubToken = hubToken.trim(),
                     logLevel = settings.logLevel
                 )
                 saving = true

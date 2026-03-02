@@ -23,6 +23,8 @@ class ReverseGatewayClient(
     private val config: ReverseGatewayConfig,
     private val onMessage: (String, String, String?) -> Unit = { _, _, _ -> }
 ) {
+    private val archetypeCandidates = buildArchetypeCandidates(config.roles)
+    private var archetypeAttempt = 0
     private val configuredKeepAliveMs = config.keepAliveIntervalMs.coerceAtLeast(1_000L)
     private val configuredReconnectMs = config.reconnectDelayMs.coerceAtLeast(500L)
 
@@ -36,6 +38,80 @@ class ReverseGatewayClient(
     private var reconnectJob: Job? = null
     private var reconnectDelayMs = configuredReconnectMs
     private var running = false
+
+    private fun normalizeRoleToken(value: String): String = value.trim().lowercase()
+
+    private fun parseRoleTokens(value: String): List<String> = value
+        .split(",")
+        .map { normalizeRoleToken(it) }
+        .filter { it.isNotEmpty() }
+
+    private fun buildArchetypeCandidates(rolesRaw: String): List<String> {
+        val roles = parseRoleTokens(rolesRaw.ifBlank { "" })
+        val hasReverse = roles.any { token ->
+            token == "client-reverse" || token == "reverse-client" || token == "client-downstream" || token == "server-downstream"
+        }
+        val hasForward = roles.any { token ->
+            token == "client-forward" || token == "forward-client" || token == "server-bridge" || token == "client-bridge"
+        }
+        return when {
+            hasReverse -> listOf("client-reverse", "reverse-client")
+            hasForward -> listOf("client-forward", "forward-client")
+            else -> listOf("reverse-client", "client-reverse")
+        }
+    }
+
+    private fun normalizeRolesForWire(rolesRaw: String): String {
+        val input = parseRoleTokens(rolesRaw.ifBlank { "endpoint,peer,node,app" }).toMutableSet()
+        val out = LinkedHashSet<String>()
+        input.forEach { token ->
+            when (token) {
+                "client-reverse", "reverse-client", "client-downstream", "server-downstream" -> {
+                    out.add("client-reverse")
+                    out.add("reverse-client")
+                    out.add("client")
+                }
+                "client-forward", "forward-client", "client-bridge", "server-bridge" -> {
+                    out.add("client-forward")
+                    out.add("forward-client")
+                    out.add("client")
+                }
+                "server-reverse", "reverse-server", "server-downstream" -> {
+                    out.add("server-reverse")
+                    out.add("reverse-server")
+                    out.add("server")
+                }
+                "server-forward", "forward-server" -> {
+                    out.add("server-forward")
+                    out.add("forward-server")
+                    out.add("server")
+                }
+                else -> out.add(token)
+            }
+        }
+        if (out.none { it in setOf("client", "server", "endpoint", "peer", "node", "app", "hub") }) {
+            out.add("endpoint")
+            out.add("peer")
+            out.add("node")
+            out.add("app")
+        }
+        return out.joinToString(",")
+    }
+
+    private fun getCurrentArchetype(): String = archetypeCandidates[archetypeAttempt]
+
+    private fun nextArchetypeCandidate(): Boolean {
+        val next = archetypeAttempt + 1
+        if (next >= archetypeCandidates.size) return false
+        archetypeAttempt = next
+        return true
+    }
+
+    private fun isArchetypeReject(code: Int, reason: String?): Boolean {
+        if (code == 4005) return true
+        val normalized = reason?.lowercase() ?: return false
+        return normalized.contains("archetype")
+    }
 
     fun send(message: String) {
         socket?.send(message)
@@ -98,18 +174,19 @@ class ReverseGatewayClient(
         };
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                val helloClientId = (config.userId.ifBlank { config.deviceId }).ifBlank { "android-client" }
                 reconnectDelayMs = configuredReconnectMs
                 heartbeatJob?.cancel()
                 heartbeatJob = scope.launch {
                     while (isActive) {
                         delay(configuredKeepAliveMs)
                         webSocket.send(
-                            """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(config.roles)}","ts":${System.currentTimeMillis()}}"""
+                            """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","archetype":"${escapeJson(getCurrentArchetype())}","ts":${System.currentTimeMillis()}}"""
                         )
                     }
                 }
                 webSocket.send(
-                    """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(config.roles)}"}"""
+                    """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","archetype":"${escapeJson(getCurrentArchetype())}"}"""
                 )
                 Log.i(LOG_TAG, "Reverse gateway connected");
             }
@@ -163,6 +240,11 @@ class ReverseGatewayClient(
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.i(LOG_TAG, "Reverse gateway closed: code=$code reason=$reason")
+                if (running && isArchetypeReject(code, reason) && nextArchetypeCandidate()) {
+                    Log.i(LOG_TAG, "Trying fallback archetype ${getCurrentArchetype()}")
+                    connect()
+                    return
+                }
                 if (running) scheduleReconnect()
             }
         })
@@ -186,7 +268,11 @@ class ReverseGatewayClient(
         val encodedUserKey = encodeQuery(config.userKey)
         val encodedDeviceId = encodeQuery(config.deviceId)
         val encodedNamespace = encodeQuery(config.namespace.ifBlank { "default" })
-        val encodedRoles = encodeQuery(config.roles.ifBlank { "endpoint,peer,node,app" })
+        val normalizedRoles = normalizeRolesForWire(config.roles.ifBlank { "endpoint,peer,node,app" })
+        val encodedRoles = encodeQuery(normalizedRoles)
+        val encodedArchetype = encodeQuery(getCurrentArchetype())
+        val encodedClientId = encodeQuery((config.userId.ifBlank { config.deviceId }).ifBlank { "android-client" })
+        val wsMode = if (getCurrentArchetype().contains("forward")) "push" else "reverse"
         val trimmed = config.endpointUrl.trim().trimStart('/')
         if (trimmed.isBlank()) return null
 
@@ -223,7 +309,7 @@ class ReverseGatewayClient(
             null
         ).toString()
 
-        val url = "$websocketUrl?mode=reverse&userId=$encodedUserId&userKey=$encodedUserKey&deviceId=$encodedDeviceId&namespace=$encodedNamespace&roles=$encodedRoles"
+        val url = "$websocketUrl?mode=$wsMode&archetype=$encodedArchetype&userId=$encodedUserId&userKey=$encodedUserKey&deviceId=$encodedDeviceId&clientId=$encodedClientId&namespace=$encodedNamespace&roles=$encodedRoles"
 
         return try {
             Request.Builder().url(url).build()

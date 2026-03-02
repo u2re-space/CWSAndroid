@@ -41,6 +41,8 @@ fun buildDiscoveredTargets(
                 lower.startsWith("proxy:") -> "proxy"
                 lower.startsWith("tunnel:") -> "tunnel"
                 lower.startsWith("device:") -> "device"
+                lower.startsWith("local-device:") -> "device"
+                lower.startsWith("id:") -> "device"
                 "://" in raw -> "url"
                 else -> "ip/device"
             }
@@ -48,7 +50,7 @@ fun buildDiscoveredTargets(
         }
 
     localIps.forEach { ip ->
-        add("local-device", ip, "device:$ip")
+        add("local-device", ip, "id:$ip")
     }
 
     return items

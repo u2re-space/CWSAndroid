@@ -58,8 +58,8 @@ class MainActivity : ComponentActivity() {
         val baseReverseConfig = ReverseGatewayConfigProvider.load(application).copy(deviceId = settings.deviceId)
         val reverseConfig = baseReverseConfig.copy(
             endpointUrl = baseReverseConfig.endpointUrl.ifBlank { settings.hubDispatchUrl },
-            userId = baseReverseConfig.userId.ifBlank { settings.deviceId },
-            userKey = baseReverseConfig.userKey.ifBlank { settings.authToken }
+            userId = baseReverseConfig.userId.ifBlank { settings.hubClientId.ifBlank { settings.deviceId } },
+            userKey = baseReverseConfig.userKey.ifBlank { settings.hubToken.ifBlank { settings.authToken } }
         )
         reverseGateway = ReverseGatewayClient(reverseConfig) { messageType, text, _ ->
             assistantBridgeScope.launch {

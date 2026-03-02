@@ -73,6 +73,7 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                             val bodyText = readBody(session)
                             val ct = getHeader(session.headers, "content-type")?.lowercase() ?: ""
                             val payload = parseClipboardPayload(bodyText, ct)
+                            DaemonLog.debug("LocalHttpServer", "POST /clipboard contentType=$ct payloadLength=${payload.length}")
                             if (payload.isBlank()) return text(400, "No text provided")
                             return try {
                                 runBlocking { opts.setClipboardText(payload) }
@@ -86,6 +87,7 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                             val bodyText = readBody(session)
                             val ct = getHeader(session.headers, "content-type")?.lowercase() ?: ""
                             val payload = parseClipboardPayload(bodyText, ct)
+                            DaemonLog.debug("LocalHttpServer", "POST /clipboard/ contentType=$ct payloadLength=${payload.length}")
                             if (payload.isBlank()) return text(400, "No text provided")
                             return try {
                                 runBlocking { opts.setClipboardText(payload) }
@@ -282,7 +284,10 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
             list.mapNotNull { item ->
                 val map = item as? Map<*, *> ?: return@mapNotNull null
                 val rawUrl = map["url"]?.toString() ?: ""
-                if (rawUrl.isBlank()) return@mapNotNull null
+                if (rawUrl.isBlank()) {
+                    DaemonLog.warn("LocalHttpServer", "skip dispatch request without url: $map")
+                    return@mapNotNull null
+                }
                 DispatchRequest(
                     url = rawUrl,
                     method = map["method"]?.toString()?.ifBlank { "POST" } ?: "POST",

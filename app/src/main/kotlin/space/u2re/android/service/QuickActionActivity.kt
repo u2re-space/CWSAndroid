@@ -127,7 +127,7 @@ class QuickActionActivity : ComponentActivity() {
         val syncResult = runCatching {
             ensureDaemonStarted()
             waitForDaemonOrStartFallback()
-            DaemonController.current()?.forceClipboardSyncNow()
+            DaemonController.current()?.forceClipboardSyncNow(text)
         }
 
         if (syncResult.isSuccess) {

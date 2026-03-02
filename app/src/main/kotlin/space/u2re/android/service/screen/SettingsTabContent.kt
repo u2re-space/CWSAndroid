@@ -250,6 +250,10 @@ fun AccessTab(
 fun HubTab(
     hubDispatchUrl: String,
     onHubDispatchUrlChange: (String) -> Unit,
+    hubClientId: String,
+    onHubClientIdChange: (String) -> Unit,
+    hubToken: String,
+    onHubTokenChange: (String) -> Unit,
     allowInsecure: Boolean,
     onAllowInsecureChange: (Boolean) -> Unit,
     testingHub: Boolean,
@@ -265,6 +269,22 @@ fun HubTab(
         value = hubDispatchUrl,
         onValueChange = onHubDispatchUrlChange,
         label = { Text("Hub dispatch URL / selected server") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    OutlinedTextField(
+        value = hubClientId,
+        onValueChange = onHubClientIdChange,
+        label = { Text("Client ID") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    OutlinedTextField(
+        value = hubToken,
+        onValueChange = onHubTokenChange,
+        label = { Text("Token") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
@@ -312,7 +332,7 @@ fun PeersTab(
     OutlinedTextField(
         value = destinationText,
         onValueChange = onDestinationTextChange,
-        label = { Text("Destinations: IP / URL / hub:/server:/proxy:/tunnel:") },
+            label = { Text("Destinations: peer ID (id:...), URL, hub:/server:/proxy:/tunnel:") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )

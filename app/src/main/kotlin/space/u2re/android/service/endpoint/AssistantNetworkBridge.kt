@@ -58,7 +58,8 @@ object AssistantNetworkBridge {
         val text = extractString(payload["text"]) ?: extractString(payload["data"]) ?: extractString(payload["body"]) ?: ""
         if (text.isBlank()) return false
         val url = localBaseUrl(settings) + "/clipboard"
-        return postText(url, text, requestHeaders(settings), allowInsecureTls = true, timeoutMs = 8000).ok
+        val headers = requestHeaders(settings) + mapOf("Content-Type" to "text/plain; charset=utf-8")
+        return postText(url, text, headers, allowInsecureTls = true, timeoutMs = 8000).ok
     }
 
     private suspend fun sendLocalSms(context: Context, payload: JsonObject, settings: Settings): Boolean {

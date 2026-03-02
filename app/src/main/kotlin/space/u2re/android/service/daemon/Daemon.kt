@@ -175,9 +175,9 @@ class Daemon(
         }
     }
 
-    fun forceClipboardSyncNow() {
+    fun forceClipboardSyncNow(providedText: String? = null) {
         scope.launch {
-            val text = clipboardTextFallback.readCurrentText().trim()
+            val text = providedText?.trim() ?: clipboardTextFallback.readCurrentText().trim()
             if (text.isBlank()) {
                 DaemonLog.warn("Daemon", "manual clipboard sync skipped: clipboard is empty")
                 return@launch
@@ -252,10 +252,9 @@ class Daemon(
     }
 
     private suspend fun postClipboardToPeers(text: String) {
-        val urls = settings.destinations
-            .mapNotNull { normalizeDestinationUrl(it, "/clipboard") }
-            .filter { it.isNotBlank() }
-        if (urls.isEmpty()) return
+        val hubItems = buildHubDispatchItems(text)
+        if (hubItems.isEmpty()) return
+        val urls = hubItems.mapNotNull { it.directFallbackUrl }
 
         val headers = buildMap {
             put("Content-Type", "text/plain; charset=utf-8")
@@ -266,26 +265,46 @@ class Daemon(
 
         val hub = normalizeHubDispatchUrl(settings.hubDispatchUrl)
         if (!hub.isNullOrBlank()) {
-            val payload = urls.map {
-                DispatchRequest(
-                    url = it,
-                    body = text,
-                    unencrypted = it.startsWith("http://")
-                )
-            }
+            val resolvedHubClientId = settings.hubClientId.ifBlank { settings.deviceId }
+            val resolvedHubToken = settings.hubToken.ifBlank { settings.authToken }
+            val requestBodyEntries = hubItems.map { it.request }.filter { it.isNotEmpty() }
+            if (requestBodyEntries.isEmpty()) return
+            val fallbackUrls = urls.toSet()
             val requestBody = buildMap<String, Any> {
                 put("broadcastForceHttps", !settings.allowInsecureTls)
-                put("requests", payload)
+                put("requests", requestBodyEntries)
+                if (resolvedHubClientId.isNotBlank()) {
+                    put("clientId", resolvedHubClientId)
+                }
+                if (resolvedHubToken.isNotBlank()) {
+                    put("token", resolvedHubToken)
+                }
             }
+            var hubDispatched = false
             try {
                 val result = postJson(hub, requestBody, settings.allowInsecureTls, 10_000)
+                hubDispatched = result.ok
                 if (result.ok) {
                     DaemonLog.info("Daemon", "hub dispatch ok")
-                } else {
-                    DaemonLog.warn("Daemon", "hub dispatch failed ${result.status}")
+                    return
                 }
+                DaemonLog.warn("Daemon", "hub dispatch failed ${result.status}")
             } catch (e: Exception) {
                 DaemonLog.warn("Daemon", "hub dispatch error", e)
+            }
+            if (!hubDispatched && fallbackUrls.isNotEmpty()) {
+                fallbackUrls.forEach { url ->
+                    scope.launch {
+                        try {
+                            val directResult = postText(url, text, headers, settings.allowInsecureTls, 10_000)
+                            if (!directResult.ok) {
+                                DaemonLog.warn("Daemon", "hub fallback dispatch failed ${directResult.status} $url")
+                            }
+                        } catch (e: Exception) {
+                            DaemonLog.warn("Daemon", "hub fallback dispatch error $url", e)
+                        }
+                    }
+                }
             }
             return
         }
@@ -346,6 +365,78 @@ class Daemon(
         }
     }
 
+    private fun buildHubDispatchItems(text: String): List<HubDispatchPayloadItem> {
+        val associations = PeerAssociationStore.load(application)
+        val out = mutableListOf<HubDispatchPayloadItem>()
+        for (raw in settings.destinations) {
+            val target = raw.trim()
+            if (target.isBlank()) continue
+
+            val lower = target.lowercase()
+            val isDeviceTarget = lower.startsWith("device:") || lower.startsWith("local-device:") || lower.startsWith("id:")
+            val normalizedTarget = normalizeDestinationHost(target).trim()
+            if (normalizedTarget.isBlank()) continue
+            val maybeCachedUrl = associations[normalizedTarget.lowercase()]
+            val directCandidate = if (isDeviceTarget && isAddressLikePeerTarget(normalizedTarget)) {
+                normalizeDestinationUrl(target, "/clipboard")
+            } else {
+                null
+            }
+            if (directCandidate != null && directCandidate.isNotBlank()) {
+                PeerAssociationStore.save(application, normalizedTarget, directCandidate)
+            }
+
+            if (isDeviceTarget) {
+                val request = mutableMapOf<String, Any>(
+                    "deviceId" to normalizedTarget.lowercase(),
+                    "body" to text,
+                    "method" to "POST",
+                    "headers" to buildMap {
+                        put("Content-Type", "text/plain; charset=utf-8")
+                        if (settings.authToken.isNotBlank()) put("x-auth-token", settings.authToken)
+                    }
+                )
+                if (!maybeCachedUrl.isNullOrBlank()) {
+                    request["url"] = maybeCachedUrl
+                    if (maybeCachedUrl.startsWith("http://")) {
+                        request["unencrypted"] = true
+                    }
+                }
+                if (isAddressLikePeerTarget(normalizedTarget) && maybeCachedUrl == null && directCandidate != null) {
+                    request["url"] = directCandidate
+                    if (directCandidate.startsWith("http://")) {
+                        request["unencrypted"] = true
+                    }
+                }
+                out.add(HubDispatchPayloadItem(request, (request["url"] as? String)))
+                continue
+            }
+
+            val directUrl = normalizeDestinationUrl(target, "/clipboard")
+            if (directUrl.isNullOrBlank()) continue
+            out.add(HubDispatchPayloadItem(buildMap {
+                put("url", directUrl)
+                put("body", text)
+                put("method", "POST")
+                put("headers", buildMap {
+                    put("Content-Type", "text/plain; charset=utf-8")
+                    if (settings.authToken.isNotBlank()) put("x-auth-token", settings.authToken)
+                })
+                if (directUrl.startsWith("http://")) put("unencrypted", true)
+            }, directUrl))
+        }
+        return out
+    }
+
+    private fun isAddressLikePeerTarget(target: String): Boolean {
+        return ADDRESS_LIKE_PEER_TARGET.containsMatchIn(target)
+    }
+
+    private data class HubDispatchPayloadItem(
+        val request: Map<String, Any>,
+        val directFallbackUrl: String? = null
+    )
+
     private data class SyncCallbacks(
         val setClipboardTextSync: (String) -> Unit,
         val setClipboardText: suspend (String) -> Unit,
@@ -356,3 +447,5 @@ class Daemon(
         val speakNotificationText: suspend (String) -> Unit
     )
 }
+
+private val ADDRESS_LIKE_PEER_TARGET = Regex("^\\d{1,3}(?:\\.\\d{1,3}){3}(?::\\d{1,5})?$")
