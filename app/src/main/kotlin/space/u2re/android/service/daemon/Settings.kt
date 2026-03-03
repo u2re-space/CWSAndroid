@@ -36,6 +36,7 @@ data class Settings(
     val quickActionCopyOnly: Boolean,
     val quickActionHandleImage: Boolean,
     val enableLocalServer: Boolean,
+    val storagePath: String,
 )
 
 data class SettingsPatch(
@@ -69,6 +70,7 @@ data class SettingsPatch(
     val quickActionCopyOnly: Boolean? = null,
     val quickActionHandleImage: Boolean? = null,
     val enableLocalServer: Boolean? = null,
+    val storagePath: String? = null,
 )
 
 private const val PREF_NAME = "settings_v1"
@@ -108,12 +110,13 @@ private fun defaultSettings(): Settings = Settings(
     showFloatingButton = false,
     quickActionCopyOnly = false,
     quickActionHandleImage = false,
-    enableLocalServer = true
+    enableLocalServer = true,
+    storagePath = ""
 )
 
 
 fun Settings.resolve(): Settings {
-    val context = ResolveContext(deviceId = this.deviceId, hubClientId = this.hubClientId)
+    val context = ResolveContext(deviceId = this.deviceId, hubClientId = this.hubClientId, basePath = this.storagePath)
     return this.copy(
         authToken = ConfigResolver.resolve(this.authToken, context),
         hubToken = ConfigResolver.resolve(this.hubToken, context),
@@ -193,6 +196,7 @@ object SettingsStore {
             quickActionCopyOnly = next.quickActionCopyOnly,
             quickActionHandleImage = next.quickActionHandleImage,
             enableLocalServer = next.enableLocalServer,
+            storagePath = next.storagePath,
             tlsEnabled = next.tlsEnabled,
             tlsKeystoreAssetPath = next.tlsKeystoreAssetPath.ifBlank { defaultSettings().tlsKeystoreAssetPath },
             tlsKeystoreType = next.tlsKeystoreType.ifBlank { defaultSettings().tlsKeystoreType },
@@ -241,6 +245,7 @@ object SettingsStore {
             quickActionCopyOnly = patch.quickActionCopyOnly ?: current.quickActionCopyOnly,
             quickActionHandleImage = patch.quickActionHandleImage ?: current.quickActionHandleImage,
             enableLocalServer = patch.enableLocalServer ?: current.enableLocalServer,
+            storagePath = patch.storagePath ?: current.storagePath,
         )
         return save(context, merged)
     }
@@ -278,5 +283,6 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
         quickActionCopyOnly = raw["quickActionCopyOnly"] as? Boolean ?: defaults.quickActionCopyOnly,
         quickActionHandleImage = raw["quickActionHandleImage"] as? Boolean ?: defaults.quickActionHandleImage,
         enableLocalServer = raw["enableLocalServer"] as? Boolean ?: defaults.enableLocalServer,
+        storagePath = raw["storagePath"] as? String ?: defaults.storagePath,
     )
 }

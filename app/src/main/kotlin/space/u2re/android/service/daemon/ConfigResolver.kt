@@ -70,7 +70,11 @@ object ConfigResolver {
 
     private fun resolveFile(path: String, basePath: String): File {
         if (path.startsWith("~/")) {
-            val userHome = System.getProperty("user.home") ?: "/"
+            val userHome = try {
+                android.os.Environment.getExternalStorageDirectory().absolutePath
+            } catch (e: Exception) {
+                System.getProperty("user.home") ?: "/"
+            }
             return File(userHome, path.removePrefix("~/"))
         }
         val file = File(path)

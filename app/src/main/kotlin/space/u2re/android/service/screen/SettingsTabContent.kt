@@ -116,6 +116,8 @@ fun AccessTab(
     onOpenOverlaySettings: () -> Unit,
     accessibilityServiceEnabled: Boolean,
     onOpenAccessibilitySettings: () -> Unit,
+    allFilesAccessGranted: Boolean,
+    onOpenAllFilesAccessSettings: () -> Unit,
     contactsSync: Boolean,
     onContactsSyncChange: (Boolean) -> Unit,
     smsSync: Boolean,
@@ -208,6 +210,13 @@ fun AccessTab(
     TextButton(onClick = onOpenOverlaySettings) {
         Text("Open overlay settings")
     }
+    Text(
+        "All files access: ${if (allFilesAccessGranted) "granted" else "not granted"}",
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    TextButton(onClick = onOpenAllFilesAccessSettings) {
+        Text("Open all files access settings")
+    }
     Spacer(Modifier.size(12.dp))
     Text("Start daemon on boot", color = MaterialTheme.colorScheme.onSurface)
     Switch(checked = runDaemonOnBoot, onCheckedChange = onRunDaemonOnBootChange, colors = switchColors)
@@ -224,6 +233,9 @@ fun GatewayTab(
     onGatewayUrlsChange: (String) -> Unit,
     configPath: String,
     onConfigPathChange: (String) -> Unit,
+    onPickConfigPath: () -> Unit,
+    storagePath: String,
+    onStoragePathChange: (String) -> Unit,
     allowInsecure: Boolean,
     onAllowInsecureChange: (Boolean) -> Unit,
     testingHub: Boolean,
@@ -255,6 +267,22 @@ fun GatewayTab(
         value = configPath,
         onValueChange = onConfigPathChange,
         label = { Text("Configuration Path (e.g. fs:clients.json)") },
+        trailingIcon = {
+            androidx.compose.material3.IconButton(onClick = onPickConfigPath) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Default.MoreVert,
+                    contentDescription = "Pick file"
+                )
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    OutlinedTextField(
+        value = storagePath,
+        onValueChange = onStoragePathChange,
+        label = { Text("Storage Base Path (e.g. ~/Android/data/space.u2re.cws)") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
@@ -372,6 +400,7 @@ fun ServerTab(
     onTlsKeystoreTypeChange: (String) -> Unit,
     tlsKeystorePath: String,
     onTlsKeystorePathChange: (String) -> Unit,
+    onPickTlsKeystorePath: () -> Unit,
     tlsKeystorePassword: String,
     onTlsKeystorePasswordChange: (String) -> Unit,
     onStartRestartServer: () -> Unit,
@@ -449,6 +478,14 @@ fun ServerTab(
                 value = tlsKeystorePath,
                 onValueChange = onTlsKeystorePathChange,
                 label = { Text("TLS keystore path") },
+                trailingIcon = {
+                    androidx.compose.material3.IconButton(onClick = onPickTlsKeystorePath) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Default.MoreVert,
+                            contentDescription = "Pick file"
+                        )
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors()
             )

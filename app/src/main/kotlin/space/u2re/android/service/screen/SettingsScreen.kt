@@ -8,8 +8,11 @@ import android.content.ComponentName
 import android.content.Intent
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.provider.Settings as AndroidSettings
 import android.view.accessibility.AccessibilityManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,6 +69,7 @@ fun SettingsScreen(
     var destinationText by rememberSaveable { mutableStateOf(settings.destinations.joinToString("\n")) }
     var hubDispatchUrl by rememberSaveable { mutableStateOf(settings.hubDispatchUrl) }
     var configPath by rememberSaveable { mutableStateOf(settings.configPath) }
+    var storagePath by rememberSaveable { mutableStateOf(settings.storagePath) }
     var hubClientId by rememberSaveable { mutableStateOf(settings.hubClientId.ifBlank { settings.deviceId }) }
     var allowInsecure by rememberSaveable { mutableStateOf(settings.allowInsecureTls) }
     var apiEndpoint by rememberSaveable { mutableStateOf(settings.apiEndpoint) }
@@ -82,6 +86,7 @@ fun SettingsScreen(
     var accessibilityServiceEnabled by rememberSaveable { mutableStateOf(isClipboardAccessibilityEnabled(context)) }
     var showFloatingButton by rememberSaveable { mutableStateOf(settings.showFloatingButton) }
     var overlayPermissionGranted by rememberSaveable { mutableStateOf(isFloatingOverlayEnabled(context)) }
+    var allFilesAccessGranted by rememberSaveable { mutableStateOf(isAllFilesAccessGranted(context)) }
     var quickActionCopyOnly by rememberSaveable { mutableStateOf(settings.quickActionCopyOnly) }
     var quickActionHandleImage by rememberSaveable { mutableStateOf(settings.quickActionHandleImage) }
 
@@ -105,6 +110,22 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) {
         localIps = loadLocalIpAddresses()
+    }
+
+    val configPathLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        handleFilePicked(context, uri)?.let { path ->
+            configPath = path
+        }
+    }
+
+    val tlsKeystorePathLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        handleFilePicked(context, uri)?.let { path ->
+            tlsKeystorePath = path
+        }
     }
 
     val isRunning = DaemonController.current() != null
@@ -221,6 +242,36 @@ fun SettingsScreen(
                     )
                     accessibilityServiceEnabled = isClipboardAccessibilityEnabled(context)
                 },
+                allFilesAccessGranted = allFilesAccessGranted,
+                onOpenAllFilesAccessSettings = {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        try {
+                            context.startActivity(
+                                android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                    data = android.net.Uri.parse("package:${context.packageName}")
+                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                            )
+                        } catch (e: Exception) {
+                            context.startActivity(
+                                android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                            )
+                        }
+                    } else {
+                        // For Android < 11, typically request permissions via ActivityCompat,
+                        // but here we just open App Settings as a fallback
+                        context.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = android.net.Uri.parse("package:${context.packageName}")
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                        )
+                    }
+                    // Updating state later might be needed if they return
+                    allFilesAccessGranted = isAllFilesAccessGranted(context)
+                },
                 contactsSync = contactsSync,
                 onContactsSyncChange = { contactsSync = it },
                 smsSync = smsSync,
@@ -244,6 +295,9 @@ fun SettingsScreen(
                 onGatewayUrlsChange = { hubDispatchUrl = it },
                 configPath = configPath,
                 onConfigPathChange = { configPath = it },
+                onPickConfigPath = { configPathLauncher.launch("*/*") },
+                storagePath = storagePath,
+                onStoragePathChange = { storagePath = it },
                 allowInsecure = allowInsecure,
                 onAllowInsecureChange = { allowInsecure = it },
                 testingHub = testingHub,
@@ -312,6 +366,7 @@ fun SettingsScreen(
                 onTlsKeystoreTypeChange = { tlsKeystoreType = it },
                 tlsKeystorePath = tlsKeystorePath,
                 onTlsKeystorePathChange = { tlsKeystorePath = it },
+                onPickTlsKeystorePath = { tlsKeystorePathLauncher.launch("*/*") },
                 tlsKeystorePassword = tlsKeystorePassword,
                 onTlsKeystorePasswordChange = { tlsKeystorePassword = it },
                 onStartRestartServer = {
@@ -447,6 +502,7 @@ fun SettingsScreen(
                     hubClientId = hubClientId.ifBlank { settings.deviceId },
                     hubToken = authToken.trim(),
                     configPath = configPath.trim(),
+                    storagePath = storagePath.trim(),
                     logLevel = settings.logLevel
                 )
                 saving = true
@@ -514,3 +570,41 @@ private fun isClipboardAccessibilityEnabled(context: Context): Boolean {
 
 private fun isFloatingOverlayEnabled(context: Context): Boolean =
     AndroidSettings.canDrawOverlays(context)
+
+private fun handleFilePicked(context: Context, uri: Uri?): String? {
+    if (uri == null) return null
+    return try {
+        val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+        var fileName = "copied_file_${System.currentTimeMillis()}"
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1) {
+                    val name = cursor.getString(nameIndex)
+                    if (name != null) fileName = name
+                }
+            }
+        }
+        val file = java.io.File(context.filesDir, fileName)
+        inputStream.use { input ->
+            file.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+        "fs:${file.absolutePath}"
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+}
+
+private fun isAllFilesAccessGranted(context: Context): Boolean {
+    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+        android.os.Environment.isExternalStorageManager()
+    } else {
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+}
