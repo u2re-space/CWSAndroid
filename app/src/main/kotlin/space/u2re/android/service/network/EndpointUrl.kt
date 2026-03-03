@@ -20,7 +20,7 @@ fun normalizeEndpointUrl(raw: String, defaultPath: String): String? {
         val authority = uri.rawAuthority ?: return null
         val incomingPath = uri.rawPath
         val normalizedPath = when {
-            incomingPath.isNullOrBlank() || incomingPath == "/" -> defaultPath
+            incomingPath.isNullOrBlank() -> defaultPath
             incomingPath == "/api" && defaultPath.startsWith("/api/") -> defaultPath
             else -> incomingPath
         }
@@ -104,10 +104,8 @@ fun normalizeResponsesEndpoint(raw: String): String? {
         val rawPath = uri.rawPath?.trimEnd('/') ?: ""
         val normalizedPath = if (rawPath.isBlank() || rawPath == "/") {
             "/v1/responses"
-        } else if (rawPath.endsWith("/responses")) {
-            rawPath
         } else {
-            "$rawPath/responses"
+            rawPath
         }
 
         URI(

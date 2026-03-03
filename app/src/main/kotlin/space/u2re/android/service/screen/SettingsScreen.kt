@@ -155,7 +155,8 @@ fun SettingsScreen(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
-                storagePath = uri.toString()
+                val absolutePath = getAbsolutePathFromUri(context, uri)
+                storagePath = absolutePath ?: uri.toString()
                 message = "Storage folder selected"
             } catch (e: Exception) {
                 message = "Error taking permission: ${e.message}"
@@ -167,18 +168,24 @@ fun SettingsScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            message = "Copying config file..."
-            scope.launch {
-                try {
-                    val path = withContext(Dispatchers.IO) { handleFilePicked(context, uri) }
-                    if (path != null) {
-                        configPath = path
-                        message = "Config file selected"
-                    } else {
-                        message = "Could not read config file"
+            val absolutePath = getAbsolutePathFromUri(context, uri)
+            if (absolutePath != null) {
+                configPath = "fs:$absolutePath"
+                message = "Config file selected"
+            } else {
+                message = "Copying config file..."
+                scope.launch {
+                    try {
+                        val path = withContext(Dispatchers.IO) { handleFilePicked(context, uri) }
+                        if (path != null) {
+                            configPath = path
+                            message = "Config file selected"
+                        } else {
+                            message = "Could not read config file"
+                        }
+                    } catch (e: Exception) {
+                        message = "Error: ${e.message}"
                     }
-                } catch (e: Exception) {
-                    message = "Error: ${e.message}"
                 }
             }
         }
@@ -188,18 +195,24 @@ fun SettingsScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            message = "Copying keystore file..."
-            scope.launch {
-                try {
-                    val path = withContext(Dispatchers.IO) { handleFilePicked(context, uri) }
-                    if (path != null) {
-                        tlsKeystorePath = path
-                        message = "Keystore file selected"
-                    } else {
-                        message = "Could not read keystore file"
+            val absolutePath = getAbsolutePathFromUri(context, uri)
+            if (absolutePath != null) {
+                tlsKeystorePath = "fs:$absolutePath"
+                message = "Keystore file selected"
+            } else {
+                message = "Copying keystore file..."
+                scope.launch {
+                    try {
+                        val path = withContext(Dispatchers.IO) { handleFilePicked(context, uri) }
+                        if (path != null) {
+                            tlsKeystorePath = path
+                            message = "Keystore file selected"
+                        } else {
+                            message = "Could not read keystore file"
+                        }
+                    } catch (e: Exception) {
+                        message = "Error: ${e.message}"
                     }
-                } catch (e: Exception) {
-                    message = "Error: ${e.message}"
                 }
             }
         }
@@ -698,6 +711,36 @@ private fun handleFilePicked(context: Context, uri: Uri?): String? {
         }
     }
     return "fs:${file.absolutePath}"
+}
+
+private fun getAbsolutePathFromUri(context: Context, uri: Uri): String? {
+    try {
+        val authority = uri.authority
+        if ("com.android.externalstorage.documents" == authority) {
+            val docId = if (android.provider.DocumentsContract.isDocumentUri(context, uri)) {
+                android.provider.DocumentsContract.getDocumentId(uri)
+            } else {
+                android.provider.DocumentsContract.getTreeDocumentId(uri)
+            }
+            if (docId != null) {
+                val split = docId.split(":")
+                val type = split.firstOrNull()
+                val path = if (split.size > 1) split[1] else ""
+                
+                if ("primary".equals(type, ignoreCase = true)) {
+                    return "${android.os.Environment.getExternalStorageDirectory()}/$path".removeSuffix("/")
+                } else {
+                    return "/storage/$type/$path".removeSuffix("/")
+                }
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    if ("file".equals(uri.scheme, ignoreCase = true)) {
+        return uri.path
+    }
+    return null
 }
 
 private fun isAllFilesAccessGranted(context: Context): Boolean {

@@ -160,7 +160,16 @@ class Daemon(
             listSms = syncCallbacks.listSms,
             listNotifications = syncCallbacks.listNotifications,
             listDestinations = { settings.destinations },
-            speakNotificationText = syncCallbacks.speakNotificationText
+            speakNotificationText = syncCallbacks.speakNotificationText,
+            getConfigContent = { filename ->
+                val base = settings.configPath.trim().removePrefix("fs:").removePrefix("file:")
+                if (base.isBlank()) null
+                else {
+                    val file = space.u2re.cws.daemon.ConfigResolver.resolveFile(base)
+                    val target = if (file.isDirectory) java.io.File(file, filename) else if (file.name == filename) file else null
+                    if (target?.exists() == true && target.isFile) target.readText() else null
+                }
+            }
         )
 
         val httpsOptions = commonOptions.copy(
@@ -442,7 +451,7 @@ class Daemon(
             if (target.isBlank()) continue
 
             val lower = target.lowercase()
-            val isDeviceTarget = lower.startsWith("device:") || lower.startsWith("local-device:") || lower.startsWith("id:")
+            val isDeviceTarget = lower.startsWith("device:") || lower.startsWith("local-device:") || lower.startsWith("id:") || lower.startsWith("l-") || lower.startsWith("p-") || (!lower.contains(".") && !lower.contains(":") && !lower.contains("/"))
             val normalizedTarget = normalizeDestinationHost(target).trim()
             if (normalizedTarget.isBlank()) continue
             val maybeCachedUrl = associations[normalizedTarget.lowercase()]
@@ -457,7 +466,7 @@ class Daemon(
 
             if (isDeviceTarget) {
                 val request = mutableMapOf<String, Any>(
-                    "deviceId" to normalizedTarget.lowercase(),
+                    "deviceId" to normalizedTarget,
                     "body" to text,
                     "method" to "POST",
                     "headers" to buildMap {

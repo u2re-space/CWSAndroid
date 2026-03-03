@@ -36,7 +36,8 @@ data class HttpServerOptions(
     val listSms: suspend (Int) -> List<SmsItem>,
     val listNotifications: suspend (Int) -> List<NotificationEvent>,
     val listDestinations: () -> List<String>,
-    val speakNotificationText: suspend (String) -> Unit
+    val speakNotificationText: suspend (String) -> Unit,
+    val getConfigContent: (String) -> String?
 )
 
 @Keep
@@ -65,16 +66,31 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                         return json(200, mapOf("ok" to true, "port" to opts.port))
                     }
 
-                    if (method != "POST") {
+                    if (method != "POST" && method != "GET") {
                         return text(405, "Method Not Allowed")
                     }
 
-                    when (uri) {
-                        "/clipboard" -> {
+                    when {
+                        uri.startsWith("/api/config/") -> {
+                            if (method != "GET") return text(405, "Method Not Allowed")
+                            val filename = uri.removePrefix("/api/config/")
+                            if (filename.contains("/") || filename.contains("\\")) {
+                                return text(400, "Bad Request")
+                            }
+                            val content = opts.getConfigContent(filename)
+                            return if (content != null) {
+                                val mime = if (filename.endsWith(".json")) "application/json" else "text/plain"
+                                newFixedLengthResponse(Response.Status.OK, mime, content)
+                            } else {
+                                text(404, "Not Found")
+                            }
+                        }
+                        uri == "/clipboard" || uri == "/clipboard/" -> {
+                            if (method != "POST") return text(405, "Method Not Allowed")
                             val bodyText = readBody(session)
                             val ct = getHeader(session.headers, "content-type")?.lowercase() ?: ""
                             val payload = parseClipboardPayload(bodyText, ct)
-                            DaemonLog.debug("LocalHttpServer", "POST /clipboard contentType=$ct payloadLength=${payload.length}")
+                            DaemonLog.debug("LocalHttpServer", "POST $uri contentType=$ct payloadLength=${payload.length}")
                             if (payload.isBlank()) return text(400, "No text provided")
                             return try {
                                 runBlocking { opts.setClipboardText(payload) }
@@ -84,21 +100,7 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                                 json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
                             }
                         }
-                        "/clipboard/" -> {
-                            val bodyText = readBody(session)
-                            val ct = getHeader(session.headers, "content-type")?.lowercase() ?: ""
-                            val payload = parseClipboardPayload(bodyText, ct)
-                            DaemonLog.debug("LocalHttpServer", "POST /clipboard/ contentType=$ct payloadLength=${payload.length}")
-                            if (payload.isBlank()) return text(400, "No text provided")
-                            return try {
-                                runBlocking { opts.setClipboardText(payload) }
-                                DaemonLog.info("LocalHttpServer", "clipboard request applied")
-                                json(200, mapOf("ok" to true))
-                            } catch (e: Exception) {
-                                json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
-                            }
-                        }
-                        "/devices" -> {
+                        uri == "/devices" -> {
                             val list = (opts.listDestinations() + "/sms" + "/notifications").toSet().toList().filter { it.isNotBlank() }
                             return json(
                                 200,
@@ -109,7 +111,7 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                                 )
                             )
                         }
-                        "/sms" -> {
+                        uri == "/sms" -> {
                             if (method == "GET") {
                                 return try {
                                     val rawLimit = session.parameters["limit"]?.firstOrNull()
@@ -137,7 +139,7 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                             }
                             return text(405, "Method Not Allowed")
                         }
-                        "/notifications" -> {
+                        uri == "/notifications" -> {
                             if (method != "GET") {
                                 return text(405, "Method Not Allowed")
                             }
@@ -150,7 +152,7 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                                 json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
                             }
                         }
-                        "/notifications/speak" -> {
+                        uri == "/notifications/speak" -> {
                             if (method != "POST") {
                                 return text(405, "Method Not Allowed")
                             }
@@ -167,7 +169,8 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                                 json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
                             }
                         }
-                        "/core/ops/http/dispatch" -> {
+                        uri == "/core/ops/http/dispatch" -> {
+                            if (method != "POST") return text(405, "Method Not Allowed")
                             val parsed = try {
                                 readBody(session)
                             } catch (_: Exception) {
@@ -177,22 +180,6 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                             return try {
                                 val result = runBlocking { opts.dispatch(requests) }
                                 json(200, mapOf("ok" to true, "result" to result))
-                            } catch (e: Exception) {
-                                json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
-                            }
-                        }
-                        "/sms" -> {
-                            val parsed = readBody(session)
-                            val map = gson.fromJson(parsed.ifBlank { "{}" }, object : TypeToken<Map<String, Any>>() {}.type) as? Map<*, *>
-                                ?: emptyMap<String, Any>()
-                            val number = map["number"]?.toString()?.trim().orEmpty()
-                            val content = map["content"]?.toString()?.trim().orEmpty()
-                            if (number.isBlank() || content.isBlank()) {
-                                return json(400, mapOf("ok" to false, "error" to "number/content required"))
-                            }
-                            return try {
-                                runBlocking { opts.sendSms(number, content) }
-                                json(200, mapOf("ok" to true))
                             } catch (e: Exception) {
                                 json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
                             }

@@ -149,30 +149,51 @@ object SettingsStore {
                 merged = merged.copy(authToken = (parsed["userKey"] as? String) ?: merged.authToken)
             }
             
-            // Merge from clients.json if configPath is provided
+            // Merge from config files if configPath is provided
             if (merged.configPath.isNotBlank()) {
-                val resolvedPath = ConfigResolver.resolve(merged.configPath, ResolveContext(deviceId = merged.deviceId))
-                try {
-                    val file = java.io.File(resolvedPath)
-                    if (file.exists() && file.isFile) {
-                        val clientsRaw = file.readText()
-                        val clientsParsed = gson.fromJson(clientsRaw, Map::class.java) as? Map<*, *> ?: emptyMap<String, Any>()
-                        val fromClients = defaultSettings().mergeFromMap(clientsParsed)
+                val basePath = merged.configPath.trim().removePrefix("fs:").removePrefix("file:")
+                if (basePath.isNotBlank()) {
+                    try {
+                        val baseFile = ConfigResolver.resolveFile(basePath)
                         
-                        // Apply clients.json over defaults, then apply SharedPreferences non-default values over it.
-                        // For simplicity, we just overwrite empty string fields in SharedPreferences with clients.json values
-                        merged = merged.copy(
-                            hubDispatchUrl = merged.hubDispatchUrl.ifBlank { fromClients.hubDispatchUrl },
-                            authToken = merged.authToken.ifBlank { fromClients.authToken },
-                            hubToken = merged.hubToken.ifBlank { fromClients.hubToken },
-                            hubClientId = merged.hubClientId.ifBlank { fromClients.hubClientId },
-                            apiEndpoint = merged.apiEndpoint.ifBlank { fromClients.apiEndpoint },
-                            apiKey = merged.apiKey.ifBlank { fromClients.apiKey },
-                            destinations = if (merged.destinations.isEmpty()) fromClients.destinations else merged.destinations
-                        )
+                        val fileCandidates = if (baseFile.isDirectory) {
+                            listOf("clients.json", "portable.config.json", "config.json", "package.json").map { java.io.File(baseFile, it) }
+                        } else {
+                            listOf(baseFile)
+                        }
+                        
+                        for (fileCandidate in fileCandidates) {
+                            if (fileCandidate.exists() && fileCandidate.isFile) {
+                                val raw = fileCandidate.readText()
+                                val parsed = gson.fromJson(raw, Map::class.java) as? Map<*, *> ?: emptyMap<String, Any>()
+                                val fromClients = defaultSettings().mergeFromMap(parsed)
+                                
+                                merged = merged.copy(
+                                    hubDispatchUrl = merged.hubDispatchUrl.ifBlank { fromClients.hubDispatchUrl },
+                                    authToken = merged.authToken.ifBlank { fromClients.authToken },
+                                    hubToken = merged.hubToken.ifBlank { fromClients.hubToken },
+                                    hubClientId = merged.hubClientId.ifBlank { fromClients.hubClientId },
+                                    apiEndpoint = merged.apiEndpoint.ifBlank { fromClients.apiEndpoint },
+                                    apiKey = merged.apiKey.ifBlank { fromClients.apiKey },
+                                    destinations = if (merged.destinations.isEmpty()) fromClients.destinations else merged.destinations
+                                )
+                            }
+                        }
+
+                        val gatewaysFile = if (baseFile.isDirectory) java.io.File(baseFile, "gateways.json") else null
+                        if (gatewaysFile?.exists() == true && gatewaysFile.isFile) {
+                            val gatewaysRaw = gatewaysFile.readText()
+                            val gatewaysParsed = gson.fromJson(gatewaysRaw, Map::class.java) as? Map<*, *>
+                            val gatewaysList = (gatewaysParsed?.get("gateways") as? List<*>)?.mapNotNull { it?.toString() }
+                                ?: (gatewaysParsed?.get("destinations") as? List<*>)?.mapNotNull { it?.toString() }
+                                ?: emptyList()
+                            if (gatewaysList.isNotEmpty() && merged.destinations.isEmpty()) {
+                                merged = merged.copy(destinations = gatewaysList)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Ignore errors reading configs
                     }
-                } catch (e: Exception) {
-                    // Ignore errors reading clients.json
                 }
             }
             
