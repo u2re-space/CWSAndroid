@@ -31,6 +31,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -41,6 +42,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -112,19 +116,92 @@ fun SettingsScreen(
         localIps = loadLocalIpAddresses()
     }
 
-    val configPathLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                accessibilityServiceEnabled = isClipboardAccessibilityEnabled(context)
+                overlayPermissionGranted = isFloatingOverlayEnabled(context)
+                allFilesAccessGranted = isAllFilesAccessGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    val contactsPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        contactsSync = isGranted
+        if (!isGranted) message = "Contacts permission denied"
+    }
+
+    val smsPermissionsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val granted = results.values.all { it }
+        smsSync = granted
+        if (!granted) message = "SMS permissions denied"
+    }
+
+    val storagePathLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
-        handleFilePicked(context, uri)?.let { path ->
-            configPath = path
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+                storagePath = uri.toString()
+                message = "Storage folder selected"
+            } catch (e: Exception) {
+                message = "Error taking permission: ${e.message}"
+            }
+        }
+    }
+
+    val configPathLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            message = "Copying config file..."
+            scope.launch {
+                try {
+                    val path = withContext(Dispatchers.IO) { handleFilePicked(context, uri) }
+                    if (path != null) {
+                        configPath = path
+                        message = "Config file selected"
+                    } else {
+                        message = "Could not read config file"
+                    }
+                } catch (e: Exception) {
+                    message = "Error: ${e.message}"
+                }
+            }
         }
     }
 
     val tlsKeystorePathLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
-        handleFilePicked(context, uri)?.let { path ->
-            tlsKeystorePath = path
+        if (uri != null) {
+            message = "Copying keystore file..."
+            scope.launch {
+                try {
+                    val path = withContext(Dispatchers.IO) { handleFilePicked(context, uri) }
+                    if (path != null) {
+                        tlsKeystorePath = path
+                        message = "Keystore file selected"
+                    } else {
+                        message = "Could not read keystore file"
+                    }
+                } catch (e: Exception) {
+                    message = "Error: ${e.message}"
+                }
+            }
         }
     }
 
@@ -273,9 +350,26 @@ fun SettingsScreen(
                     allFilesAccessGranted = isAllFilesAccessGranted(context)
                 },
                 contactsSync = contactsSync,
-                onContactsSyncChange = { contactsSync = it },
+                onContactsSyncChange = { checked ->
+                    if (checked) {
+                        contactsPermissionLauncher.launch(android.Manifest.permission.READ_CONTACTS)
+                    } else {
+                        contactsSync = false
+                    }
+                },
                 smsSync = smsSync,
-                onSmsSyncChange = { smsSync = it },
+                onSmsSyncChange = { checked ->
+                    if (checked) {
+                        smsPermissionsLauncher.launch(
+                            arrayOf(
+                                android.Manifest.permission.READ_SMS,
+                                android.Manifest.permission.SEND_SMS
+                            )
+                        )
+                    } else {
+                        smsSync = false
+                    }
+                },
                 hubClientId = hubClientId,
                 onHubClientIdChange = { hubClientId = it },
                 authToken = authToken,
@@ -295,9 +389,10 @@ fun SettingsScreen(
                 onGatewayUrlsChange = { hubDispatchUrl = it },
                 configPath = configPath,
                 onConfigPathChange = { configPath = it },
-                onPickConfigPath = { configPathLauncher.launch("*/*") },
+                onPickConfigPath = { configPathLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream", "*/*")) },
                 storagePath = storagePath,
                 onStoragePathChange = { storagePath = it },
+                onPickStoragePath = { storagePathLauncher.launch(null) },
                 allowInsecure = allowInsecure,
                 onAllowInsecureChange = { allowInsecure = it },
                 testingHub = testingHub,
@@ -366,7 +461,7 @@ fun SettingsScreen(
                 onTlsKeystoreTypeChange = { tlsKeystoreType = it },
                 tlsKeystorePath = tlsKeystorePath,
                 onTlsKeystorePathChange = { tlsKeystorePath = it },
-                onPickTlsKeystorePath = { tlsKeystorePathLauncher.launch("*/*") },
+                onPickTlsKeystorePath = { tlsKeystorePathLauncher.launch(arrayOf("application/x-pkcs12", "application/x-pem-file", "application/octet-stream", "*/*")) },
                 tlsKeystorePassword = tlsKeystorePassword,
                 onTlsKeystorePasswordChange = { tlsKeystorePassword = it },
                 onStartRestartServer = {
@@ -460,87 +555,91 @@ fun SettingsScreen(
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
         Spacer(Modifier.size(16.dp))
 
-        Button(
-            onClick = {
-                val nextHttp = listenPortHttp.toIntOrNull() ?: settings.listenPortHttp
-                val nextHttps = listenPortHttps.toIntOrNull() ?: settings.listenPortHttps
-                val nextSyncInterval = syncInterval.toIntOrNull() ?: settings.syncIntervalSec
-                val nextClipboardSyncInterval = clipboardSyncInterval.toIntOrNull() ?: settings.clipboardSyncIntervalSec
-                val nextRunDaemonForeground = runDaemonForeground
-                val nextDestinations = destinationText
-                    .lineSequence()
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .toList()
+        var isInitialLoad by remember { mutableStateOf(true) }
 
-                val patch = SettingsPatch(
-                    listenPortHttp = nextHttp,
-                    listenPortHttps = nextHttps,
-                    enableLocalServer = enableLocalServer,
-                    destinations = nextDestinations,
-                    hubDispatchUrl = normalizeHubDispatchUrl(hubDispatchUrl) ?: hubDispatchUrl.trim(),
-                    allowInsecureTls = allowInsecure,
-                    shareTarget = shareTarget,
-                    clipboardSync = clipboardSync,
-                    contactsSync = contactsSync,
-                    smsSync = smsSync,
-                    syncIntervalSec = nextSyncInterval,
-                    clipboardSyncIntervalSec = nextClipboardSyncInterval,
-                    runDaemonForeground = nextRunDaemonForeground,
-                    runDaemonOnBoot = runDaemonOnBoot,
-                    useAccessibilityService = useAccessibilityService,
-                    showFloatingButton = showFloatingButton,
-                    quickActionCopyOnly = quickActionCopyOnly,
-                    quickActionHandleImage = quickActionHandleImage,
-                    authToken = authToken.trim(),
-                    tlsEnabled = tlsEnabled,
-                    apiEndpoint = apiEndpoint.trim(),
-                    apiKey = apiKey.trim(),
-                    tlsKeystoreAssetPath = tlsKeystorePath.trim(),
-                    tlsKeystoreType = tlsKeystoreType.ifBlank { settings.tlsKeystoreType },
-                    tlsKeystorePassword = tlsKeystorePassword,
-                    hubClientId = hubClientId.ifBlank { settings.deviceId },
-                    hubToken = authToken.trim(),
-                    configPath = configPath.trim(),
-                    storagePath = storagePath.trim(),
-                    logLevel = settings.logLevel
-                )
-                saving = true
-                message = "Saving..."
-                scope.launch {
-                    try {
-                        SettingsStore.update(app, patch)
-                        if (nextRunDaemonForeground) {
-                            DaemonForegroundService.start(app)
-                        } else {
-                            DaemonForegroundService.stop(app)
-                        }
-                        if (showFloatingButton && isFloatingOverlayEnabled(app)) {
-                            FloatingButtonService.start(app)
-                        } else {
-                            FloatingButtonService.stop(app)
-                        }
-                        val current = DaemonController.current()
-                        if (current == null) {
-                            DaemonController.start(app)
-                        } else {
-                            current.restart()
-                        }
-                        message = "Saved and restarted"
-                    } catch (e: Exception) {
-                        message = "Save failed: ${e.message ?: "error"}"
-                    } finally {
-                        saving = false
-                    }
-                }
-            },
-            enabled = !saving,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            )
+        LaunchedEffect(
+            destinationText, hubDispatchUrl, configPath, storagePath, hubClientId,
+            allowInsecure, apiEndpoint, apiKey, shareTarget, clipboardSync,
+            contactsSync, smsSync, syncInterval, clipboardSyncInterval,
+            runDaemonForeground, runDaemonOnBoot, useAccessibilityService,
+            showFloatingButton, quickActionCopyOnly, quickActionHandleImage,
+            listenPortHttp, listenPortHttps, enableLocalServer, authToken,
+            tlsEnabled, tlsKeystorePath, tlsKeystorePassword, tlsKeystoreType
         ) {
-            Text(if (saving) "Saving..." else "Save changes")
+            if (isInitialLoad) {
+                isInitialLoad = false
+                return@LaunchedEffect
+            }
+
+            kotlinx.coroutines.delay(1000)
+
+            val nextHttp = listenPortHttp.toIntOrNull() ?: settings.listenPortHttp
+            val nextHttps = listenPortHttps.toIntOrNull() ?: settings.listenPortHttps
+            val nextSyncInterval = syncInterval.toIntOrNull() ?: settings.syncIntervalSec
+            val nextClipboardSyncInterval = clipboardSyncInterval.toIntOrNull() ?: settings.clipboardSyncIntervalSec
+            val nextRunDaemonForeground = runDaemonForeground
+            val nextDestinations = destinationText
+                .lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .toList()
+
+            val patch = SettingsPatch(
+                listenPortHttp = nextHttp,
+                listenPortHttps = nextHttps,
+                enableLocalServer = enableLocalServer,
+                destinations = nextDestinations,
+                hubDispatchUrl = space.u2re.cws.network.normalizeHubDispatchUrl(hubDispatchUrl) ?: hubDispatchUrl.trim(),
+                allowInsecureTls = allowInsecure,
+                shareTarget = shareTarget,
+                clipboardSync = clipboardSync,
+                contactsSync = contactsSync,
+                smsSync = smsSync,
+                syncIntervalSec = nextSyncInterval,
+                clipboardSyncIntervalSec = nextClipboardSyncInterval,
+                runDaemonForeground = nextRunDaemonForeground,
+                runDaemonOnBoot = runDaemonOnBoot,
+                useAccessibilityService = useAccessibilityService,
+                showFloatingButton = showFloatingButton,
+                quickActionCopyOnly = quickActionCopyOnly,
+                quickActionHandleImage = quickActionHandleImage,
+                authToken = authToken.trim(),
+                tlsEnabled = tlsEnabled,
+                apiEndpoint = apiEndpoint.trim(),
+                apiKey = apiKey.trim(),
+                tlsKeystoreAssetPath = tlsKeystorePath.trim(),
+                tlsKeystoreType = tlsKeystoreType.ifBlank { settings.tlsKeystoreType },
+                tlsKeystorePassword = tlsKeystorePassword,
+                hubClientId = hubClientId.ifBlank { settings.deviceId },
+                hubToken = authToken.trim(),
+                configPath = configPath.trim(),
+                storagePath = storagePath.trim(),
+                logLevel = settings.logLevel
+            )
+            saving = true
+            message = "Auto-saving..."
+            try {
+                SettingsStore.update(app, patch)
+                if (nextRunDaemonForeground) {
+                    DaemonForegroundService.start(app)
+                } else {
+                    DaemonForegroundService.stop(app)
+                }
+                if (showFloatingButton && isFloatingOverlayEnabled(app)) {
+                    FloatingButtonService.start(app)
+                } else {
+                    FloatingButtonService.stop(app)
+                }
+                val current = DaemonController.current()
+                if (current != null) {
+                    current.restart()
+                }
+                message = "Auto-saved"
+            } catch (e: Exception) {
+                message = "Save failed: ${e.message ?: "error"}"
+            } finally {
+                saving = false
+            }
         }
 
         Spacer(Modifier.size(8.dp))
@@ -573,9 +672,9 @@ private fun isFloatingOverlayEnabled(context: Context): Boolean =
 
 private fun handleFilePicked(context: Context, uri: Uri?): String? {
     if (uri == null) return null
-    return try {
-        val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-        var fileName = "copied_file_${System.currentTimeMillis()}"
+    val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+    var fileName = "copied_file_${System.currentTimeMillis()}"
+    try {
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
@@ -585,17 +684,20 @@ private fun handleFilePicked(context: Context, uri: Uri?): String? {
                 }
             }
         }
-        val file = java.io.File(context.filesDir, fileName)
-        inputStream.use { input ->
-            file.outputStream().use { output ->
-                input.copyTo(output)
-            }
-        }
-        "fs:${file.absolutePath}"
     } catch (e: Exception) {
         e.printStackTrace()
-        null
     }
+    
+    // Sanitize file name to avoid invalid characters
+    fileName = fileName.replace(Regex("[^a-zA-Z0-9.\\-_]"), "_")
+    
+    val file = java.io.File(context.filesDir, fileName)
+    inputStream.use { input ->
+        file.outputStream().use { output ->
+            input.copyTo(output)
+        }
+    }
+    return "fs:${file.absolutePath}"
 }
 
 private fun isAllFilesAccessGranted(context: Context): Boolean {

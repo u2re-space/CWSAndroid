@@ -6,7 +6,7 @@ globs:
 
 ## Repo context
 
-- App id: `com.u2re.ioclient`
+- App id: `space.u2re.cws`
 - Android workflows live in `package.json` scripts:
   - `npm run android:devices` (show adb devices)
   - `npm run android:log` (logcat filter)

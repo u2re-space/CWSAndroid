@@ -237,6 +237,7 @@ fun GatewayTab(
     onPickConfigPath: () -> Unit,
     storagePath: String,
     onStoragePathChange: (String) -> Unit,
+    onPickStoragePath: () -> Unit,
     allowInsecure: Boolean,
     onAllowInsecureChange: (Boolean) -> Unit,
     testingHub: Boolean,
@@ -283,7 +284,15 @@ fun GatewayTab(
     OutlinedTextField(
         value = storagePath,
         onValueChange = onStoragePathChange,
-        label = { Text("Storage Base Path (e.g. ~/Android/data/space.u2re.cws)") },
+        label = { Text("Storage Base Path (e.g. ~/Android/data/space.u2re.cws/)") },
+        trailingIcon = {
+            androidx.compose.material3.IconButton(onClick = onPickStoragePath) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Default.MoreVert,
+                    contentDescription = "Pick folder"
+                )
+            }
+        },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )

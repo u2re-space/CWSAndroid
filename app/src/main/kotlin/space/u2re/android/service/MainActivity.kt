@@ -72,12 +72,17 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val navController = rememberNavController()
+            val startDest: Any = if (intent?.action == android.content.Intent.ACTION_APPLICATION_PREFERENCES) {
+                SettingsRoute
+            } else {
+                ConnectRoute
+            }
                 LiveKitVoiceAssistantExampleTheme(dynamicColor = false) {
                 Scaffold { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding)) {
 
                         // Set up NavHost for the app
-                        NavHost(navController, startDestination = ConnectRoute) {
+                        NavHost(navController, startDestination = startDest) {
                             composable<ConnectRoute> {
                                 ConnectScreen(
                                     navigateToVoiceAssistant = { voiceAssistantRoute ->

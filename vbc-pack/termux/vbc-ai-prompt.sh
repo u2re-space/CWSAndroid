@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
 
-APP_ID="${APP_ID:-com.u2re.ioclient}"
+APP_ID="${APP_ID:-space.u2re.cws}"
 MAX_LOG_LINES="${MAX_LOG_LINES:-250}"
 
 WIN_SSH_USER="${VBC_WIN_SSH_USER:-U2RE}"

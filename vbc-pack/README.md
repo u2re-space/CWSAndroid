@@ -12,7 +12,7 @@ This pack is a small set of **Windows (PowerShell)** + **Android (Termux)** help
 - **SSH Termux → Windows**: helper script + a Windows setup script (optional).
 - **VSCode/Cursor**: `.vscode/tasks.json` (adb/devices/logcat) + `.vscode/launch.json`.
 
-> Repo app id: `com.u2re.ioclient`
+> Repo app id: `space.u2re.cws`
 
 ---
 
