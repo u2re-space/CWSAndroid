@@ -1,4 +1,4 @@
-package space.u2re.service.network
+package space.u2re.cws.network
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

@@ -1,4 +1,4 @@
-package space.u2re.service.reverse
+package space.u2re.cws.reverse
 
 import android.content.Context
 import android.util.Log
@@ -8,14 +8,14 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import space.u2re.service.daemon.Settings
-import space.u2re.service.daemon.SettingsStore
-import space.u2re.service.daemon.resolve
-import space.u2re.service.network.postJson
-import space.u2re.service.network.postText
+import space.u2re.cws.daemon.Settings
+import space.u2re.cws.daemon.SettingsStore
+import space.u2re.cws.daemon.resolve
+import space.u2re.cws.network.postJson
+import space.u2re.cws.network.postText
 
-import space.u2re.service.daemon.Daemon
-import space.u2re.service.network.DispatchRequest
+import space.u2re.cws.daemon.Daemon
+import space.u2re.cws.network.DispatchRequest
 
 private val BridgeLogger = "ReverseAssistantBridge"
 private val gson = Gson()

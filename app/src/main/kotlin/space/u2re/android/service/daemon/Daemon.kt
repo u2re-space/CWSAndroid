@@ -1,4 +1,4 @@
-package space.u2re.service.daemon
+package space.u2re.cws.daemon
 
 import android.app.Application
 import android.app.Activity
@@ -10,24 +10,24 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import space.u2re.service.notifications.NotificationEvent
-import space.u2re.service.notifications.NotificationEventStore
-import space.u2re.service.notifications.NotificationSpeaker
-import space.u2re.service.network.DispatchResult
-import space.u2re.service.network.sendSmsAndroid
-import space.u2re.service.network.DispatchRequest
-import space.u2re.service.network.dispatchHttpRequests
-import space.u2re.service.network.normalizeDestinationUrl
-import space.u2re.service.network.normalizeDestinationHost
-import space.u2re.service.network.postText
-import space.u2re.service.network.postJson
-import space.u2re.service.network.normalizeHubDispatchUrl
-import space.u2re.service.network.TlsConfig
-import space.u2re.service.network.HttpServerOptions
-import space.u2re.service.network.LocalHttpServer
-import space.u2re.service.network.ReverseGatewayClient
-import space.u2re.service.reverse.ReverseGatewayConfigProvider
-import space.u2re.service.reverse.AssistantNetworkBridge
+import space.u2re.cws.notifications.NotificationEvent
+import space.u2re.cws.notifications.NotificationEventStore
+import space.u2re.cws.notifications.NotificationSpeaker
+import space.u2re.cws.network.DispatchResult
+import space.u2re.cws.network.sendSmsAndroid
+import space.u2re.cws.network.DispatchRequest
+import space.u2re.cws.network.dispatchHttpRequests
+import space.u2re.cws.network.normalizeDestinationUrl
+import space.u2re.cws.network.normalizeDestinationHost
+import space.u2re.cws.network.postText
+import space.u2re.cws.network.postJson
+import space.u2re.cws.network.normalizeHubDispatchUrl
+import space.u2re.cws.network.TlsConfig
+import space.u2re.cws.network.HttpServerOptions
+import space.u2re.cws.network.LocalHttpServer
+import space.u2re.cws.network.ReverseGatewayClient
+import space.u2re.cws.reverse.ReverseGatewayConfigProvider
+import space.u2re.cws.reverse.AssistantNetworkBridge
 
 class Daemon(
     private val application: Application,

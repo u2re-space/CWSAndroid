@@ -1,4 +1,4 @@
-package space.u2re.service.screen
+package space.u2re.cws.screen
 
 import android.app.Application
 import android.content.ClipData
@@ -45,17 +45,17 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import space.u2re.service.daemon.DaemonController
-import space.u2re.service.daemon.Settings
-import space.u2re.service.daemon.SettingsPatch
-import space.u2re.service.daemon.SettingsStore
-import space.u2re.service.agent.sendResponsesRequest
-import space.u2re.service.daemon.DaemonForegroundService
-import space.u2re.service.overlay.FloatingButtonService
-import space.u2re.service.accessibility.ClipboardAccessibilityService
-import space.u2re.service.network.normalizeHubDispatchUrl
-import space.u2re.service.network.normalizeResponsesEndpoint
-import space.u2re.service.network.postJson
+import space.u2re.cws.daemon.DaemonController
+import space.u2re.cws.daemon.Settings
+import space.u2re.cws.daemon.SettingsPatch
+import space.u2re.cws.daemon.SettingsStore
+import space.u2re.cws.agent.sendResponsesRequest
+import space.u2re.cws.daemon.DaemonForegroundService
+import space.u2re.cws.overlay.FloatingButtonService
+import space.u2re.cws.accessibility.ClipboardAccessibilityService
+import space.u2re.cws.network.normalizeHubDispatchUrl
+import space.u2re.cws.network.normalizeResponsesEndpoint
+import space.u2re.cws.network.postJson
 
 @Composable
 fun SettingsScreen(
@@ -302,7 +302,7 @@ fun SettingsScreen(
                 onAllowInsecureChange = { allowInsecure = it },
                 testingHub = testingHub,
                 onTestHub = {
-                    val normalizedHubUrl = space.u2re.service.network.normalizeHubDispatchUrl(hubDispatchUrl)
+                    val normalizedHubUrl = space.u2re.cws.network.normalizeHubDispatchUrl(hubDispatchUrl)
                     if (normalizedHubUrl.isNullOrBlank()) {
                         message = "Set a valid Hub dispatch URL (for example http://192.168.0.200/api/broadcast)"
                         return@GatewayTab
@@ -312,7 +312,7 @@ fun SettingsScreen(
                     scope.launch {
                         try {
                             val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                space.u2re.service.network.postJson(
+                                space.u2re.cws.network.postJson(
                                     url = normalizedHubUrl,
                                 json = buildMap<String, Any> {
                                     put("requests", emptyList<Any>())

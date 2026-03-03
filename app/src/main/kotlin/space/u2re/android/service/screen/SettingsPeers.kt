@@ -1,6 +1,6 @@
-package space.u2re.service.screen
+package space.u2re.cws.screen
 
-import space.u2re.service.network.normalizeHubDispatchUrl
+import space.u2re.cws.network.normalizeHubDispatchUrl
 import java.net.NetworkInterface
 
 data class DiscoveredTarget(

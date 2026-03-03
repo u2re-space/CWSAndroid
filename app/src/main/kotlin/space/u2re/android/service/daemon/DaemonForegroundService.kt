@@ -1,4 +1,4 @@
-package space.u2re.service.daemon
+package space.u2re.cws.daemon
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -11,9 +11,9 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import space.u2re.service.MainActivity
-import space.u2re.service.R
-import space.u2re.service.overlay.FloatingButtonService
+import space.u2re.cws.MainActivity
+import space.u2re.cws.R
+import space.u2re.cws.overlay.FloatingButtonService
 
 class DaemonForegroundService : Service() {
     override fun onCreate() {

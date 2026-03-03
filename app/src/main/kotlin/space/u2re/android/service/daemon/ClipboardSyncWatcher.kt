@@ -1,4 +1,4 @@
-package space.u2re.service.daemon
+package space.u2re.cws.daemon
 
 import android.content.ClipData
 import android.content.ClipboardManager

@@ -1,10 +1,10 @@
-package space.u2re.service.accessibility
+package space.u2re.cws.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
-import space.u2re.service.daemon.DaemonController
-import space.u2re.service.daemon.SettingsStore
-import space.u2re.service.daemon.DaemonLog
+import space.u2re.cws.daemon.DaemonController
+import space.u2re.cws.daemon.SettingsStore
+import space.u2re.cws.daemon.DaemonLog
 
 class ClipboardAccessibilityService : AccessibilityService() {
     private var appSettingEnabled: Boolean = false

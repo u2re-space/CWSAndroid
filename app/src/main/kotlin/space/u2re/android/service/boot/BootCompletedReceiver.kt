@@ -1,4 +1,4 @@
-package space.u2re.service.boot
+package space.u2re.cws.boot
 
 import android.app.Application
 import android.content.BroadcastReceiver
@@ -6,11 +6,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.Intent.ACTION_BOOT_COMPLETED
 import android.content.Intent.ACTION_MY_PACKAGE_REPLACED
-import space.u2re.service.daemon.DaemonForegroundService
-import space.u2re.service.daemon.DaemonController
-import space.u2re.service.daemon.SettingsStore
-import space.u2re.service.daemon.resolve
-import space.u2re.service.overlay.FloatingButtonService
+import space.u2re.cws.daemon.DaemonForegroundService
+import space.u2re.cws.daemon.DaemonController
+import space.u2re.cws.daemon.SettingsStore
+import space.u2re.cws.daemon.resolve
+import space.u2re.cws.overlay.FloatingButtonService
 
 class BootCompletedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {

@@ -1,4 +1,4 @@
-package space.u2re.service.screen
+package space.u2re.cws.screen
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue

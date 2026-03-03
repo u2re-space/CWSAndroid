@@ -1,4 +1,4 @@
-package space.u2re.service
+package space.u2re.cws
 
 // TODO: Add your Sandbox ID here
 const val sandboxID = ""

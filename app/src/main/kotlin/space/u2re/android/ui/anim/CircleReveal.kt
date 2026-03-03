@@ -1,4 +1,4 @@
-package space.u2re.service.ui.anim
+package space.u2re.cws.ui.anim
 
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.Spring

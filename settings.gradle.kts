@@ -24,7 +24,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "space.u2re.service"
+rootProject.name = "space.u2re.cws"
 include(":app")
 include(":audioswitch-stub")
 

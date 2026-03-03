@@ -75,7 +75,7 @@ new_when = """        when (tabs[selectedTab]) {
                 onAllowInsecureChange = { allowInsecure = it },
                 testingHub = testingHub,
                 onTestHub = {
-                    val normalizedHubUrl = space.u2re.service.network.normalizeHubDispatchUrl(hubDispatchUrl)
+                    val normalizedHubUrl = space.u2re.cws.network.normalizeHubDispatchUrl(hubDispatchUrl)
                     if (normalizedHubUrl.isNullOrBlank()) {
                         message = "Set a valid Hub dispatch URL (for example http://192.168.0.200/api/broadcast)"
                         return@GatewayTab
@@ -85,7 +85,7 @@ new_when = """        when (tabs[selectedTab]) {
                     scope.launch {
                         try {
                             val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                space.u2re.service.network.postJson(
+                                space.u2re.cws.network.postJson(
                                     url = normalizedHubUrl,
                                 json = buildMap<String, Any> {
                                     put("requests", emptyList<Any>())

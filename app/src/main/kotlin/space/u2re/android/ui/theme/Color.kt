@@ -1,4 +1,4 @@
-package space.u2re.service.ui.theme
+package space.u2re.cws.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

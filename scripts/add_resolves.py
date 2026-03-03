@@ -25,9 +25,9 @@ for file in files_to_update:
         new_content = re.sub(r"SettingsStore\.load\(([^)]+)\)", r"SettingsStore.load(\1).resolve()", content)
         new_content = new_content.replace(".resolve().resolve()", ".resolve()")
         
-        # Need to make sure import space.u2re.service.daemon.resolve exists
-        if ".resolve()" in new_content and "import space.u2re.service.daemon.resolve" not in new_content:
-            new_content = new_content.replace("import space.u2re.service.daemon.SettingsStore", "import space.u2re.service.daemon.SettingsStore\nimport space.u2re.service.daemon.resolve")
+        # Need to make sure import space.u2re.cws.daemon.resolve exists
+        if ".resolve()" in new_content and "import space.u2re.cws.daemon.resolve" not in new_content:
+            new_content = new_content.replace("import space.u2re.cws.daemon.SettingsStore", "import space.u2re.cws.daemon.SettingsStore\nimport space.u2re.cws.daemon.resolve")
             
         with open(file, "w") as f:
             f.write(new_content)

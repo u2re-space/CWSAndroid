@@ -1,4 +1,4 @@
-package space.u2re.service.network
+package space.u2re.cws.network
 
 import android.content.Context
 import androidx.annotation.Keep
@@ -13,9 +13,9 @@ import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocketFactory
 import javax.net.ssl.TrustManagerFactory
-import space.u2re.service.daemon.SmsItem
-import space.u2re.service.notifications.NotificationEvent
-import space.u2re.service.daemon.DaemonLog
+import space.u2re.cws.daemon.SmsItem
+import space.u2re.cws.notifications.NotificationEvent
+import space.u2re.cws.daemon.DaemonLog
 
 data class TlsConfig(
     val enabled: Boolean,

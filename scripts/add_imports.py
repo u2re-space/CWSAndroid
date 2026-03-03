@@ -8,7 +8,7 @@ with open(file, "r") as f:
     content = f.read()
 
 imports_to_add = [
-    "import space.u2re.service.reverse.ReverseGatewayConfig",
+    "import space.u2re.cws.reverse.ReverseGatewayConfig",
 ]
 
 for imp in imports_to_add:
@@ -24,22 +24,22 @@ with open(file, "r") as f:
     content = f.read()
 
 imports_to_add = [
-    "import space.u2re.service.network.LocalHttpServer",
-    "import space.u2re.service.network.HttpServerOptions",
-    "import space.u2re.service.network.TlsConfig",
-    "import space.u2re.service.network.normalizeHubDispatchUrl",
-    "import space.u2re.service.network.postJson",
-    "import space.u2re.service.network.postText",
-    "import space.u2re.service.network.normalizeDestinationHost",
-    "import space.u2re.service.network.normalizeDestinationUrl",
-    "import space.u2re.service.network.dispatchHttpRequests",
-    "import space.u2re.service.network.DispatchRequest",
-    "import space.u2re.service.network.DispatchResult",
+    "import space.u2re.cws.network.LocalHttpServer",
+    "import space.u2re.cws.network.HttpServerOptions",
+    "import space.u2re.cws.network.TlsConfig",
+    "import space.u2re.cws.network.normalizeHubDispatchUrl",
+    "import space.u2re.cws.network.postJson",
+    "import space.u2re.cws.network.postText",
+    "import space.u2re.cws.network.normalizeDestinationHost",
+    "import space.u2re.cws.network.normalizeDestinationUrl",
+    "import space.u2re.cws.network.dispatchHttpRequests",
+    "import space.u2re.cws.network.DispatchRequest",
+    "import space.u2re.cws.network.DispatchResult",
 ]
 
 for imp in imports_to_add:
     if imp not in content:
-        content = content.replace("import space.u2re.service.notifications.NotificationSpeaker", f"import space.u2re.service.notifications.NotificationSpeaker\n{imp}")
+        content = content.replace("import space.u2re.cws.notifications.NotificationSpeaker", f"import space.u2re.cws.notifications.NotificationSpeaker\n{imp}")
 
 with open(file, "w") as f:
     f.write(content)
@@ -48,8 +48,8 @@ with open(file, "w") as f:
 file = "app/src/main/kotlin/space/u2re/android/service/agent/ResponsesAssistantScreen.kt"
 with open(file, "r") as f:
     content = f.read()
-if "import space.u2re.service.network.normalizeResponsesEndpoint" not in content:
-    content = content.replace("import space.u2re.service.agent.sendResponsesRequest", "import space.u2re.service.agent.sendResponsesRequest\nimport space.u2re.service.network.normalizeResponsesEndpoint")
+if "import space.u2re.cws.network.normalizeResponsesEndpoint" not in content:
+    content = content.replace("import space.u2re.cws.agent.sendResponsesRequest", "import space.u2re.cws.agent.sendResponsesRequest\nimport space.u2re.cws.network.normalizeResponsesEndpoint")
 with open(file, "w") as f:
     f.write(content)
 
@@ -57,8 +57,8 @@ with open(file, "w") as f:
 file = "app/src/main/kotlin/space/u2re/android/service/agent/ResponsesApi.kt"
 with open(file, "r") as f:
     content = f.read()
-if "import space.u2re.service.network.HttpResult" not in content:
-    content = content.replace("package space.u2re.service.agent", "package space.u2re.service.agent\n\nimport space.u2re.service.network.HttpResult\nimport space.u2re.service.network.postJson")
+if "import space.u2re.cws.network.HttpResult" not in content:
+    content = content.replace("package space.u2re.cws.agent", "package space.u2re.cws.agent\n\nimport space.u2re.cws.network.HttpResult\nimport space.u2re.cws.network.postJson")
 with open(file, "w") as f:
     f.write(content)
 
@@ -66,8 +66,8 @@ with open(file, "w") as f:
 file = "app/src/main/kotlin/space/u2re/android/service/endpoint/AssistantNetworkBridge.kt"
 with open(file, "r") as f:
     content = f.read()
-if "import space.u2re.service.network.postJson" not in content:
-    content = content.replace("import space.u2re.service.daemon.SettingsStore", "import space.u2re.service.daemon.SettingsStore\nimport space.u2re.service.network.postJson\nimport space.u2re.service.network.postText\nimport space.u2re.service.reverse.ReverseGatewayConfig")
+if "import space.u2re.cws.network.postJson" not in content:
+    content = content.replace("import space.u2re.cws.daemon.SettingsStore", "import space.u2re.cws.daemon.SettingsStore\nimport space.u2re.cws.network.postJson\nimport space.u2re.cws.network.postText\nimport space.u2re.cws.reverse.ReverseGatewayConfig")
 with open(file, "w") as f:
     f.write(content)
 

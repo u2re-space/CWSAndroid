@@ -1,5 +1,5 @@
 {
-  "name": "space.u2re.service",
+  "name": "space.u2re.cws",
   "version": "1.0.0",
   "description": "CWS is a multi-device synchronization system with encrypted communication, clipboard sharing, and command forwarding capabilities.",
   "scripts": {

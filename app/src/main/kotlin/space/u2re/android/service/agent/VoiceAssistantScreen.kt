@@ -1,4 +1,4 @@
-package space.u2re.service.screen
+package space.u2re.cws.screen
 
 import android.app.Activity
 import android.content.Context.MEDIA_PROJECTION_SERVICE
@@ -53,14 +53,14 @@ import io.livekit.android.compose.state.rememberLocalMedia
 import io.livekit.android.compose.state.rememberSession
 import io.livekit.android.compose.state.rememberSessionMessages
 import io.livekit.android.compose.ui.VideoTrackView
-import space.u2re.service.rememberCanEnableCamera
-import space.u2re.service.rememberCanEnableMic
-import space.u2re.service.requirePermissions
-import space.u2re.service.ui.AgentVisualization
-import space.u2re.service.ui.ChatBar
-import space.u2re.service.ui.ChatLog
-import space.u2re.service.ui.ControlBar
-import space.u2re.service.viewmodel.VoiceAssistantViewModel
+import space.u2re.cws.rememberCanEnableCamera
+import space.u2re.cws.rememberCanEnableMic
+import space.u2re.cws.requirePermissions
+import space.u2re.cws.ui.AgentVisualization
+import space.u2re.cws.ui.ChatBar
+import space.u2re.cws.ui.ChatLog
+import space.u2re.cws.ui.ControlBar
+import space.u2re.cws.viewmodel.VoiceAssistantViewModel
 import io.livekit.android.room.track.screencapture.ScreenCaptureParams
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

@@ -11,7 +11,7 @@ for nf in network_files:
         content = f.read()
     
     # Replace package
-    content = re.sub(r'^package\s+space\.u2re\.service\.(daemon|reverse|endpoint)', 'package space.u2re.service.network', content, flags=re.MULTILINE)
+    content = re.sub(r'^package\s+space\.u2re\.service\.(daemon|reverse|endpoint)', 'package space.u2re.cws.network', content, flags=re.MULTILINE)
     
     with open(filepath, 'w') as f:
         f.write(content)

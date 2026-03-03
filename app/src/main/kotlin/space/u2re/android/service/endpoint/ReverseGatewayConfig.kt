@@ -1,4 +1,4 @@
-package space.u2re.service.reverse
+package space.u2re.cws.reverse
 
 import android.app.Application
 import android.content.Context

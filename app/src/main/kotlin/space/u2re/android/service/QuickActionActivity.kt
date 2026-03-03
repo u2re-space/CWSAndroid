@@ -1,4 +1,4 @@
-package space.u2re.service
+package space.u2re.cws
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -18,17 +18,17 @@ import androidx.lifecycle.lifecycleScope
 import androidx.core.view.setPadding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import space.u2re.service.daemon.DaemonController
-import space.u2re.service.daemon.DaemonForegroundService
-import space.u2re.service.daemon.DaemonLog
-import space.u2re.service.daemon.SettingsStore
-import space.u2re.service.daemon.resolve
+import space.u2re.cws.daemon.DaemonController
+import space.u2re.cws.daemon.DaemonForegroundService
+import space.u2re.cws.daemon.DaemonLog
+import space.u2re.cws.daemon.SettingsStore
+import space.u2re.cws.daemon.resolve
 
 class QuickActionActivity : ComponentActivity() {
 
     companion object {
         const val MODE_FLOATING = "floating"
-        const val EXTRA_MODE = "space.u2re.service.EXTRA_MODE"
+        const val EXTRA_MODE = "space.u2re.cws.EXTRA_MODE"
     }
 
     private enum class InputMode {

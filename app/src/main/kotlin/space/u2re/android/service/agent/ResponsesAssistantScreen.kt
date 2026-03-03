@@ -1,4 +1,4 @@
-package space.u2re.service.screen
+package space.u2re.cws.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,9 +29,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import space.u2re.service.agent.parseResponsesText
-import space.u2re.service.agent.sendResponsesRequest
-import space.u2re.service.network.normalizeResponsesEndpoint
+import space.u2re.cws.agent.parseResponsesText
+import space.u2re.cws.agent.sendResponsesRequest
+import space.u2re.cws.network.normalizeResponsesEndpoint
 
 @Serializable
 data class ResponsesAssistantRoute(

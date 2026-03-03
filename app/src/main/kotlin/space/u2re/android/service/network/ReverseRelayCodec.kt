@@ -1,4 +1,4 @@
-package space.u2re.service.network
+package space.u2re.cws.network
 
 import com.google.gson.Gson
 import com.google.gson.JsonParser

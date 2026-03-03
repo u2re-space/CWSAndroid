@@ -1,11 +1,11 @@
-package space.u2re.service.viewmodel
+package space.u2re.cws.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.navigation.toRoute
 import io.livekit.android.LiveKit
-import space.u2re.service.screen.VoiceAssistantRoute
+import space.u2re.cws.screen.VoiceAssistantRoute
 import io.livekit.android.token.TokenSource
 import io.livekit.android.token.cached
 

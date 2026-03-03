@@ -1,4 +1,4 @@
-package space.u2re.service.ui.theme
+package space.u2re.cws.ui.theme
 
 import android.app.Activity
 import android.os.Build

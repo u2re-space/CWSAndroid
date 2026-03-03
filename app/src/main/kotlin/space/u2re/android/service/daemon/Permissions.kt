@@ -1,4 +1,4 @@
-package space.u2re.service
+package space.u2re.cws
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect

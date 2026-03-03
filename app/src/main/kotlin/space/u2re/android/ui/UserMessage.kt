@@ -1,4 +1,4 @@
-package space.u2re.service.ui
+package space.u2re.cws.ui
 
 
 import androidx.compose.animation.AnimatedVisibility

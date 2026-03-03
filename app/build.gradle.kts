@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "space.u2re.service"
+    namespace = "space.u2re.cws"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "space.u2re.service"
+        applicationId = "space.u2re.cws"
         minSdk = 24
         targetSdk = 36
         versionCode = 1

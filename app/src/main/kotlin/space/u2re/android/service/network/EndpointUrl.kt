@@ -1,4 +1,4 @@
-package space.u2re.service.network
+package space.u2re.cws.network
 
 import java.net.URI
 

@@ -1,4 +1,4 @@
-package space.u2re.service.notifications
+package space.u2re.cws.notifications
 
 import android.content.Context
 import android.os.Handler

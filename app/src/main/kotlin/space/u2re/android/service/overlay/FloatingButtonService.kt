@@ -1,4 +1,4 @@
-package space.u2re.service.overlay
+package space.u2re.cws.overlay
 
 import android.app.Service
 import android.content.Context
@@ -16,8 +16,8 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Button
 import androidx.core.content.ContextCompat
-import space.u2re.service.QuickActionActivity
-import space.u2re.service.R
+import space.u2re.cws.QuickActionActivity
+import space.u2re.cws.R
 
 class FloatingButtonService : Service() {
 

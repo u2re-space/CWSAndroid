@@ -1,8 +1,8 @@
-package space.u2re.service.network
+package space.u2re.cws.network
 
 import android.app.Activity
 import android.telephony.SmsManager
-import space.u2re.service.daemon.PermissionManager
+import space.u2re.cws.daemon.PermissionManager
 
 suspend fun dispatchHttpRequests(requests: List<DispatchRequest>): List<DispatchResult> {
     val out = mutableListOf<DispatchResult>()

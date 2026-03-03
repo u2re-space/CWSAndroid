@@ -1,4 +1,4 @@
-package space.u2re.service
+package space.u2re.cws
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -24,22 +24,22 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import space.u2re.service.screen.ConnectRoute
-import space.u2re.service.screen.ConnectScreen
-import space.u2re.service.screen.SettingsRoute
-import space.u2re.service.screen.SettingsScreen
-import space.u2re.service.screen.VoiceAssistantRoute
-import space.u2re.service.screen.VoiceAssistantScreen
-import space.u2re.service.screen.ResponsesAssistantRoute
-import space.u2re.service.screen.ResponsesAssistantScreen
-import space.u2re.service.daemon.DaemonController
-import space.u2re.service.daemon.DaemonForegroundService
-import space.u2re.service.daemon.SettingsStore
-import space.u2re.service.daemon.resolve
-import space.u2re.service.ui.theme.LiveKitVoiceAssistantExampleTheme
-import space.u2re.service.viewmodel.VoiceAssistantViewModel
+import space.u2re.cws.screen.ConnectRoute
+import space.u2re.cws.screen.ConnectScreen
+import space.u2re.cws.screen.SettingsRoute
+import space.u2re.cws.screen.SettingsScreen
+import space.u2re.cws.screen.VoiceAssistantRoute
+import space.u2re.cws.screen.VoiceAssistantScreen
+import space.u2re.cws.screen.ResponsesAssistantRoute
+import space.u2re.cws.screen.ResponsesAssistantScreen
+import space.u2re.cws.daemon.DaemonController
+import space.u2re.cws.daemon.DaemonForegroundService
+import space.u2re.cws.daemon.SettingsStore
+import space.u2re.cws.daemon.resolve
+import space.u2re.cws.ui.theme.LiveKitVoiceAssistantExampleTheme
+import space.u2re.cws.viewmodel.VoiceAssistantViewModel
 import io.livekit.android.util.LoggingLevel
-import space.u2re.service.overlay.FloatingButtonService
+import space.u2re.cws.overlay.FloatingButtonService
 
 class MainActivity : ComponentActivity() {
     private companion object {

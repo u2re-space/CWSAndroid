@@ -1,4 +1,4 @@
-package space.u2re.service.screen
+package space.u2re.cws.screen
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
@@ -41,12 +41,12 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import space.u2re.service.R
-import space.u2re.service.daemon.SettingsStore
-import space.u2re.service.daemon.resolve
-import space.u2re.service.hardcodedToken
-import space.u2re.service.hardcodedUrl
-import space.u2re.service.sandboxID
+import space.u2re.cws.R
+import space.u2re.cws.daemon.SettingsStore
+import space.u2re.cws.daemon.resolve
+import space.u2re.cws.hardcodedToken
+import space.u2re.cws.hardcodedUrl
+import space.u2re.cws.sandboxID
 import kotlinx.serialization.Serializable
 
 @Serializable

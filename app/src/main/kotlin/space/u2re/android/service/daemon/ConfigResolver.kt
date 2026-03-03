@@ -1,4 +1,4 @@
-package space.u2re.service.daemon
+package space.u2re.cws.daemon
 
 import android.util.Base64
 import java.io.File
