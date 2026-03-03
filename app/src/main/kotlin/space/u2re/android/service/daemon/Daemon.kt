@@ -116,10 +116,13 @@ class Daemon(
     }
 
     private fun startReverseGateway(syncCallbacks: SyncCallbacks) {
-        val baseReverseConfig = ReverseGatewayConfigProvider.load(application).copy(deviceId = settings.deviceId)
+        val baseReverseConfig = ReverseGatewayConfigProvider.load(application)
+        val reverseDeviceId = settings.hubClientId.ifBlank { settings.authToken.ifBlank { baseReverseConfig.deviceId } }
+        val reverseClientId = settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
         val reverseConfig = baseReverseConfig.copy(
+            deviceId = reverseDeviceId,
             endpointUrl = baseReverseConfig.endpointUrl.ifBlank { settings.hubDispatchUrl },
-            userId = baseReverseConfig.userId.ifBlank { settings.hubClientId.ifBlank { settings.deviceId } },
+            userId = baseReverseConfig.userId.ifBlank { reverseClientId },
             userKey = baseReverseConfig.userKey.ifBlank { settings.hubToken.ifBlank { settings.authToken } }
         )
         val client = ReverseGatewayClient(reverseConfig) { messageType, text, _ ->
@@ -343,7 +346,7 @@ class Daemon(
 
         val hub = normalizeHubDispatchUrl(settings.hubDispatchUrl)
         if (!hub.isNullOrBlank()) {
-            val resolvedHubClientId = settings.hubClientId.ifBlank { settings.deviceId }
+            val resolvedHubClientId = settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
             val resolvedHubToken = settings.hubToken.ifBlank { settings.authToken }
             val requestBodyEntries = hubItems.map { it.request }.filter { it.isNotEmpty() }
             if (requestBodyEntries.isEmpty()) return
@@ -454,7 +457,8 @@ class Daemon(
             val isDeviceTarget = lower.startsWith("device:") || lower.startsWith("local-device:") || lower.startsWith("id:") || lower.startsWith("l-") || lower.startsWith("p-") || (!lower.contains(".") && !lower.contains(":") && !lower.contains("/"))
             val normalizedTarget = normalizeDestinationHost(target).trim()
             if (normalizedTarget.isBlank()) continue
-            val maybeCachedUrl = associations[normalizedTarget.lowercase()]
+            val dispatchDeviceId = resolveDispatchDeviceId(normalizedTarget)
+            val maybeCachedUrl = associations[normalizedTarget.lowercase()] ?: associations[dispatchDeviceId.lowercase()]
             val directCandidate = if (isDeviceTarget && isAddressLikePeerTarget(normalizedTarget)) {
                 normalizeDestinationUrl(target, "/clipboard")
             } else {
@@ -462,11 +466,14 @@ class Daemon(
             }
             if (directCandidate != null && directCandidate.isNotBlank()) {
                 PeerAssociationStore.save(application, normalizedTarget, directCandidate)
+                if (dispatchDeviceId != normalizedTarget) {
+                    PeerAssociationStore.save(application, dispatchDeviceId, directCandidate)
+                }
             }
 
             if (isDeviceTarget) {
                 val request = mutableMapOf<String, Any>(
-                    "deviceId" to normalizedTarget,
+                    "deviceId" to dispatchDeviceId,
                     "body" to text,
                     "method" to "POST",
                     "headers" to buildMap {
@@ -508,6 +515,13 @@ class Daemon(
 
     private fun isAddressLikePeerTarget(target: String): Boolean {
         return ADDRESS_LIKE_PEER_TARGET.containsMatchIn(target)
+    }
+
+    private fun resolveDispatchDeviceId(rawDeviceId: String): String {
+        val trimmed = rawDeviceId.trim()
+        if (!trimmed.startsWith("ns-")) return trimmed
+        if (trimmed != settings.deviceId) return trimmed
+        return settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
     }
 
     private data class HubDispatchPayloadItem(

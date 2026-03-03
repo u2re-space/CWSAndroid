@@ -74,7 +74,7 @@ fun SettingsScreen(
     var hubDispatchUrl by rememberSaveable { mutableStateOf(settings.hubDispatchUrl) }
     var configPath by rememberSaveable { mutableStateOf(settings.configPath) }
     var storagePath by rememberSaveable { mutableStateOf(settings.storagePath) }
-    var hubClientId by rememberSaveable { mutableStateOf(settings.hubClientId.ifBlank { settings.deviceId }) }
+    var hubClientId by rememberSaveable { mutableStateOf(settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }) }
     var allowInsecure by rememberSaveable { mutableStateOf(settings.allowInsecureTls) }
     var apiEndpoint by rememberSaveable { mutableStateOf(settings.apiEndpoint) }
     var apiKey by rememberSaveable { mutableStateOf(settings.apiKey) }
@@ -425,7 +425,7 @@ fun SettingsScreen(
                                     url = normalizedHubUrl,
                                     json = buildMap<String, Any> {
                                         put("requests", emptyList<Any>())
-                                        val trimmedClientId = hubClientId.ifBlank { settings.deviceId }
+                                        val trimmedClientId = hubClientId.ifBlank { settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } } }
                                         val trimmedToken = hubToken.ifBlank { settings.hubToken.ifBlank { settings.authToken } }
                                         if (trimmedClientId.isNotBlank()) put("clientId", trimmedClientId)
                                         if (trimmedToken.isNotBlank()) put("token", trimmedToken)
@@ -606,7 +606,7 @@ fun SettingsScreen(
                     tlsKeystoreAssetPath = tlsKeystorePath.trim(),
                     tlsKeystoreType = tlsKeystoreType.ifBlank { settings.tlsKeystoreType },
                     tlsKeystorePassword = tlsKeystorePassword,
-                    hubClientId = hubClientId.ifBlank { settings.deviceId },
+                    hubClientId = hubClientId.ifBlank { settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } } },
                     hubToken = hubToken.trim(),
                     configPath = configPath.trim(),
                     storagePath = storagePath.trim(),

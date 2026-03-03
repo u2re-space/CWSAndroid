@@ -77,6 +77,7 @@ private const val PREF_NAME = "settings_v1"
 private const val PREF_NAME_LEGACY = "settings_v1_legacy"
 
 private fun randomId(): String = "ns-${UUID.randomUUID().toString().replace("-", "").take(8)}"
+private fun isGeneratedLegacyDeviceId(value: String): Boolean = value.trim().lowercase().startsWith("ns-")
 
 private fun normalizePort(value: Int, fallback: Int): Int = if (value > 0) value else fallback
 
@@ -140,13 +141,18 @@ object SettingsStore {
         return try {
             val raw = prefs(context).getString(PREF_NAME, null)
                 ?: prefs(context).getString(PREF_NAME_LEGACY, null)
-                ?: return defaultSettings()
+                ?: return defaultSettings().let { defaults ->
+                    if (defaults.authToken.isBlank()) defaults.copy(authToken = defaults.deviceId) else defaults
+                }
             val parsed = gson.fromJson(raw, Map::class.java) as? Map<*, *> ?: emptyMap<String, Any>()
             var merged = defaultSettings().mergeFromMap(parsed)
             
             // Migration: carry legacy userKey into authToken if needed.
             if (merged.authToken.isBlank() && parsed["userKey"] is String) {
                 merged = merged.copy(authToken = (parsed["userKey"] as? String) ?: merged.authToken)
+            }
+            if (merged.authToken.isBlank() && isGeneratedLegacyDeviceId(merged.deviceId)) {
+                merged = merged.copy(authToken = merged.deviceId)
             }
             
             // Merge from config files if configPath is provided

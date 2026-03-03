@@ -24,6 +24,30 @@ class ReverseGatewayClient(
     private val config: ReverseGatewayConfig,
     private val onMessage: (String, String, String?) -> Unit = { _, _, _ -> }
 ) {
+    companion object {
+        private const val DEFAULT_REVERSE_ROLES = "endpoint,peer,node,app"
+        private const val LOG_TAG = "ReverseGateway"
+        private val gson = Gson()
+
+        private val CLIENT_REVERSE_ROLE_TOKENS = setOf(
+            "client-reverse",
+            "reverse-client",
+            "client-downstream",
+            "server-downstream",
+            "server-reverse",
+            "reverse-server"
+        )
+
+        private val CLIENT_FORWARD_ROLE_TOKENS = setOf(
+            "client-forward",
+            "forward-client",
+            "client-bridge",
+            "server-bridge",
+            "server-forward",
+            "forward-server"
+        )
+    }
+
     private val archetypeCandidates = buildArchetypeCandidates(config.roles)
     private var archetypeAttempt = 0
     private val configuredKeepAliveMs = config.keepAliveIntervalMs.coerceAtLeast(1_000L)
@@ -49,12 +73,8 @@ class ReverseGatewayClient(
 
     private fun buildArchetypeCandidates(rolesRaw: String): List<String> {
         val roles = parseRoleTokens(rolesRaw.ifBlank { "" })
-        val hasReverse = roles.any { token ->
-            token == "client-reverse" || token == "reverse-client" || token == "client-downstream" || token == "server-downstream"
-        }
-        val hasForward = roles.any { token ->
-            token == "client-forward" || token == "forward-client" || token == "server-bridge" || token == "client-bridge"
-        }
+        val hasReverse = roles.any(CLIENT_REVERSE_ROLE_TOKENS::contains)
+        val hasForward = roles.any(CLIENT_FORWARD_ROLE_TOKENS::contains)
         return when {
             hasReverse -> listOf("client-reverse")
             hasForward -> listOf("client-forward")
@@ -63,21 +83,21 @@ class ReverseGatewayClient(
     }
 
     private fun normalizeRolesForWire(rolesRaw: String): String {
-        val input = parseRoleTokens(rolesRaw.ifBlank { "endpoint,peer,node,app" }).toMutableSet()
+        val input = parseRoleTokens(rolesRaw.ifBlank { DEFAULT_REVERSE_ROLES }).toMutableSet()
         val out = LinkedHashSet<String>()
         input.forEach { token ->
             when (token) {
-                "client-reverse", "reverse-client", "client-downstream", "server-downstream" -> {
+                in CLIENT_REVERSE_ROLE_TOKENS -> {
                     out.add("client-reverse")
                     out.add("reverse-client")
                     out.add("client")
                 }
-                "client-forward", "forward-client", "client-bridge", "server-bridge" -> {
+                in CLIENT_FORWARD_ROLE_TOKENS -> {
                     out.add("client-forward")
                     out.add("forward-client")
                     out.add("client")
                 }
-                "server-reverse", "reverse-server", "server-downstream" -> {
+                "server-reverse", "reverse-server" -> {
                     out.add("server-reverse")
                     out.add("reverse-server")
                     out.add("server")
@@ -329,8 +349,4 @@ class ReverseGatewayClient(
             .replace("\"", "\\\"")
     }
 
-    companion object {
-        private const val LOG_TAG = "ReverseGateway"
-        private val gson = Gson()
-    }
 }
