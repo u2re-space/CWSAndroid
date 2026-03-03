@@ -30,7 +30,7 @@ object AssistantNetworkBridge {
                 ?: messageType.lowercase()
             val namespace = extractString(payload["namespace"])?.trim()?.ifBlank { null }
             val target = extractTarget(payload)
-            if (!isTargetMatch(target, config.deviceId)) {
+            if (!isTargetMatch(target, config.deviceId, settings)) {
                 Log.d(BridgeLogger, "Skip message for different target=$target")
                 return@withContext false
             }
@@ -127,6 +127,25 @@ object AssistantNetworkBridge {
         action: String,
         callbacks: Daemon.SyncCallbacks?
     ): Boolean {
+        if (action == "dispatch") {
+            val rawTarget = extractTarget(payload)
+            val localIdentity = listOf(
+                settings.hubClientId,
+                settings.authToken,
+                settings.deviceId,
+                settings.hubToken
+            ).firstOrNull { it.isNotBlank() } ?: ""
+            if (!isTargetMatch(rawTarget, localIdentity, settings)) {
+                return false
+            }
+            val dataAsText = extractString(payload["data"])
+            val isTextData = payload["data"]?.isJsonPrimitive == true && dataAsText != null && dataAsText.isNotBlank()
+            val hasRequestsField = payload.has("requests")
+            if (!hasRequestsField && isTextData) {
+                return sendLocalClipboard(context, payload, settings, callbacks)
+            }
+        }
+
         val requestsObj = payload["requests"] ?: payload["data"]?.let { parseDispatchRequests(it) } ?: parseDispatchRequests(payload)
         if (requestsObj == null) return false
         
@@ -176,13 +195,38 @@ object AssistantNetworkBridge {
         return mapOf("x-auth-token" to auth)
     }
 
-    private fun isTargetMatch(target: String?, localDeviceId: String): Boolean {
-        val trimmed = target?.trim()
-        if (trimmed.isNullOrBlank()) return true
-        if (trimmed.equals("broadcast", ignoreCase = true)) return true
-        if (trimmed.equals("all", ignoreCase = true)) return true
-        return trimmed == localDeviceId
+private fun buildTargetAliases(localDeviceId: String, settings: Settings): Set<String> {
+    val normalized = listOf(
+        localDeviceId,
+        settings.deviceId,
+        settings.authToken,
+        settings.hubClientId,
+        settings.hubToken
+    ).map { it.trim().lowercase() }
+        .filter { it.isNotEmpty() }
+        .toMutableSet()
+    val expanded = normalized.flatMap { value ->
+        if (value.startsWith("l-")) listOf(value, value.removePrefix("l-")) else listOf(value)
     }
+    return normalized.union(expanded.toSet())
+}
+
+private fun isTargetMatch(target: String?, localDeviceId: String, settings: Settings): Boolean {
+    val trimmed = target?.trim()
+    if (trimmed.isNullOrBlank()) return true
+    if (trimmed.equals("broadcast", ignoreCase = true)) return true
+    if (trimmed.equals("all", ignoreCase = true)) return true
+
+    val normalizedTarget = trimmed.lowercase()
+    val aliases = buildTargetAliases(localDeviceId, settings)
+    if (aliases.contains(normalizedTarget)) return true
+    if (normalizedTarget.startsWith("l-") && aliases.contains(normalizedTarget.removePrefix("l-"))) return true
+    if (!normalizedTarget.startsWith("l-")) {
+        val prefixed = "l-$normalizedTarget"
+        return aliases.contains(prefixed)
+    }
+    return false
+}
 
     private fun extractTarget(payload: JsonObject): String? {
         return extractString(payload["target"])
