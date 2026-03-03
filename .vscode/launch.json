@@ -4,7 +4,7 @@
     {
       "name": "Android: Attach or Launch Debug (auto device)",
       "type": "android",
-      "request": "launch",
+      "request": "attach",
       "appSrcRoot": "${workspaceFolder}/app/src/main",
       "apkFile": "${workspaceFolder}/app/build/outputs/apk/debug/app-debug.apk",
       "targetDevice": "${input:androidTargetSerial}",
@@ -16,7 +16,7 @@
     {
       "name": "Android: Attach or Launch Debug (192.168.0.196:5555)",
       "type": "android",
-      "request": "launch",
+      "request": "attach",
       "appSrcRoot": "${workspaceFolder}/app/src/main",
       "apkFile": "${workspaceFolder}/app/build/outputs/apk/debug/app-debug.apk",
       "targetDevice": "${input:androidTargetSerial}",
@@ -28,7 +28,7 @@
     {
       "name": "Android: Attach or Launch Debug (192.168.0.208:5555)",
       "type": "android",
-      "request": "launch",
+      "request": "attach",
       "appSrcRoot": "${workspaceFolder}/app/src/main",
       "apkFile": "${workspaceFolder}/app/build/outputs/apk/debug/app-debug.apk",
       "targetDevice": "${input:androidTargetSerial}",

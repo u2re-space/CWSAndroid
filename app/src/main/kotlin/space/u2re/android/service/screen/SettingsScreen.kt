@@ -87,6 +87,7 @@ fun SettingsScreen(
 
     var listenPortHttp by rememberSaveable { mutableStateOf(settings.listenPortHttp.toString()) }
     var listenPortHttps by rememberSaveable { mutableStateOf(settings.listenPortHttps.toString()) }
+    var enableLocalServer by rememberSaveable { mutableStateOf(settings.enableLocalServer) }
     var authToken by rememberSaveable { mutableStateOf(settings.authToken) }
     var tlsEnabled by rememberSaveable { mutableStateOf(settings.tlsEnabled) }
     var tlsKeystorePath by rememberSaveable { mutableStateOf(settings.tlsKeystoreAssetPath) }
@@ -299,6 +300,8 @@ fun SettingsScreen(
             )
 
             SettingsTab.SERVER -> ServerTab(
+                enableLocalServer = enableLocalServer,
+                onEnableLocalServerChange = { enableLocalServer = it },
                 listenPortHttp = listenPortHttp,
                 onListenPortHttpChange = { listenPortHttp = it.filter { c -> c.isDigit() } },
                 listenPortHttps = listenPortHttps,
@@ -311,6 +314,29 @@ fun SettingsScreen(
                 onTlsKeystorePathChange = { tlsKeystorePath = it },
                 tlsKeystorePassword = tlsKeystorePassword,
                 onTlsKeystorePasswordChange = { tlsKeystorePassword = it },
+                onStartRestartServer = {
+                    scope.launch {
+                        try {
+                            message = "Restarting local server..."
+                            DaemonController.current()?.restartServers()
+                            message = "Local server restarted"
+                        } catch (e: Exception) {
+                            message = "Local server restart failed: ${e.message ?: "error"}"
+                        }
+                    }
+                },
+                onStopServer = {
+                    scope.launch {
+                        try {
+                            message = "Stopping local server..."
+                            DaemonController.current()?.stopServers()
+                            message = "Local server stopped"
+                        } catch (e: Exception) {
+                            message = "Local server stop failed: ${e.message ?: "error"}"
+                        }
+                    }
+                },
+                isRunning = isRunning
             )
 
             SettingsTab.CONTROL_CENTER -> ControlCenterTab(
@@ -395,6 +421,7 @@ fun SettingsScreen(
                 val patch = SettingsPatch(
                     listenPortHttp = nextHttp,
                     listenPortHttps = nextHttps,
+                    enableLocalServer = enableLocalServer,
                     destinations = nextDestinations,
                     hubDispatchUrl = normalizeHubDispatchUrl(hubDispatchUrl) ?: hubDispatchUrl.trim(),
                     allowInsecureTls = allowInsecure,

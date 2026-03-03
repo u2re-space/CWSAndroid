@@ -35,6 +35,7 @@ data class Settings(
     val showFloatingButton: Boolean,
     val quickActionCopyOnly: Boolean,
     val quickActionHandleImage: Boolean,
+    val enableLocalServer: Boolean,
 )
 
 data class SettingsPatch(
@@ -67,6 +68,7 @@ data class SettingsPatch(
     val showFloatingButton: Boolean? = null,
     val quickActionCopyOnly: Boolean? = null,
     val quickActionHandleImage: Boolean? = null,
+    val enableLocalServer: Boolean? = null,
 )
 
 private const val PREF_NAME = "settings_v1"
@@ -105,7 +107,8 @@ private fun defaultSettings(): Settings = Settings(
     useAccessibilityService = false,
     showFloatingButton = false,
     quickActionCopyOnly = false,
-    quickActionHandleImage = false
+    quickActionHandleImage = false,
+    enableLocalServer = true
 )
 
 
@@ -189,6 +192,7 @@ object SettingsStore {
             showFloatingButton = next.showFloatingButton,
             quickActionCopyOnly = next.quickActionCopyOnly,
             quickActionHandleImage = next.quickActionHandleImage,
+            enableLocalServer = next.enableLocalServer,
             tlsEnabled = next.tlsEnabled,
             tlsKeystoreAssetPath = next.tlsKeystoreAssetPath.ifBlank { defaultSettings().tlsKeystoreAssetPath },
             tlsKeystoreType = next.tlsKeystoreType.ifBlank { defaultSettings().tlsKeystoreType },
@@ -236,6 +240,7 @@ object SettingsStore {
             showFloatingButton = patch.showFloatingButton ?: current.showFloatingButton,
             quickActionCopyOnly = patch.quickActionCopyOnly ?: current.quickActionCopyOnly,
             quickActionHandleImage = patch.quickActionHandleImage ?: current.quickActionHandleImage,
+            enableLocalServer = patch.enableLocalServer ?: current.enableLocalServer,
         )
         return save(context, merged)
     }
@@ -272,5 +277,6 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
         showFloatingButton = raw["showFloatingButton"] as? Boolean ?: defaults.showFloatingButton,
         quickActionCopyOnly = raw["quickActionCopyOnly"] as? Boolean ?: defaults.quickActionCopyOnly,
         quickActionHandleImage = raw["quickActionHandleImage"] as? Boolean ?: defaults.quickActionHandleImage,
+        enableLocalServer = raw["enableLocalServer"] as? Boolean ?: defaults.enableLocalServer,
     )
 }

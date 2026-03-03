@@ -14,11 +14,14 @@ import space.u2re.service.daemon.resolve
 import space.u2re.service.network.postJson
 import space.u2re.service.network.postText
 
+import space.u2re.service.daemon.Daemon
+import space.u2re.service.network.DispatchRequest
+
 private val BridgeLogger = "ReverseAssistantBridge"
 private val gson = Gson()
 
 object AssistantNetworkBridge {
-    suspend fun handleReverseMessage(context: Context, messageType: String, rawPayload: String, config: ReverseGatewayConfig): Boolean =
+    suspend fun handleReverseMessage(context: Context, messageType: String, rawPayload: String, config: ReverseGatewayConfig, callbacks: Daemon.SyncCallbacks? = null): Boolean =
         withContext(Dispatchers.IO) {
             val settings = SettingsStore.load(context).resolve()
             val payload = parsePayload(rawPayload, messageType) ?: return@withContext false
@@ -33,18 +36,30 @@ object AssistantNetworkBridge {
             }
 
             return@withContext when (action) {
+                "feature" -> {
+                    val featureName = extractString(payload["data"]?.let { ensureObject(it)?.get("feature") })?.lowercase()
+                    val featurePayload = ensureObject(payload["data"])?.get("payload")?.let { ensureObject(it) } ?: JsonObject()
+                    when (featureName) {
+                        "sms" -> sendLocalSms(context, featurePayload, settings, callbacks)
+                        "notifications.speak" -> sendLocalSpeak(context, featurePayload, settings, callbacks)
+                        else -> {
+                            Log.d(BridgeLogger, "Unhandled feature=$featureName message=$payload")
+                            false
+                        }
+                    }
+                }
                 "clipboard", "clipboard.set", "set_clipboard", "copy", "paste", "write_clipboard" ->
-                    sendLocalClipboard(context, payload, settings)
+                    sendLocalClipboard(context, payload, settings, callbacks)
                 "sms", "send_sms", "sms.send", "sms-send", "send.sms" ->
-                    sendLocalSms(context, payload, settings)
+                    sendLocalSms(context, payload, settings, callbacks)
                 "speak", "notifications.speak", "notification.speak", "speak.notification" ->
-                    sendLocalSpeak(context, payload, settings)
+                    sendLocalSpeak(context, payload, settings, callbacks)
                 "dispatch", "forward", "http", "network.dispatch" ->
-                    sendLocalDispatch(context, payload, settings, namespace, action)
+                    sendLocalDispatch(context, payload, settings, namespace, action, callbacks)
                 else -> {
                     val forwarded = payload.has("requests") || payload.has("to")
                     if (forwarded) {
-                        sendLocalDispatch(context, payload, settings, namespace, action)
+                        sendLocalDispatch(context, payload, settings, namespace, action, callbacks)
                     } else if (action == "hello") {
                         true
                     } else {
@@ -55,30 +70,51 @@ object AssistantNetworkBridge {
             }
         }
 
-    private suspend fun sendLocalClipboard(context: Context, payload: JsonObject, settings: Settings): Boolean {
-        val text = extractString(payload["text"]) ?: extractString(payload["data"]) ?: extractString(payload["body"]) ?: ""
+    private suspend fun sendLocalClipboard(context: Context, payload: JsonObject, settings: Settings, callbacks: Daemon.SyncCallbacks?): Boolean {
+        val dataObj = ensureObject(payload["data"])
+        val text = extractString(payload["text"]) 
+            ?: extractString(dataObj?.get("text"))
+            ?: extractString(dataObj?.get("content"))
+            ?: extractString(payload["data"]) 
+            ?: extractString(payload["body"]) 
+            ?: ""
         if (text.isBlank()) return false
+        if (callbacks != null) {
+            callbacks.setClipboardText(text)
+            return true
+        }
         val url = localBaseUrl(settings) + "/clipboard"
         val headers = requestHeaders(settings) + mapOf("Content-Type" to "text/plain; charset=utf-8")
         return postText(url, text, headers, allowInsecureTls = true, timeoutMs = 8000).ok
     }
 
-    private suspend fun sendLocalSms(context: Context, payload: JsonObject, settings: Settings): Boolean {
+    private suspend fun sendLocalSms(context: Context, payload: JsonObject, settings: Settings, callbacks: Daemon.SyncCallbacks?): Boolean {
         val number = extractString(payload["number"]) ?: extractString(payload["data"]?.let { ensureObject(payload["data"])?.get("number") })
         val content = extractString(payload["content"])
             ?: extractString(payload["text"])
             ?: extractString(payload["data"]?.let { ensureObject(payload["data"])?.get("content") })
         if (number.isNullOrBlank() || content.isNullOrBlank()) return false
+        if (callbacks != null) {
+            callbacks.sendSms(number, content)
+            return true
+        }
         val data = mapOf("number" to number, "content" to content)
         val url = localBaseUrl(settings) + "/sms"
         return postJson(url, data, allowInsecureTls = true, headers = requestHeaders(settings)).ok
     }
 
-    private suspend fun sendLocalSpeak(context: Context, payload: JsonObject, settings: Settings): Boolean {
+    private suspend fun sendLocalSpeak(context: Context, payload: JsonObject, settings: Settings, callbacks: Daemon.SyncCallbacks?): Boolean {
+        val dataObj = ensureObject(payload["data"])
         val text = extractString(payload["text"])
+            ?: extractString(dataObj?.get("text"))
+            ?: extractString(dataObj?.get("content"))
             ?: extractString(payload["data"])
             ?: extractString(payload["body"])
             ?: return false
+        if (callbacks != null) {
+            callbacks.speakNotificationText(text)
+            return true
+        }
         val url = localBaseUrl(settings) + "/notifications/speak"
         return postJson(url, mapOf("text" to text), allowInsecureTls = true, headers = requestHeaders(settings)).ok
     }
@@ -88,18 +124,45 @@ object AssistantNetworkBridge {
         payload: JsonObject,
         settings: Settings,
         namespace: String?,
-        action: String
+        action: String,
+        callbacks: Daemon.SyncCallbacks?
     ): Boolean {
-        val requests = payload["requests"] ?: payload["data"]?.let { parseDispatchRequests(it) }
-        if (requests == null) return false
+        val requestsObj = payload["requests"] ?: payload["data"]?.let { parseDispatchRequests(it) } ?: parseDispatchRequests(payload)
+        if (requestsObj == null) return false
+        
+        if (callbacks != null) {
+            val requestsList = try {
+                val requestsRaw = if (requestsObj is JsonElement) requestsObj.toString() else gson.toJson(requestsObj)
+                val typeToken = object : com.google.gson.reflect.TypeToken<List<Map<String, Any>>>() {}.type
+                val parsedList = gson.fromJson<List<Map<String, Any>>>(requestsRaw, typeToken)
+                parsedList.mapNotNull { map ->
+                    val rawUrl = map["url"]?.toString() ?: ""
+                    if (rawUrl.isBlank()) return@mapNotNull null
+                    DispatchRequest(
+                        url = rawUrl,
+                        method = map["method"]?.toString()?.ifBlank { "POST" } ?: "POST",
+                        headers = (map["headers"] as? Map<*, *>)?.map { e -> e.key.toString() to e.value.toString() }?.toMap() ?: emptyMap(),
+                        body = map["body"]?.toString() ?: "",
+                        unencrypted = map["unencrypted"] as? Boolean ?: false
+                    )
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+            if (requestsList.isNotEmpty()) {
+                callbacks.dispatch(requestsList)
+                return true
+            }
+        }
+        
         val routeBody = when (action) {
             "network.dispatch" -> mapOf(
                 "userId" to (payload["userId"]?.asString?.ifBlank { null } ?: ""),
                 "userKey" to (payload["userKey"]?.asString?.ifBlank { null } ?: ""),
                 "namespace" to namespace.orEmpty(),
-                "requests" to requests
+                "requests" to requestsObj
             )
-            else -> mapOf("requests" to requests)
+            else -> mapOf("requests" to requestsObj)
         }
         val url = localBaseUrl(settings) + "/core/ops/http/dispatch"
         return postJson(url, routeBody, allowInsecureTls = true, headers = requestHeaders(settings)).ok

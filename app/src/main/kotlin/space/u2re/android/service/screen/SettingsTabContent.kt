@@ -360,6 +360,8 @@ fun GatewayTab(
 
 @Composable
 fun ServerTab(
+    enableLocalServer: Boolean,
+    onEnableLocalServerChange: (Boolean) -> Unit,
     listenPortHttp: String,
     onListenPortHttpChange: (String) -> Unit,
     listenPortHttps: String,
@@ -372,6 +374,9 @@ fun ServerTab(
     onTlsKeystorePathChange: (String) -> Unit,
     tlsKeystorePassword: String,
     onTlsKeystorePasswordChange: (String) -> Unit,
+    onStartRestartServer: () -> Unit,
+    onStopServer: () -> Unit,
+    isRunning: Boolean
 ) {
     val switchColors = settingsSwitchColors()
     
@@ -380,6 +385,35 @@ fun ServerTab(
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurface
     )
+    
+    Text("Enable Server", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = enableLocalServer, onCheckedChange = onEnableLocalServerChange, colors = switchColors)
+    
+    Spacer(Modifier.size(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(
+            onClick = onStartRestartServer,
+            enabled = isRunning,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            )
+        ) {
+            Text("Start/Restart Server")
+        }
+        Button(
+            onClick = onStopServer,
+            enabled = isRunning,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError
+            )
+        ) {
+            Text("Stop Server")
+        }
+    }
+    Spacer(Modifier.size(16.dp))
+
     OutlinedTextField(
         value = listenPortHttp,
         onValueChange = onListenPortHttpChange,

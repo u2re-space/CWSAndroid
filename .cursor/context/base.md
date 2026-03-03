@@ -42,6 +42,7 @@ IOClientAndroid/ # current dir, later will be renamed/aliased/reformed to `CWSAn
     *.py            # scripts, planned to move into scripts/*.py
     scripts/*.py    # TODO
     package.json    # NPM control, earlier was for NativeScript
+    AGENTS.md
 ```
 
 ## Conventions

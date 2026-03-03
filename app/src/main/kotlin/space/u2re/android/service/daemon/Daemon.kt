@@ -25,6 +25,9 @@ import space.u2re.service.network.normalizeHubDispatchUrl
 import space.u2re.service.network.TlsConfig
 import space.u2re.service.network.HttpServerOptions
 import space.u2re.service.network.LocalHttpServer
+import space.u2re.service.network.ReverseGatewayClient
+import space.u2re.service.reverse.ReverseGatewayConfigProvider
+import space.u2re.service.reverse.AssistantNetworkBridge
 
 class Daemon(
     private val application: Application,
@@ -37,6 +40,7 @@ class Daemon(
     private var clipboardFallbackTimer: Job? = null
     private var httpServerHttp: LocalHttpServer? = null
     private var httpServerHttps: LocalHttpServer? = null
+    private var reverseGateway: ReverseGatewayClient? = null
     private val clipboardTextFallback = ClipboardSyncWatcher(application, ::setClipboardBestEffort)
     private var running = false
 
@@ -54,7 +58,9 @@ class Daemon(
             try {
                 settings = SettingsStore.load(application).resolve()
                 DaemonLog.setLogLevel(settings.logLevel)
-                startServers(createSyncCallbacks(activity))
+                val syncCallbacks = createSyncCallbacks(activity)
+                startServers(syncCallbacks)
+                startReverseGateway(syncCallbacks)
                 startClipboardSync()
                 startClipboardPollingFallback()
                 startPeriodicSync()
@@ -70,6 +76,8 @@ class Daemon(
     fun stop() {
         running = false
         scope.launch {
+            reverseGateway?.stop()
+            reverseGateway = null
             clipboardWatcher?.stop()
             clipboardWatcher = null
             httpServerHttp?.stop()
@@ -90,7 +98,56 @@ class Daemon(
         start()
     }
 
+    fun stopServers() {
+        scope.launch {
+            httpServerHttp?.stop()
+            httpServerHttps?.stop()
+            httpServerHttp = null
+            httpServerHttps = null
+            DaemonLog.info("Daemon", "local servers stopped")
+        }
+    }
+
+    suspend fun restartServers() {
+        stopServers()
+        delay(50)
+        val activity = activityProvider()
+        startServers(createSyncCallbacks(activity))
+    }
+
+    private fun startReverseGateway(syncCallbacks: SyncCallbacks) {
+        val baseReverseConfig = ReverseGatewayConfigProvider.load(application).copy(deviceId = settings.deviceId)
+        val reverseConfig = baseReverseConfig.copy(
+            endpointUrl = baseReverseConfig.endpointUrl.ifBlank { settings.hubDispatchUrl },
+            userId = baseReverseConfig.userId.ifBlank { settings.hubClientId.ifBlank { settings.deviceId } },
+            userKey = baseReverseConfig.userKey.ifBlank { settings.hubToken.ifBlank { settings.authToken } }
+        )
+        val client = ReverseGatewayClient(reverseConfig) { messageType, text, _ ->
+            scope.launch {
+                runCatching {
+                    AssistantNetworkBridge.handleReverseMessage(
+                        context = application,
+                        messageType = messageType,
+                        rawPayload = text,
+                        config = reverseConfig,
+                        callbacks = syncCallbacks
+                    )
+                }.onFailure { e ->
+                    DaemonLog.warn("Daemon", "reverse bridge failed", e)
+                }
+            }
+        }
+        reverseGateway = client
+        client.start()
+        DaemonLog.info("Daemon", "reverse gateway client started")
+    }
+
     private fun startServers(syncCallbacks: SyncCallbacks) {
+        if (!settings.enableLocalServer) {
+            DaemonLog.info("Daemon", "local servers are disabled in settings")
+            return
+        }
+
         val commonOptions = HttpServerOptions(
             port = settings.listenPortHttp,
             authToken = settings.authToken,
@@ -449,7 +506,7 @@ class Daemon(
         val directFallbackUrl: String? = null
     )
 
-    private data class SyncCallbacks(
+    data class SyncCallbacks(
         val setClipboardTextSync: (String) -> Unit,
         val setClipboardText: suspend (String) -> Unit,
         val dispatch: suspend (List<DispatchRequest>) -> List<DispatchResult>,
