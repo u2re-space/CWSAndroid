@@ -1,4 +1,5 @@
 import os
+os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import re
 
 directory = "app/src/main/kotlin/space/u2re"

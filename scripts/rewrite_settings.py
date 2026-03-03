@@ -1,3 +1,5 @@
+import os
+os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import re
 
 with open("app/src/main/kotlin/space/u2re/android/service/daemon/Settings.kt", "r") as f:
