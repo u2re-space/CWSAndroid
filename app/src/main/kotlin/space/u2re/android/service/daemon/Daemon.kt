@@ -13,12 +13,24 @@ import kotlinx.coroutines.launch
 import space.u2re.service.notifications.NotificationEvent
 import space.u2re.service.notifications.NotificationEventStore
 import space.u2re.service.notifications.NotificationSpeaker
+import space.u2re.service.network.DispatchResult
+import space.u2re.service.network.sendSmsAndroid
+import space.u2re.service.network.DispatchRequest
+import space.u2re.service.network.dispatchHttpRequests
+import space.u2re.service.network.normalizeDestinationUrl
+import space.u2re.service.network.normalizeDestinationHost
+import space.u2re.service.network.postText
+import space.u2re.service.network.postJson
+import space.u2re.service.network.normalizeHubDispatchUrl
+import space.u2re.service.network.TlsConfig
+import space.u2re.service.network.HttpServerOptions
+import space.u2re.service.network.LocalHttpServer
 
 class Daemon(
     private val application: Application,
     private val activityProvider: () -> Activity?
 ) {
-    private var settings: Settings = SettingsStore.load(application)
+    private var settings: Settings = SettingsStore.load(application).resolve()
     private val scope = CoroutineScope(Dispatchers.IO)
     private var clipboardWatcher: ClipboardSyncWatcher? = null
     private var syncTimer: Job? = null
@@ -40,7 +52,7 @@ class Daemon(
 
         scope.launch {
             try {
-                settings = SettingsStore.load(application)
+                settings = SettingsStore.load(application).resolve()
                 DaemonLog.setLogLevel(settings.logLevel)
                 startServers(createSyncCallbacks(activity))
                 startClipboardSync()

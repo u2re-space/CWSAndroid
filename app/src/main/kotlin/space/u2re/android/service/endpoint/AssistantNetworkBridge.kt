@@ -10,8 +10,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import space.u2re.service.daemon.Settings
 import space.u2re.service.daemon.SettingsStore
-import space.u2re.service.daemon.postJson
-import space.u2re.service.daemon.postText
+import space.u2re.service.daemon.resolve
+import space.u2re.service.network.postJson
+import space.u2re.service.network.postText
 
 private val BridgeLogger = "ReverseAssistantBridge"
 private val gson = Gson()
@@ -19,7 +20,7 @@ private val gson = Gson()
 object AssistantNetworkBridge {
     suspend fun handleReverseMessage(context: Context, messageType: String, rawPayload: String, config: ReverseGatewayConfig): Boolean =
         withContext(Dispatchers.IO) {
-            val settings = SettingsStore.load(context)
+            val settings = SettingsStore.load(context).resolve()
             val payload = parsePayload(rawPayload, messageType) ?: return@withContext false
             val action = extractString(payload["action"])?.lowercase()
                 ?: extractString(payload["type"])?.lowercase()

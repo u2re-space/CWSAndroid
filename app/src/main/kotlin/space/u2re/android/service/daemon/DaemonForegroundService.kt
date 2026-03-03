@@ -23,7 +23,7 @@ class DaemonForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val settings = SettingsStore.load(application)
+        val settings = SettingsStore.load(application).resolve()
         if (!settings.runDaemonForeground) {
             DaemonLog.info(TAG, "start suppressed: foreground daemon setting is disabled")
             stopSelf()

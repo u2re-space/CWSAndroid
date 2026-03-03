@@ -22,6 +22,7 @@ import space.u2re.service.daemon.DaemonController
 import space.u2re.service.daemon.DaemonForegroundService
 import space.u2re.service.daemon.DaemonLog
 import space.u2re.service.daemon.SettingsStore
+import space.u2re.service.daemon.resolve
 
 class QuickActionActivity : ComponentActivity() {
 
@@ -67,7 +68,7 @@ class QuickActionActivity : ComponentActivity() {
 
     private suspend fun handleShareTextMode() {
         val sourceAction = intent.action ?: ""
-        val settings = SettingsStore.load(application)
+        val settings = SettingsStore.load(application).resolve()
         val text = extractTextFromIntent()
         if (text.isBlank()) {
             if (!settings.shareTarget) {
@@ -271,7 +272,7 @@ class QuickActionActivity : ComponentActivity() {
     }
 
     private fun ensureDaemonStarted() {
-        val settings = SettingsStore.load(application)
+        val settings = SettingsStore.load(application).resolve()
         if (settings.runDaemonForeground) {
             DaemonForegroundService.start(application)
         } else {

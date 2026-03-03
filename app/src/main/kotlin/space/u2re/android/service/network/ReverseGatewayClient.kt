@@ -1,6 +1,7 @@
-package space.u2re.service.reverse
+package space.u2re.service.network
 
 import android.util.Log
+import space.u2re.service.reverse.ReverseGatewayConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

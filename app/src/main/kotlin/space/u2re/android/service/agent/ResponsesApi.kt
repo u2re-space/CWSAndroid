@@ -2,8 +2,8 @@ package space.u2re.service.agent
 
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import space.u2re.service.daemon.HttpResult
-import space.u2re.service.daemon.postJson
+import space.u2re.service.network.HttpResult
+import space.u2re.service.network.postJson
 
 private const val RESPONSES_DEFAULT_MODEL = "gpt-5.2"
 private val responsesGson = Gson()

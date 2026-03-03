@@ -1,4 +1,4 @@
-package space.u2re.service.daemon
+package space.u2re.service.network
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

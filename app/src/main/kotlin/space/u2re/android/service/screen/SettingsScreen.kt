@@ -50,9 +50,9 @@ import space.u2re.service.agent.sendResponsesRequest
 import space.u2re.service.daemon.DaemonForegroundService
 import space.u2re.service.overlay.FloatingButtonService
 import space.u2re.service.accessibility.ClipboardAccessibilityService
-import space.u2re.service.daemon.normalizeHubDispatchUrl
-import space.u2re.service.daemon.normalizeResponsesEndpoint
-import space.u2re.service.daemon.postJson
+import space.u2re.service.network.normalizeHubDispatchUrl
+import space.u2re.service.network.normalizeResponsesEndpoint
+import space.u2re.service.network.postJson
 
 @Composable
 fun SettingsScreen(
@@ -65,8 +65,8 @@ fun SettingsScreen(
 
     var destinationText by rememberSaveable { mutableStateOf(settings.destinations.joinToString("\n")) }
     var hubDispatchUrl by rememberSaveable { mutableStateOf(settings.hubDispatchUrl) }
+    var configPath by rememberSaveable { mutableStateOf(settings.configPath) }
     var hubClientId by rememberSaveable { mutableStateOf(settings.hubClientId.ifBlank { settings.deviceId }) }
-    var hubToken by rememberSaveable { mutableStateOf(settings.hubToken.ifBlank { settings.authToken }) }
     var allowInsecure by rememberSaveable { mutableStateOf(settings.allowInsecureTls) }
     var apiEndpoint by rememberSaveable { mutableStateOf(settings.apiEndpoint) }
     var apiKey by rememberSaveable { mutableStateOf(settings.apiKey) }
@@ -204,9 +204,9 @@ fun SettingsScreen(
                 overlayPermissionGranted = overlayPermissionGranted,
                 onOpenOverlaySettings = {
                     context.startActivity(
-                        Intent(AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
-                            data = Uri.parse("package:${context.packageName}")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                            data = android.net.Uri.parse("package:${context.packageName}")
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
                     )
                     overlayPermissionGranted = isFloatingOverlayEnabled(context)
@@ -214,8 +214,8 @@ fun SettingsScreen(
                 accessibilityServiceEnabled = accessibilityServiceEnabled,
                 onOpenAccessibilitySettings = {
                     context.startActivity(
-                        Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
                     )
                     accessibilityServiceEnabled = isClipboardAccessibilityEnabled(context)
@@ -224,56 +224,45 @@ fun SettingsScreen(
                 onContactsSyncChange = { contactsSync = it },
                 smsSync = smsSync,
                 onSmsSyncChange = { smsSync = it },
-                listenPortHttp = listenPortHttp,
-                onListenPortHttpChange = { listenPortHttp = it.filter { c -> c.isDigit() } },
-                listenPortHttps = listenPortHttps,
-                onListenPortHttpsChange = { listenPortHttps = it.filter { c -> c.isDigit() } },
+                hubClientId = hubClientId,
+                onHubClientIdChange = { hubClientId = it },
                 authToken = authToken,
                 onAuthTokenChange = { authToken = it },
-                tlsEnabled = tlsEnabled,
-                onTlsEnabledChange = { tlsEnabled = it },
-                tlsKeystoreType = tlsKeystoreType,
-                onTlsKeystoreTypeChange = { tlsKeystoreType = it },
-                tlsKeystorePath = tlsKeystorePath,
-                onTlsKeystorePathChange = { tlsKeystorePath = it },
-                tlsKeystorePassword = tlsKeystorePassword,
-                onTlsKeystorePasswordChange = { tlsKeystorePassword = it },
+                listenPortHttp = listenPortHttp,
                 localIps = localIps,
                 onCopyBaseUrl = { ip ->
-                    val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    val clip = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
                     val base = "http://$ip:${listenPortHttp.ifBlank { "8080" }}"
-                    clip?.setPrimaryClip(ClipData.newPlainText("base-url", base))
+                    clip?.setPrimaryClip(android.content.ClipData.newPlainText("base-url", base))
                     message = "Copied $base"
                 }
             )
 
-            SettingsTab.HUB -> HubTab(
-                hubDispatchUrl = hubDispatchUrl,
-                onHubDispatchUrlChange = { hubDispatchUrl = it },
-                hubClientId = hubClientId,
-                onHubClientIdChange = { hubClientId = it },
-                hubToken = hubToken,
-                onHubTokenChange = { hubToken = it },
+            SettingsTab.GATEWAY -> GatewayTab(
+                gatewayUrls = hubDispatchUrl,
+                onGatewayUrlsChange = { hubDispatchUrl = it },
+                configPath = configPath,
+                onConfigPathChange = { configPath = it },
                 allowInsecure = allowInsecure,
                 onAllowInsecureChange = { allowInsecure = it },
                 testingHub = testingHub,
                 onTestHub = {
-                    val normalizedHubUrl = normalizeHubDispatchUrl(hubDispatchUrl)
+                    val normalizedHubUrl = space.u2re.service.network.normalizeHubDispatchUrl(hubDispatchUrl)
                     if (normalizedHubUrl.isNullOrBlank()) {
                         message = "Set a valid Hub dispatch URL (for example http://192.168.0.200/api/broadcast)"
-                        return@HubTab
+                        return@GatewayTab
                     }
                     testingHub = true
                     message = "Testing hub…"
                     scope.launch {
                         try {
-                            val response = withContext(Dispatchers.IO) {
-                                postJson(
+                            val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                space.u2re.service.network.postJson(
                                     url = normalizedHubUrl,
                                 json = buildMap<String, Any> {
                                     put("requests", emptyList<Any>())
                                     val trimmedClientId = hubClientId.ifBlank { settings.deviceId }
-                                    val trimmedToken = hubToken.ifBlank { settings.authToken }
+                                    val trimmedToken = authToken.ifBlank { settings.authToken }
                                     if (trimmedClientId.isNotBlank()) put("clientId", trimmedClientId)
                                     if (trimmedToken.isNotBlank()) put("token", trimmedToken)
                                 },
@@ -288,13 +277,9 @@ fun SettingsScreen(
                             testingHub = false
                         }
                     }
-                }
-            )
-
-            SettingsTab.PEERS -> PeersTab(
+                },
                 destinationText = destinationText,
                 onDestinationTextChange = { destinationText = it },
-                hubDispatchUrl = hubDispatchUrl,
                 localIps = localIps,
                 onScanLocal = { localIps = loadLocalIpAddresses() },
                 onAppendLocalAsDestinations = {
@@ -311,6 +296,21 @@ fun SettingsScreen(
                     message = "Added ${localIps.size} local device targets"
                 },
                 onSelectHubFromDestination = { target -> hubDispatchUrl = target }
+            )
+
+            SettingsTab.SERVER -> ServerTab(
+                listenPortHttp = listenPortHttp,
+                onListenPortHttpChange = { listenPortHttp = it.filter { c -> c.isDigit() } },
+                listenPortHttps = listenPortHttps,
+                onListenPortHttpsChange = { listenPortHttps = it.filter { c -> c.isDigit() } },
+                tlsEnabled = tlsEnabled,
+                onTlsEnabledChange = { tlsEnabled = it },
+                tlsKeystoreType = tlsKeystoreType,
+                onTlsKeystoreTypeChange = { tlsKeystoreType = it },
+                tlsKeystorePath = tlsKeystorePath,
+                onTlsKeystorePathChange = { tlsKeystorePath = it },
+                tlsKeystorePassword = tlsKeystorePassword,
+                onTlsKeystorePasswordChange = { tlsKeystorePassword = it },
             )
 
             SettingsTab.CONTROL_CENTER -> ControlCenterTab(
@@ -418,7 +418,8 @@ fun SettingsScreen(
                     tlsKeystoreType = tlsKeystoreType.ifBlank { settings.tlsKeystoreType },
                     tlsKeystorePassword = tlsKeystorePassword,
                     hubClientId = hubClientId.ifBlank { settings.deviceId },
-                    hubToken = hubToken.trim(),
+                    hubToken = authToken.trim(),
+                    configPath = configPath.trim(),
                     logLevel = settings.logLevel
                 )
                 saving = true

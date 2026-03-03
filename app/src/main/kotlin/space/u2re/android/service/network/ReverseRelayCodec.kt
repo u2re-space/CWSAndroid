@@ -1,4 +1,4 @@
-package space.u2re.service.reverse
+package space.u2re.service.network
 
 import com.google.gson.Gson
 import com.google.gson.JsonParser

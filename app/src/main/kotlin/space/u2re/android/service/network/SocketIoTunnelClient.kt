@@ -1,4 +1,4 @@
-package space.u2re.service.endpoint
+package space.u2re.service.network
 
 import io.socket.client.IO
 import io.socket.client.Socket

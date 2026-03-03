@@ -9,6 +9,7 @@ import android.content.Intent.ACTION_MY_PACKAGE_REPLACED
 import space.u2re.service.daemon.DaemonForegroundService
 import space.u2re.service.daemon.DaemonController
 import space.u2re.service.daemon.SettingsStore
+import space.u2re.service.daemon.resolve
 import space.u2re.service.overlay.FloatingButtonService
 
 class BootCompletedReceiver : BroadcastReceiver() {
@@ -17,7 +18,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
         when (action) {
             ACTION_BOOT_COMPLETED,
             ACTION_MY_PACKAGE_REPLACED -> {
-                val settings = SettingsStore.load(context)
+                val settings = SettingsStore.load(context).resolve()
                 if (!settings.runDaemonOnBoot) return
                 val appContext = context.applicationContext as? Application ?: return
                 if (settings.runDaemonForeground) {

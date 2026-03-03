@@ -32,11 +32,12 @@ import space.u2re.service.screen.VoiceAssistantRoute
 import space.u2re.service.screen.VoiceAssistantScreen
 import space.u2re.service.screen.ResponsesAssistantRoute
 import space.u2re.service.screen.ResponsesAssistantScreen
-import space.u2re.service.reverse.ReverseGatewayClient
+import space.u2re.service.network.ReverseGatewayClient
 import space.u2re.service.reverse.ReverseGatewayConfigProvider
 import space.u2re.service.daemon.DaemonController
 import space.u2re.service.daemon.DaemonForegroundService
 import space.u2re.service.daemon.SettingsStore
+import space.u2re.service.daemon.resolve
 import space.u2re.service.ui.theme.LiveKitVoiceAssistantExampleTheme
 import space.u2re.service.viewmodel.VoiceAssistantViewModel
 import io.livekit.android.util.LoggingLevel
@@ -54,7 +55,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LiveKit.loggingLevel = LoggingLevel.DEBUG
-        val settings = SettingsStore.load(application)
+        val settings = SettingsStore.load(application).resolve()
         val baseReverseConfig = ReverseGatewayConfigProvider.load(application).copy(deviceId = settings.deviceId)
         val reverseConfig = baseReverseConfig.copy(
             endpointUrl = baseReverseConfig.endpointUrl.ifBlank { settings.hubDispatchUrl },
@@ -157,7 +158,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         assistantBridgeScope.cancel()
         reverseGateway?.stop()
-        val latestSettings = SettingsStore.load(application)
+        val latestSettings = SettingsStore.load(application).resolve()
         if (!latestSettings.runDaemonForeground) {
             DaemonController.stop()
         }

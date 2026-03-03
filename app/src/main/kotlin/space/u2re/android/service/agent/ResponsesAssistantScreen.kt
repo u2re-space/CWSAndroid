@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import space.u2re.service.agent.parseResponsesText
 import space.u2re.service.agent.sendResponsesRequest
-import space.u2re.service.daemon.normalizeResponsesEndpoint
+import space.u2re.service.network.normalizeResponsesEndpoint
 
 @Serializable
 data class ResponsesAssistantRoute(

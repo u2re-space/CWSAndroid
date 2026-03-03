@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import space.u2re.service.R
 import space.u2re.service.daemon.SettingsStore
+import space.u2re.service.daemon.resolve
 import space.u2re.service.hardcodedToken
 import space.u2re.service.hardcodedUrl
 import space.u2re.service.sandboxID
@@ -58,7 +59,7 @@ fun ConnectScreen(
     navigateToLocalResponses: (ResponsesAssistantRoute) -> Unit
 ) {
     val context = LocalContext.current
-    val daemonSettings = remember { SettingsStore.load(context.applicationContext) }
+    val daemonSettings = remember { SettingsStore.load(context.applicationContext).resolve() }
     val hasAiConfig = daemonSettings.apiEndpoint.isNotBlank() && daemonSettings.apiKey.isNotBlank()
 
     Box(
