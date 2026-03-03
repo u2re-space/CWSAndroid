@@ -149,7 +149,7 @@ fun AccessTab(
     OutlinedTextField(
         value = authToken,
         onValueChange = onAuthTokenChange,
-        label = { Text("Auth Token") },
+        label = { Text("Client Token") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
@@ -247,6 +247,8 @@ fun GatewayTab(
     localIps: List<String>,
     onScanLocal: () -> Unit,
     onAppendLocalAsDestinations: () -> Unit,
+    hubToken: String,
+    onHubTokenChange: (String) -> Unit,
     onSelectHubFromDestination: (String) -> Unit,
 ) {
     val switchColors = settingsSwitchColors()
@@ -261,6 +263,14 @@ fun GatewayTab(
         value = gatewayUrls,
         onValueChange = onGatewayUrlsChange,
         label = { Text("Gateway URLs (comma separated)") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    OutlinedTextField(
+        value = hubToken,
+        onValueChange = onHubTokenChange,
+        label = { Text("Gateway Auth Token") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )

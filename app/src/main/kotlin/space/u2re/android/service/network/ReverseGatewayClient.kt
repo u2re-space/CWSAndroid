@@ -56,9 +56,9 @@ class ReverseGatewayClient(
             token == "client-forward" || token == "forward-client" || token == "server-bridge" || token == "client-bridge"
         }
         return when {
-            hasReverse -> listOf("client-reverse", "reverse-client")
-            hasForward -> listOf("client-forward", "forward-client")
-            else -> listOf("reverse-client", "client-reverse")
+            hasReverse -> listOf("client-reverse")
+            hasForward -> listOf("client-forward")
+            else -> listOf("client-reverse")
         }
     }
 

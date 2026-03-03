@@ -98,6 +98,7 @@ fun SettingsScreen(
     var listenPortHttps by rememberSaveable { mutableStateOf(settings.listenPortHttps.toString()) }
     var enableLocalServer by rememberSaveable { mutableStateOf(settings.enableLocalServer) }
     var authToken by rememberSaveable { mutableStateOf(settings.authToken) }
+    var hubToken by rememberSaveable { mutableStateOf(settings.hubToken) }
     var tlsEnabled by rememberSaveable { mutableStateOf(settings.tlsEnabled) }
     var tlsKeystorePath by rememberSaveable { mutableStateOf(settings.tlsKeystoreAssetPath) }
     var tlsKeystorePassword by rememberSaveable { mutableStateOf(settings.tlsKeystorePassword) }
@@ -422,13 +423,13 @@ fun SettingsScreen(
                             val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 space.u2re.cws.network.postJson(
                                     url = normalizedHubUrl,
-                                json = buildMap<String, Any> {
-                                    put("requests", emptyList<Any>())
-                                    val trimmedClientId = hubClientId.ifBlank { settings.deviceId }
-                                    val trimmedToken = authToken.ifBlank { settings.authToken }
-                                    if (trimmedClientId.isNotBlank()) put("clientId", trimmedClientId)
-                                    if (trimmedToken.isNotBlank()) put("token", trimmedToken)
-                                },
+                                    json = buildMap<String, Any> {
+                                        put("requests", emptyList<Any>())
+                                        val trimmedClientId = hubClientId.ifBlank { settings.deviceId }
+                                        val trimmedToken = hubToken.ifBlank { settings.hubToken.ifBlank { settings.authToken } }
+                                        if (trimmedClientId.isNotBlank()) put("clientId", trimmedClientId)
+                                        if (trimmedToken.isNotBlank()) put("token", trimmedToken)
+                                    },
                                     allowInsecureTls = allowInsecure,
                                     timeoutMs = 8000
                                 )
@@ -441,6 +442,8 @@ fun SettingsScreen(
                         }
                     }
                 },
+                hubToken = hubToken,
+                onHubTokenChange = { hubToken = it },
                 destinationText = destinationText,
                 onDestinationTextChange = { destinationText = it },
                 localIps = localIps,
@@ -565,6 +568,77 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.size(16.dp))
+        val saveSettings: (Boolean) -> Unit = { fromAutoSave ->
+            scope.launch {
+                val nextHttp = listenPortHttp.toIntOrNull() ?: settings.listenPortHttp
+                val nextHttps = listenPortHttps.toIntOrNull() ?: settings.listenPortHttps
+                val nextSyncInterval = syncInterval.toIntOrNull() ?: settings.syncIntervalSec
+                val nextClipboardSyncInterval = clipboardSyncInterval.toIntOrNull() ?: settings.clipboardSyncIntervalSec
+                val nextRunDaemonForeground = runDaemonForeground
+                val nextDestinations = destinationText
+                    .lineSequence()
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                    .toList()
+                val patch = SettingsPatch(
+                    listenPortHttp = nextHttp,
+                    listenPortHttps = nextHttps,
+                    enableLocalServer = enableLocalServer,
+                    destinations = nextDestinations,
+                    hubDispatchUrl = space.u2re.cws.network.normalizeHubDispatchUrl(hubDispatchUrl) ?: hubDispatchUrl.trim(),
+                    allowInsecureTls = allowInsecure,
+                    shareTarget = shareTarget,
+                    clipboardSync = clipboardSync,
+                    contactsSync = contactsSync,
+                    smsSync = smsSync,
+                    syncIntervalSec = nextSyncInterval,
+                    clipboardSyncIntervalSec = nextClipboardSyncInterval,
+                    runDaemonForeground = nextRunDaemonForeground,
+                    runDaemonOnBoot = runDaemonOnBoot,
+                    useAccessibilityService = useAccessibilityService,
+                    showFloatingButton = showFloatingButton,
+                    quickActionCopyOnly = quickActionCopyOnly,
+                    quickActionHandleImage = quickActionHandleImage,
+                    authToken = authToken.trim(),
+                    tlsEnabled = tlsEnabled,
+                    apiEndpoint = apiEndpoint.trim(),
+                    apiKey = apiKey.trim(),
+                    tlsKeystoreAssetPath = tlsKeystorePath.trim(),
+                    tlsKeystoreType = tlsKeystoreType.ifBlank { settings.tlsKeystoreType },
+                    tlsKeystorePassword = tlsKeystorePassword,
+                    hubClientId = hubClientId.ifBlank { settings.deviceId },
+                    hubToken = hubToken.trim(),
+                    configPath = configPath.trim(),
+                    storagePath = storagePath.trim(),
+                    logLevel = settings.logLevel
+                )
+                saving = true
+                message = if (fromAutoSave) "Auto-saving..." else "Saving settings..."
+                try {
+                    SettingsStore.update(app, patch)
+                    if (nextRunDaemonForeground) {
+                        DaemonForegroundService.start(app)
+                    } else {
+                        DaemonForegroundService.stop(app)
+                    }
+                    if (showFloatingButton && isFloatingOverlayEnabled(app)) {
+                        FloatingButtonService.start(app)
+                    } else {
+                        FloatingButtonService.stop(app)
+                    }
+                    val current = DaemonController.current()
+                    if (current != null) {
+                        current.restart()
+                    }
+                    message = if (fromAutoSave) "Auto-saved" else "Settings saved"
+                } catch (e: Exception) {
+                    message = "Save failed: ${e.message ?: "error"}"
+                } finally {
+                    saving = false
+                }
+            }
+        }
+
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
         Spacer(Modifier.size(16.dp))
 
@@ -576,7 +650,7 @@ fun SettingsScreen(
             contactsSync, smsSync, syncInterval, clipboardSyncInterval,
             runDaemonForeground, runDaemonOnBoot, useAccessibilityService,
             showFloatingButton, quickActionCopyOnly, quickActionHandleImage,
-            listenPortHttp, listenPortHttps, enableLocalServer, authToken,
+            listenPortHttp, listenPortHttps, enableLocalServer, authToken, hubToken,
             tlsEnabled, tlsKeystorePath, tlsKeystorePassword, tlsKeystoreType
         ) {
             if (isInitialLoad) {
@@ -585,78 +659,21 @@ fun SettingsScreen(
             }
 
             kotlinx.coroutines.delay(1000)
-
-            val nextHttp = listenPortHttp.toIntOrNull() ?: settings.listenPortHttp
-            val nextHttps = listenPortHttps.toIntOrNull() ?: settings.listenPortHttps
-            val nextSyncInterval = syncInterval.toIntOrNull() ?: settings.syncIntervalSec
-            val nextClipboardSyncInterval = clipboardSyncInterval.toIntOrNull() ?: settings.clipboardSyncIntervalSec
-            val nextRunDaemonForeground = runDaemonForeground
-            val nextDestinations = destinationText
-                .lineSequence()
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-                .toList()
-
-            val patch = SettingsPatch(
-                listenPortHttp = nextHttp,
-                listenPortHttps = nextHttps,
-                enableLocalServer = enableLocalServer,
-                destinations = nextDestinations,
-                hubDispatchUrl = space.u2re.cws.network.normalizeHubDispatchUrl(hubDispatchUrl) ?: hubDispatchUrl.trim(),
-                allowInsecureTls = allowInsecure,
-                shareTarget = shareTarget,
-                clipboardSync = clipboardSync,
-                contactsSync = contactsSync,
-                smsSync = smsSync,
-                syncIntervalSec = nextSyncInterval,
-                clipboardSyncIntervalSec = nextClipboardSyncInterval,
-                runDaemonForeground = nextRunDaemonForeground,
-                runDaemonOnBoot = runDaemonOnBoot,
-                useAccessibilityService = useAccessibilityService,
-                showFloatingButton = showFloatingButton,
-                quickActionCopyOnly = quickActionCopyOnly,
-                quickActionHandleImage = quickActionHandleImage,
-                authToken = authToken.trim(),
-                tlsEnabled = tlsEnabled,
-                apiEndpoint = apiEndpoint.trim(),
-                apiKey = apiKey.trim(),
-                tlsKeystoreAssetPath = tlsKeystorePath.trim(),
-                tlsKeystoreType = tlsKeystoreType.ifBlank { settings.tlsKeystoreType },
-                tlsKeystorePassword = tlsKeystorePassword,
-                hubClientId = hubClientId.ifBlank { settings.deviceId },
-                hubToken = authToken.trim(),
-                configPath = configPath.trim(),
-                storagePath = storagePath.trim(),
-                logLevel = settings.logLevel
-            )
-            saving = true
-            message = "Auto-saving..."
-            try {
-                SettingsStore.update(app, patch)
-                if (nextRunDaemonForeground) {
-                    DaemonForegroundService.start(app)
-                } else {
-                    DaemonForegroundService.stop(app)
-                }
-                if (showFloatingButton && isFloatingOverlayEnabled(app)) {
-                    FloatingButtonService.start(app)
-                } else {
-                    FloatingButtonService.stop(app)
-                }
-                val current = DaemonController.current()
-                if (current != null) {
-                    current.restart()
-                }
-                message = "Auto-saved"
-            } catch (e: Exception) {
-                message = "Save failed: ${e.message ?: "error"}"
-            } finally {
-                saving = false
-            }
+            saveSettings(true)
         }
 
         Spacer(Modifier.size(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(
+                onClick = { saveSettings(false) },
+                enabled = !saving,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary
+                )
+            ) {
+                Text(if (saving) "Saving..." else "Save Settings")
+            }
             TextButton(onClick = navigateBack) {
                 Text("Close")
             }
