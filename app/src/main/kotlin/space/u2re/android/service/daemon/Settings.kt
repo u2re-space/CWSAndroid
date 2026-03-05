@@ -23,6 +23,7 @@ data class Settings(
     val apiEndpoint: String,
     val apiKey: String,
     val clipboardSync: Boolean,
+    val reverseTrustedCa: String,
     val contactsSync: Boolean,
     val smsSync: Boolean,
     val shareTarget: Boolean,
@@ -56,6 +57,7 @@ data class SettingsPatch(
     val apiEndpoint: String? = null,
     val apiKey: String? = null,
     val allowInsecureTls: Boolean? = null,
+    val reverseTrustedCa: String? = null,
     val clipboardSync: Boolean? = null,
     val contactsSync: Boolean? = null,
     val smsSync: Boolean? = null,
@@ -98,6 +100,7 @@ private fun defaultSettings(): Settings = Settings(
     apiEndpoint = "",
     apiKey = "",
     allowInsecureTls = false,
+    reverseTrustedCa = "",
     clipboardSync = true,
     contactsSync = false,
     smsSync = false,
@@ -117,7 +120,8 @@ private fun defaultSettings(): Settings = Settings(
 
 
 fun Settings.resolve(): Settings {
-    val context = ResolveContext(deviceId = this.deviceId, hubClientId = this.hubClientId, basePath = this.storagePath)
+    val resolveBasePath = if (this.storagePath.isNotBlank()) this.storagePath else this.configPath
+    val context = ResolveContext(deviceId = this.deviceId, hubClientId = this.hubClientId, basePath = resolveBasePath)
     return this.copy(
         authToken = ConfigResolver.resolve(this.authToken, context),
         hubToken = ConfigResolver.resolve(this.hubToken, context),
@@ -127,6 +131,7 @@ fun Settings.resolve(): Settings {
         hubDispatchUrl = ConfigResolver.resolve(this.hubDispatchUrl, context),
         apiEndpoint = ConfigResolver.resolve(this.apiEndpoint, context),
         apiKey = ConfigResolver.resolve(this.apiKey, context),
+            reverseTrustedCa = ConfigResolver.resolve(this.reverseTrustedCa, context),
         destinations = this.destinations.map { ConfigResolver.resolve(it, context) }
     )
 }
@@ -181,6 +186,7 @@ object SettingsStore {
                                     hubClientId = merged.hubClientId.ifBlank { fromClients.hubClientId },
                                     apiEndpoint = merged.apiEndpoint.ifBlank { fromClients.apiEndpoint },
                                     apiKey = merged.apiKey.ifBlank { fromClients.apiKey },
+                                    reverseTrustedCa = merged.reverseTrustedCa.ifBlank { fromClients.reverseTrustedCa },
                                     destinations = if (merged.destinations.isEmpty()) fromClients.destinations else merged.destinations
                                 )
                             }
@@ -222,6 +228,7 @@ object SettingsStore {
             showFloatingButton = next.showFloatingButton,
             quickActionCopyOnly = next.quickActionCopyOnly,
             quickActionHandleImage = next.quickActionHandleImage,
+            reverseTrustedCa = next.reverseTrustedCa.trim(),
             enableLocalServer = next.enableLocalServer,
             storagePath = next.storagePath,
             tlsEnabled = next.tlsEnabled,
@@ -258,6 +265,7 @@ object SettingsStore {
             apiEndpoint = patch.apiEndpoint ?: current.apiEndpoint,
             apiKey = patch.apiKey ?: current.apiKey,
             allowInsecureTls = patch.allowInsecureTls ?: current.allowInsecureTls,
+            reverseTrustedCa = patch.reverseTrustedCa ?: current.reverseTrustedCa,
             clipboardSync = patch.clipboardSync ?: current.clipboardSync,
             contactsSync = patch.contactsSync ?: current.contactsSync,
             smsSync = patch.smsSync ?: current.smsSync,
@@ -280,36 +288,93 @@ object SettingsStore {
 
 private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
     val defaults = defaultSettings()
+    val mergedSource = HashMap<Any?, Any?>(raw.size + 8)
+    for (entry in raw.entries) {
+        mergedSource[entry.key] = entry.value
+    }
+    val cwsAlias = raw["cws"] as? Map<*, *>
+    if (cwsAlias != null) {
+        for (entry in cwsAlias.entries) {
+            if (entry.key is String && !mergedSource.containsKey(entry.key)) {
+                mergedSource[entry.key] = entry.value
+            }
+        }
+    }
+
+    val pickString: (Map<Any?, Any?>, Iterable<String>) -> String? = { source, keys ->
+        var result: String? = null
+        for (key in keys) {
+            val value = source[key]
+            val text = value?.toString()?.trim()
+            if (!text.isNullOrBlank()) {
+                result = text
+                break
+            }
+        }
+        result
+    }
+
+    val pickStringList: (Map<Any?, Any?>, Iterable<String>) -> List<String> = { source, keys ->
+        var result: List<String>? = null
+        for (key in keys) {
+            val value = source[key]
+            if (value is List<*>) {
+                val mapped = value.mapNotNull { it?.toString()?.trim()?.takeIf { it.isNotBlank() } }
+                if (mapped.isNotEmpty()) {
+                    result = mapped
+                    break
+                }
+            }
+        }
+        result ?: defaults.destinations
+    }
+
     return copy(
-        listenPortHttps = (raw["listenPortHttps"] as? Number)?.toInt() ?: defaults.listenPortHttps,
-        listenPortHttp = (raw["listenPortHttp"] as? Number)?.toInt() ?: defaults.listenPortHttp,
-        destinations = ((raw["destinations"] as? List<*>)?.mapNotNull { it?.toString()?.trim()?.takeIf { it.isNotBlank() } } ?: defaults.destinations),
-        deviceId = raw["deviceId"] as? String ?: defaults.deviceId,
-        authToken = raw["authToken"] as? String ?: defaults.authToken,
-        hubClientId = raw["hubClientId"] as? String ?: defaults.hubClientId,
-        hubToken = raw["hubToken"] as? String ?: defaults.hubToken,
-        tlsEnabled = raw["tlsEnabled"] as? Boolean ?: defaults.tlsEnabled,
-        tlsKeystoreAssetPath = raw["tlsKeystoreAssetPath"] as? String ?: defaults.tlsKeystoreAssetPath,
-        tlsKeystoreType = raw["tlsKeystoreType"] as? String ?: defaults.tlsKeystoreType,
-        tlsKeystorePassword = raw["tlsKeystorePassword"] as? String ?: defaults.tlsKeystorePassword,
-        hubDispatchUrl = raw["hubDispatchUrl"] as? String ?: defaults.hubDispatchUrl,
-        apiEndpoint = raw["apiEndpoint"] as? String ?: defaults.apiEndpoint,
-        apiKey = raw["apiKey"] as? String ?: defaults.apiKey,
-        allowInsecureTls = raw["allowInsecureTls"] as? Boolean ?: defaults.allowInsecureTls,
-        clipboardSync = raw["clipboardSync"] as? Boolean ?: defaults.clipboardSync,
-        contactsSync = raw["contactsSync"] as? Boolean ?: defaults.contactsSync,
-        smsSync = raw["smsSync"] as? Boolean ?: defaults.smsSync,
-        shareTarget = raw["shareTarget"] as? Boolean ?: defaults.shareTarget,
-        logLevel = raw["logLevel"] as? String ?: defaults.logLevel,
-        syncIntervalSec = (raw["syncIntervalSec"] as? Number)?.toInt() ?: defaults.syncIntervalSec,
-        clipboardSyncIntervalSec = (raw["clipboardSyncIntervalSec"] as? Number)?.toInt() ?: defaults.clipboardSyncIntervalSec,
-        runDaemonForeground = raw["runDaemonForeground"] as? Boolean ?: defaults.runDaemonForeground,
-        runDaemonOnBoot = raw["runDaemonOnBoot"] as? Boolean ?: defaults.runDaemonOnBoot,
-        useAccessibilityService = raw["useAccessibilityService"] as? Boolean ?: defaults.useAccessibilityService,
-        showFloatingButton = raw["showFloatingButton"] as? Boolean ?: defaults.showFloatingButton,
-        quickActionCopyOnly = raw["quickActionCopyOnly"] as? Boolean ?: defaults.quickActionCopyOnly,
-        quickActionHandleImage = raw["quickActionHandleImage"] as? Boolean ?: defaults.quickActionHandleImage,
-        enableLocalServer = raw["enableLocalServer"] as? Boolean ?: defaults.enableLocalServer,
-        storagePath = raw["storagePath"] as? String ?: defaults.storagePath,
+        listenPortHttps = (mergedSource["listenPortHttps"] as? Number)?.toInt() ?: defaults.listenPortHttps,
+        listenPortHttp = (mergedSource["listenPortHttp"] as? Number)?.toInt() ?: defaults.listenPortHttp,
+        destinations = pickStringList(mergedSource, listOf("destinations", "targets", "peers")),
+        deviceId = pickString(mergedSource, listOf("deviceId", "device_id", "clientDeviceId", "CWS_DEVICE_ID")) ?: defaults.deviceId,
+        authToken = pickString(
+            mergedSource,
+            listOf("authToken", "apiToken", "CWS_AUTH_TOKEN", "clientSecret")
+        ) ?: defaults.authToken,
+        hubClientId = pickString(
+            mergedSource,
+            listOf("hubClientId", "CWS_ASSOCIATED_ID", "clientId", "associatedId", "userId", "CWS_BRIDGE_USER_ID", "user-id")
+        ) ?: defaults.hubClientId,
+        hubToken = pickString(
+            mergedSource,
+            listOf("hubToken", "CWS_ASSOCIATED_TOKEN", "userKey", "CWS_BRIDGE_USER_KEY", "token", "clientToken")
+        ) ?: defaults.hubToken,
+        tlsEnabled = mergedSource["tlsEnabled"] as? Boolean ?: defaults.tlsEnabled,
+        tlsKeystoreAssetPath = (mergedSource["tlsKeystoreAssetPath"] as? String) ?: defaults.tlsKeystoreAssetPath,
+        tlsKeystoreType = (mergedSource["tlsKeystoreType"] as? String) ?: defaults.tlsKeystoreType,
+        tlsKeystorePassword = (mergedSource["tlsKeystorePassword"] as? String) ?: defaults.tlsKeystorePassword,
+        hubDispatchUrl = pickString(
+            mergedSource,
+            listOf("hubDispatchUrl", "gatewayUrl", "dispatchUrl", "endpointUrl", "CWS_HUB_URL", "CWS_ENDPOINT_URL")
+        ) ?: defaults.hubDispatchUrl,
+        apiEndpoint = pickString(mergedSource, listOf("apiEndpoint", "apiUrl", "llmEndpoint")) ?: defaults.apiEndpoint,
+        apiKey = pickString(mergedSource, listOf("apiKey", "api_token", "apiToken")) ?: defaults.apiKey,
+        allowInsecureTls = mergedSource["allowInsecureTls"] as? Boolean ?: defaults.allowInsecureTls,
+        reverseTrustedCa = pickString(
+            mergedSource,
+            listOf("reverseTrustedCa", "reverseTrustedCertificate", "reverseTrustedCA", "reverseCa", "reverseCaPem", "CWS_REVERSE_CA", "CWS_HTTPS_CA")
+        ) ?: defaults.reverseTrustedCa,
+        clipboardSync = mergedSource["clipboardSync"] as? Boolean ?: defaults.clipboardSync,
+        contactsSync = mergedSource["contactsSync"] as? Boolean ?: defaults.contactsSync,
+        smsSync = mergedSource["smsSync"] as? Boolean ?: defaults.smsSync,
+        shareTarget = mergedSource["shareTarget"] as? Boolean ?: defaults.shareTarget,
+        logLevel = mergedSource["logLevel"] as? String ?: defaults.logLevel,
+        syncIntervalSec = (mergedSource["syncIntervalSec"] as? Number)?.toInt() ?: defaults.syncIntervalSec,
+        clipboardSyncIntervalSec = (mergedSource["clipboardSyncIntervalSec"] as? Number)?.toInt() ?: defaults.clipboardSyncIntervalSec,
+        runDaemonForeground = mergedSource["runDaemonForeground"] as? Boolean ?: defaults.runDaemonForeground,
+        runDaemonOnBoot = mergedSource["runDaemonOnBoot"] as? Boolean ?: defaults.runDaemonOnBoot,
+        useAccessibilityService = mergedSource["useAccessibilityService"] as? Boolean ?: defaults.useAccessibilityService,
+        showFloatingButton = mergedSource["showFloatingButton"] as? Boolean ?: defaults.showFloatingButton,
+        quickActionCopyOnly = mergedSource["quickActionCopyOnly"] as? Boolean ?: defaults.quickActionCopyOnly,
+        quickActionHandleImage = mergedSource["quickActionHandleImage"] as? Boolean ?: defaults.quickActionHandleImage,
+        enableLocalServer = mergedSource["enableLocalServer"] as? Boolean ?: defaults.enableLocalServer,
+        storagePath = (mergedSource["storagePath"] as? String) ?: defaults.storagePath,
     )
 }

@@ -47,8 +47,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import space.u2re.cws.daemon.Daemon.DaemonConnectionSnapshot
 import space.u2re.cws.daemon.DaemonController
 import space.u2re.cws.daemon.Settings
 import space.u2re.cws.daemon.SettingsPatch
@@ -220,6 +223,18 @@ fun SettingsScreen(
     }
 
     val isRunning = DaemonController.current() != null
+    var daemonSnapshot by remember { mutableStateOf(DaemonConnectionSnapshot.stopped()) }
+
+    fun refreshDaemonSnapshot() {
+        daemonSnapshot = DaemonController.current()?.getConnectionSnapshot() ?: DaemonConnectionSnapshot.stopped()
+    }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            refreshDaemonSnapshot()
+            delay(3000)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -413,7 +428,7 @@ fun SettingsScreen(
                 onTestHub = {
                     val normalizedHubUrl = space.u2re.cws.network.normalizeHubDispatchUrl(hubDispatchUrl)
                     if (normalizedHubUrl.isNullOrBlank()) {
-                        message = "Set a valid Hub dispatch URL (for example http://192.168.0.200/api/broadcast)"
+                        message = "Set a valid Hub dispatch URL (for example http://192.168.0.200/api/broadcast or ws://192.168.0.200/ws)"
                         return@GatewayTab
                     }
                     testingHub = true
@@ -461,7 +476,9 @@ fun SettingsScreen(
                     destinationText = existing.joinToString("\n")
                     message = "Added ${localIps.size} local device targets"
                 },
-                onSelectHubFromDestination = { target -> hubDispatchUrl = target }
+                onSelectHubFromDestination = { target -> hubDispatchUrl = target },
+                daemonSnapshot = daemonSnapshot,
+                onRefreshDaemonStatus = { refreshDaemonSnapshot() }
             )
 
             SettingsTab.SERVER -> ServerTab(
@@ -585,7 +602,7 @@ fun SettingsScreen(
                     listenPortHttps = nextHttps,
                     enableLocalServer = enableLocalServer,
                     destinations = nextDestinations,
-                    hubDispatchUrl = space.u2re.cws.network.normalizeHubDispatchUrl(hubDispatchUrl) ?: hubDispatchUrl.trim(),
+                    hubDispatchUrl = hubDispatchUrl.trim(),
                     allowInsecureTls = allowInsecure,
                     shareTarget = shareTarget,
                     clipboardSync = clipboardSync,

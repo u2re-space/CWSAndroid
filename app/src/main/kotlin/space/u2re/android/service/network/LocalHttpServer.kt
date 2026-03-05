@@ -33,6 +33,7 @@ data class HttpServerOptions(
     val setClipboardText: suspend (String) -> Unit,
     val dispatch: suspend (List<DispatchRequest>) -> List<DispatchResult>,
     val sendSms: suspend (String, String) -> Unit,
+    val postClipboard: (suspend (String, List<String>) -> Unit)? = null,
     val listSms: suspend (Int) -> List<SmsItem>,
     val listNotifications: suspend (Int) -> List<NotificationEvent>,
     val listDestinations: () -> List<String>,
@@ -90,10 +91,22 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                             val bodyText = readBody(session)
                             val ct = getHeader(session.headers, "content-type")?.lowercase() ?: ""
                             val payload = parseClipboardPayload(bodyText, ct)
-                            DaemonLog.debug("LocalHttpServer", "POST $uri contentType=$ct payloadLength=${payload.length}")
-                            if (payload.isBlank()) return text(400, "No text provided")
+                            DaemonLog.debug(
+                                "LocalHttpServer",
+                                "POST $uri contentType=$ct payloadLength=${payload.text.length} targets=${payload.targets.size}"
+                            )
+                            if (payload.text.isBlank()) return text(400, "No text provided")
+                            if (payload.targets.isNotEmpty() && opts.postClipboard != null) {
+                                return try {
+                                    runBlocking { opts.postClipboard(payload.text, payload.targets) }
+                                    DaemonLog.info("LocalHttpServer", "clipboard request routed to targets=${payload.targets}")
+                                    json(200, mapOf("ok" to true, "targets" to payload.targets))
+                                } catch (e: Exception) {
+                                    json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
+                                }
+                            }
                             return try {
-                                runBlocking { opts.setClipboardText(payload) }
+                                runBlocking { opts.setClipboardText(payload.text) }
                                 DaemonLog.info("LocalHttpServer", "clipboard request applied")
                                 json(200, mapOf("ok" to true))
                             } catch (e: Exception) {
@@ -289,7 +302,7 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
         }
     }
 
-    private fun parseClipboardPayload(body: String, contentType: String): String {
+    private fun parseClipboardPayload(body: String, contentType: String): ParsedClipboardPayload {
         val ct = contentType.lowercase()
         val trimmedBody = body.trim()
         val raw = if (ct.contains("application/json")) {
@@ -299,7 +312,7 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
         }
 
         if (!ct.contains("application/json")) {
-            return raw
+            return ParsedClipboardPayload(raw, emptyList())
         }
 
         return try {
@@ -309,10 +322,15 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
             )
 
             if (bodyMap is String) {
-                return bodyMap.trim()
+                return ParsedClipboardPayload(bodyMap.trim(), emptyList())
             }
 
-            val jsonObject = bodyMap as? Map<*, *> ?: return raw.ifBlank { "" }.trim()
+            val jsonObject = bodyMap as? Map<*, *> ?: return ParsedClipboardPayload(raw.ifBlank { "" }.trim(), emptyList())
+            val rawTargets = mutableListOf<String>()
+            for (key in listOf("targets", "target", "targetId", "deviceId", "to", "device", "targetDeviceId")) {
+                rawTargets.addAll(extractClipboardTargets(jsonObject[key]))
+            }
+            val uniqueTargets = rawTargets.map { it.trim() }.filter { it.isNotBlank() }.toSet()
 
             val candidates = listOf(
                 "text",
@@ -334,13 +352,34 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
             }
 
             when {
-                byKey.isNullOrBlank() || byKey == "{}" || byKey == "[]" -> ""
-                else -> byKey
+                byKey.isNullOrBlank() || byKey == "{}" || byKey == "[]" -> ParsedClipboardPayload("", uniqueTargets.toList())
+                else -> ParsedClipboardPayload(byKey, uniqueTargets.toList())
             }
         } catch (_: Exception) {
-            raw.ifBlank { "" }
-        }.trim()
+            ParsedClipboardPayload(raw.ifBlank { "" }, emptyList())
+        }
     }
+
+    private fun extractClipboardTargets(value: Any?): List<String> {
+        return when (value) {
+            null -> emptyList()
+            is String -> value
+                .split("[;,]".toRegex())
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+            is List<*> -> value.flatMap { extractClipboardTargets(it) }
+            is Map<*, *> -> {
+                val nested = value["targets"] ?: value["target"] ?: value["targetId"] ?: value["deviceId"] ?: value["to"] ?: value["device"]
+                extractClipboardTargets(nested)
+            }
+            else -> listOf(value.toString())
+        }
+    }
+
+    private data class ParsedClipboardPayload(
+        val text: String,
+        val targets: List<String>
+    )
 
     private fun getHeader(headers: Map<String, String>?, name: String): String? {
         if (headers == null) return null

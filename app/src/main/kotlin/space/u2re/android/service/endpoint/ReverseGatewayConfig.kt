@@ -16,7 +16,9 @@ data class ReverseGatewayConfig(
     val namespace: String = "default",
     val roles: String = "endpoint,peer,node,app",
     val keepAliveIntervalMs: Long = 20_000L,
-    val reconnectDelayMs: Long = 1_000L
+    val reconnectDelayMs: Long = 1_000L,
+    val allowInsecureTls: Boolean = false,
+    val trustedCa: String = ""
 )
 
 object ReverseGatewayConfigProvider {
@@ -33,6 +35,7 @@ object ReverseGatewayConfigProvider {
     private const val PREF_ROLES = "reverse_roles"
     private const val PREF_KEEPALIVE_MS = "reverse_keepalive_ms"
     private const val PREF_RECONNECT_MS = "reverse_reconnect_ms"
+    private const val PREF_TRUSTED_CA = "reverse_trusted_ca"
 
     fun load(application: Application): ReverseGatewayConfig {
         val prefs = application.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -54,7 +57,8 @@ object ReverseGatewayConfigProvider {
             namespace = prefs.getString(PREF_NAMESPACE, "default") ?: "default",
             roles = prefs.getString(PREF_ROLES, "endpoint,peer,node,app") ?: "endpoint,peer,node,app",
             keepAliveIntervalMs = if (keepAlive > 0L) keepAlive else 20_000L,
-            reconnectDelayMs = if (reconnect > 0L) reconnect else 1_000L
+            reconnectDelayMs = if (reconnect > 0L) reconnect else 1_000L,
+            trustedCa = prefs.getString(PREF_TRUSTED_CA, "") ?: ""
         )
     }
 
@@ -79,6 +83,7 @@ object ReverseGatewayConfigProvider {
             .putString(PREF_ROLES, config.roles.ifBlank { "endpoint,peer,node,app" })
             .putString(PREF_KEEPALIVE_MS, config.keepAliveIntervalMs.coerceAtLeast(1_000L).toString())
             .putString(PREF_RECONNECT_MS, config.reconnectDelayMs.coerceAtLeast(500L).toString())
+            .putString(PREF_TRUSTED_CA, config.trustedCa.trim())
             .apply()
     }
 

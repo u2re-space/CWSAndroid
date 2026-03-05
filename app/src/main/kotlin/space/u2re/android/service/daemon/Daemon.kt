@@ -3,6 +3,11 @@ package space.u2re.cws.daemon
 import android.app.Application
 import android.app.Activity
 import android.content.Intent
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,7 +32,10 @@ import space.u2re.cws.network.HttpServerOptions
 import space.u2re.cws.network.LocalHttpServer
 import space.u2re.cws.network.ReverseGatewayClient
 import space.u2re.cws.reverse.ReverseGatewayConfigProvider
+import space.u2re.cws.reverse.ReverseGatewayConfig
 import space.u2re.cws.reverse.AssistantNetworkBridge
+import java.net.URI
+import java.util.concurrent.atomic.AtomicLong
 
 class Daemon(
     private val application: Application,
@@ -41,8 +49,25 @@ class Daemon(
     private var httpServerHttp: LocalHttpServer? = null
     private var httpServerHttps: LocalHttpServer? = null
     private var reverseGateway: ReverseGatewayClient? = null
+    private var activeReverseGatewayConfig: ReverseGatewayConfig? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var connectivityManager: ConnectivityManager? = null
+    private var lastNetworkReconnectAtMs = 0L
     private val clipboardTextFallback = ClipboardSyncWatcher(application, ::setClipboardBestEffort)
     private var running = false
+    private val reverseRelayAttempts = AtomicLong(0)
+    private val reverseRelaySuccess = AtomicLong(0)
+    private val reverseRelayFallback = AtomicLong(0)
+    private val reverseRelayFailures = AtomicLong(0)
+    private val reverseWsReconnectRequests = AtomicLong(0)
+    private val reverseWsReconnectSuccess = AtomicLong(0)
+    private @Volatile var reverseGatewayState = "stopped"
+    private @Volatile var reverseGatewayStateDetail: String? = "not-started"
+    private @Volatile var reverseGatewayStateUpdatedAtMs = 0L
+    private @Volatile var reverseGatewayConfigured = false
+    private val reverseHttpAttempts = AtomicLong(0)
+    private val reverseHttpSuccesses = AtomicLong(0)
+    private val reverseHttpFailures = AtomicLong(0)
 
     init {
         DaemonLog.setLogLevel(settings.logLevel)
@@ -51,6 +76,7 @@ class Daemon(
     fun start() {
         if (running) return
         running = true
+        setReverseGatewayState("starting", "daemon started")
         val topActivity = activityProvider()
         val activity = topActivity as? Activity
 
@@ -61,6 +87,7 @@ class Daemon(
                 val syncCallbacks = createSyncCallbacks(activity)
                 startServers(syncCallbacks)
                 startReverseGateway(syncCallbacks)
+                ensureReverseNetworkMonitoring()
                 startClipboardSync()
                 startClipboardPollingFallback()
                 startPeriodicSync()
@@ -76,8 +103,11 @@ class Daemon(
     fun stop() {
         running = false
         scope.launch {
+            setReverseGatewayState("stopped", "daemon stopped")
             reverseGateway?.stop()
             reverseGateway = null
+            reverseGatewayConfigured = false
+            stopReverseNetworkMonitoring()
             clipboardWatcher?.stop()
             clipboardWatcher = null
             httpServerHttp?.stop()
@@ -119,30 +149,180 @@ class Daemon(
         val baseReverseConfig = ReverseGatewayConfigProvider.load(application)
         val reverseDeviceId = settings.hubClientId.ifBlank { settings.authToken.ifBlank { baseReverseConfig.deviceId } }
         val reverseClientId = settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
+        val resolvedEndpointUrl = baseReverseConfig.endpointUrl.ifBlank { settings.hubDispatchUrl }
+        val resolvedUserId = baseReverseConfig.userId.ifBlank { reverseClientId }
+        val resolvedUserKey = baseReverseConfig.userKey.ifBlank { settings.hubToken.ifBlank { settings.authToken } }
+        val shouldEnableReverse = resolvedEndpointUrl.isNotBlank() && resolvedUserId.isNotBlank() && resolvedUserKey.isNotBlank()
         val reverseConfig = baseReverseConfig.copy(
             deviceId = reverseDeviceId,
-            endpointUrl = baseReverseConfig.endpointUrl.ifBlank { settings.hubDispatchUrl },
-            userId = baseReverseConfig.userId.ifBlank { reverseClientId },
-            userKey = baseReverseConfig.userKey.ifBlank { settings.hubToken.ifBlank { settings.authToken } }
+            endpointUrl = resolvedEndpointUrl,
+            userId = resolvedUserId,
+            userKey = resolvedUserKey,
+            enabled = baseReverseConfig.enabled || shouldEnableReverse,
+                allowInsecureTls = settings.allowInsecureTls,
+                trustedCa = settings.reverseTrustedCa
         )
-        val client = ReverseGatewayClient(reverseConfig) { messageType, text, _ ->
-            scope.launch {
-                runCatching {
-                    AssistantNetworkBridge.handleReverseMessage(
-                        context = application,
-                        messageType = messageType,
-                        rawPayload = text,
-                        config = reverseConfig,
-                        callbacks = syncCallbacks
-                    )
-                }.onFailure { e ->
-                    DaemonLog.warn("Daemon", "reverse bridge failed", e)
+        activeReverseGatewayConfig = reverseConfig
+        reverseGatewayConfigured = reverseConfig.enabled && reverseConfig.endpointUrl.isNotBlank() && reverseConfig.userId.isNotBlank() && reverseConfig.userKey.isNotBlank()
+        if (!reverseGatewayConfigured) {
+            val missingFields = mutableListOf<String>().apply {
+                if (reverseConfig.endpointUrl.isBlank()) add("endpointUrl (hubDispatchUrl)")
+                if (reverseConfig.userId.isBlank()) add("userId (hubClientId/deviceId)")
+                if (reverseConfig.userKey.isBlank()) add("userKey (hubToken)")
+                if (!reverseConfig.enabled) add("reverseEnabled flag")
+            }
+            val reason = if (missingFields.isNotEmpty()) {
+                "reverse gateway config missing: ${missingFields.joinToString(", ")}"
+            } else {
+                "reverse gateway disabled"
+            }
+            setReverseGatewayState("disabled", reason)
+            DaemonLog.info("Daemon", reason)
+            return
+        }
+        val client = ReverseGatewayClient(
+            reverseConfig,
+            onMessage = { messageType, text, _ ->
+                scope.launch {
+                    runCatching {
+                        AssistantNetworkBridge.handleReverseMessage(
+                            context = application,
+                            messageType = messageType,
+                            rawPayload = text,
+                            config = reverseConfig,
+                            callbacks = syncCallbacks
+                        )
+                    }.onFailure { e ->
+                        DaemonLog.warn("Daemon", "reverse bridge failed", e)
+                    }
+                }
+            },
+            onState = { event, details ->
+                setReverseGatewayState(event, details)
+                val detailText = normalizeReverseGatewayLogLine(event, details)
+                when (event) {
+                    "connected" -> {
+                        reverseWsReconnectSuccess.incrementAndGet()
+                        DaemonLog.info("Daemon", "reverse gateway state $detailText")
+                    }
+                    "connecting" -> DaemonLog.debug("Daemon", "reverse gateway state $detailText")
+                    "disconnected" -> DaemonLog.warn("Daemon", "reverse gateway state $detailText")
+                    "reconnect-requested" -> DaemonLog.info("Daemon", "reverse gateway state $detailText")
+                    "failure" -> DaemonLog.warn("Daemon", "reverse gateway state $detailText")
+                    "stopped", "started" -> DaemonLog.debug("Daemon", "reverse gateway state $detailText")
                 }
             }
-        }
+        )
         reverseGateway = client
         client.start()
         DaemonLog.info("Daemon", "reverse gateway client started")
+    }
+
+    private fun ensureReverseNetworkMonitoring() {
+        stopReverseNetworkMonitoring()
+        val manager = application.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                requestReverseGatewayReconnect("network available")
+            }
+
+            override fun onLost(network: Network) {
+                DaemonLog.debug("Daemon", "network lost: $network")
+            }
+
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                if (!networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return
+                requestReverseGatewayReconnect("internet restored")
+            }
+        }
+        try {
+            manager.registerNetworkCallback(request, callback)
+            connectivityManager = manager
+            networkCallback = callback
+        } catch (_: Exception) {
+            DaemonLog.warn("Daemon", "reverse network monitoring registration failed")
+        }
+    }
+
+    private fun stopReverseNetworkMonitoring() {
+        connectivityManager?.let { manager ->
+            networkCallback?.let { callback ->
+                try {
+                    manager.unregisterNetworkCallback(callback)
+                } catch (_: Exception) {
+                    // no-op
+                }
+            }
+        }
+        connectivityManager = null
+        networkCallback = null
+    }
+
+    private fun requestReverseGatewayReconnect(reason: String) {
+        if (!running) return
+        val now = System.currentTimeMillis()
+        if (now - lastNetworkReconnectAtMs < 3_000L) return
+        lastNetworkReconnectAtMs = now
+        val client = reverseGateway ?: return
+        setReverseGatewayState("reconnect-requested", reason)
+        reverseWsReconnectRequests.incrementAndGet()
+        DaemonLog.debug("Daemon", "reverse gateway reconnect triggered by network event: $reason")
+        client.requestReconnect()
+    }
+
+    private fun setReverseGatewayState(state: String, detail: String? = null) {
+        reverseGatewayState = state
+        reverseGatewayStateDetail = detail
+        reverseGatewayStateUpdatedAtMs = System.currentTimeMillis()
+    }
+
+    private fun isReverseGatewayEnabled(): Boolean {
+        val config = activeReverseGatewayConfig
+        return config != null && config.enabled && config.endpointUrl.isNotBlank() && config.userId.isNotBlank() && config.userKey.isNotBlank()
+    }
+
+    private fun extractReverseEndpoint(): String {
+        return activeReverseGatewayConfig?.endpointUrl?.trim() ?: settings.hubDispatchUrl
+    }
+
+    fun getConnectionSnapshot(): DaemonConnectionSnapshot {
+        val now = System.currentTimeMillis()
+        val reverseGatewayDiagnostics = reverseGateway?.getDiagnostics()
+        return DaemonConnectionSnapshot(
+            daemonRunning = running,
+            localHttpServer = httpServerHttp != null,
+            localHttpsServer = httpServerHttps != null,
+            reverseGatewayConfigured = reverseGatewayConfigured,
+            reverseGatewayEnabled = isReverseGatewayEnabled(),
+            reverseGatewayConnected = reverseGateway?.isConnected() == true,
+            reverseGatewayState = reverseGatewayState,
+            reverseGatewayStateDetail = reverseGatewayStateDetail,
+            reverseGatewayStateUpdatedAtMs = if (reverseGatewayStateUpdatedAtMs > 0L) reverseGatewayStateUpdatedAtMs else now,
+            transportEndpoint = extractReverseEndpoint(),
+            reverseRelayAttempts = reverseRelayAttempts.get(),
+            reverseRelaySuccess = reverseRelaySuccess.get(),
+            reverseRelayFallback = reverseRelayFallback.get(),
+            reverseRelayFailures = reverseRelayFailures.get(),
+            reverseHttpAttempts = reverseHttpAttempts.get(),
+            reverseHttpSuccesses = reverseHttpSuccesses.get(),
+            reverseHttpFailures = reverseHttpFailures.get(),
+            reverseGatewayCandidateState = reverseGatewayDiagnostics?.candidateState,
+            reverseGatewayActiveCandidate = reverseGatewayDiagnostics?.activeCandidate,
+            reverseGatewayCandidateList = reverseGatewayDiagnostics?.candidateListText,
+            reverseGatewayLastError = reverseGatewayDiagnostics?.lastFailureReason
+        )
+    }
+
+    private fun logReverseRoutingMetricsIfNeeded() {
+        val eventCount = reverseRelayAttempts.get() + reverseHttpAttempts.get()
+        if (eventCount % 10L != 1L) return
+        DaemonLog.info(
+            "Daemon",
+            "clipboard routing metrics wsAttempts=${reverseRelayAttempts.get()} wsSuccess=${reverseRelaySuccess.get()} wsFallback=${reverseRelayFallback.get()} wsFail=${reverseRelayFailures.get()} httpAttempts=${reverseHttpAttempts.get()} httpSuccess=${reverseHttpSuccesses.get()} httpFail=${reverseHttpFailures.get()} reconnectReq=${reverseWsReconnectRequests.get()} reconnectOk=${reverseWsReconnectSuccess.get()}"
+        )
     }
 
     private fun startServers(syncCallbacks: SyncCallbacks) {
@@ -160,6 +340,7 @@ class Daemon(
             setClipboardText = syncCallbacks.setClipboardText,
             dispatch = syncCallbacks.dispatch,
             sendSms = syncCallbacks.sendSms,
+            postClipboard = syncCallbacks.postClipboard,
             listSms = syncCallbacks.listSms,
             listNotifications = syncCallbacks.listNotifications,
             listDestinations = { settings.destinations },
@@ -298,27 +479,34 @@ class Daemon(
 
     private fun createSyncCallbacks(activity: Activity?): SyncCallbacks {
         return SyncCallbacks(
-            setClipboardTextSync = { text ->
+            setClipboardTextSync = { text: String ->
                 clipboardTextFallback.setTextSilentlySync(text)
             },
-            setClipboardText = { text ->
+            setClipboardText = { text: String ->
                 clipboardTextFallback.setTextSilently(text)
             },
-            dispatch = { requests ->
+            dispatch = { requests: List<DispatchRequest> ->
                 dispatchHttpRequests(requests)
             },
-            sendSms = { number, content ->
+            sendSms = { number: String, content: String ->
                 if (activity == null) throw IllegalStateException("activity is unavailable")
                 sendSmsAndroid(activity, number, content)
             },
-            listSms = { limit ->
-                if (activity == null) return@SyncCallbacks emptyList()
-                readSmsInbox(activity, limit)
+            postClipboard = { text: String, targets: List<String> ->
+                postClipboardToPeers(text, targets)
             },
-            listNotifications = { limit ->
+            listSms = { limit: Int ->
+                val activeActivity = activity
+                if (activeActivity == null) {
+                    emptyList()
+                } else {
+                    readSmsInbox(activeActivity, limit)
+                }
+            },
+            listNotifications = { limit: Int ->
                 NotificationEventStore.snapshot(limit)
             },
-            speakNotificationText = { text ->
+            speakNotificationText = { text: String ->
                 NotificationSpeaker.speak(application, text)
             }
         )
@@ -332,10 +520,12 @@ class Daemon(
         }
     }
 
-    private suspend fun postClipboardToPeers(text: String) {
-        val hubItems = buildHubDispatchItems(text)
+    private suspend fun postClipboardToPeers(text: String, requestedTargets: List<String>? = null) {
+        val hubItems = buildHubDispatchItems(text, requestedTargets)
         if (hubItems.isEmpty()) return
-        val urls = hubItems.mapNotNull { it.directFallbackUrl }
+        val pendingItems = trySendClipboardViaReverseGateway(text, hubItems)
+        if (pendingItems.isEmpty()) return
+        val urls = pendingItems.mapNotNull { it.directFallbackUrl }
 
         val headers = buildMap {
             put("Content-Type", "text/plain; charset=utf-8")
@@ -348,7 +538,7 @@ class Daemon(
         if (!hub.isNullOrBlank()) {
             val resolvedHubClientId = settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
             val resolvedHubToken = settings.hubToken.ifBlank { settings.authToken }
-            val requestBodyEntries = hubItems.map { it.request }.filter { it.isNotEmpty() }
+            val requestBodyEntries = pendingItems.map { it.request }.filter { it.isNotEmpty() }
             if (requestBodyEntries.isEmpty()) return
             val fallbackUrls = urls.toSet()
             val requestBody = buildMap<String, Any> {
@@ -367,6 +557,7 @@ class Daemon(
                 hubDispatched = result.ok
                 if (result.ok) {
                     DaemonLog.info("Daemon", "hub dispatch ok")
+                    reverseWsReconnectSuccess.incrementAndGet()
                     return
                 }
                 DaemonLog.warn("Daemon", "hub dispatch failed ${result.status}")
@@ -377,12 +568,21 @@ class Daemon(
                 fallbackUrls.forEach { url ->
                     scope.launch {
                         try {
+                            reverseHttpAttempts.incrementAndGet()
                             val directResult = postText(url, text, headers, settings.allowInsecureTls, 10_000)
+                            if (directResult.ok) {
+                                reverseHttpSuccesses.incrementAndGet()
+                            } else {
+                                reverseHttpFailures.incrementAndGet()
+                            }
                             if (!directResult.ok) {
                                 DaemonLog.warn("Daemon", "hub fallback dispatch failed ${directResult.status} $url")
                             }
+                            logReverseRoutingMetricsIfNeeded()
                         } catch (e: Exception) {
                             DaemonLog.warn("Daemon", "hub fallback dispatch error $url", e)
+                            reverseHttpFailures.incrementAndGet()
+                            logReverseRoutingMetricsIfNeeded()
                         }
                     }
                 }
@@ -393,15 +593,89 @@ class Daemon(
         urls.forEach { url ->
             scope.launch {
                 try {
+                    reverseHttpAttempts.incrementAndGet()
                     val result = postText(url, text, headers, settings.allowInsecureTls, 10_000)
+                    if (result.ok) {
+                        reverseHttpSuccesses.incrementAndGet()
+                    } else {
+                        reverseHttpFailures.incrementAndGet()
+                    }
                     if (!result.ok) {
                         DaemonLog.warn("Daemon", "clipboard broadcast failed ${result.status} $url")
                     }
+                    logReverseRoutingMetricsIfNeeded()
                 } catch (e: Exception) {
                     DaemonLog.warn("Daemon", "clipboard broadcast error $url", e)
+                    reverseHttpFailures.incrementAndGet()
+                    logReverseRoutingMetricsIfNeeded()
                 }
             }
         }
+    }
+
+    private fun extractClipboardTarget(request: Map<String, Any>): String? {
+        val directTarget = request["deviceId"] ?: request["targetId"] ?: request["target"] ?: request["to"]
+        val normalized = directTarget?.toString()?.trim()?.lowercase()
+        if (normalized.isNullOrBlank()) return null
+        if (normalized == "broadcast" || normalized == "all" || normalized == "*") return null
+        return normalized
+    }
+
+    private fun buildClipboardRelayPayload(text: String, request: Map<String, Any>): Map<String, Any> = buildMap {
+        put("text", text)
+        put("action", "clipboard")
+        put("type", "clipboard")
+        request["deviceId"]?.toString()?.takeIf { it.isNotBlank() }?.let { put("deviceId", it) }
+        request["targetId"]?.toString()?.takeIf { it.isNotBlank() }?.let { put("targetId", it) }
+        request["target"]?.toString()?.takeIf { it.isNotBlank() }?.let { put("target", it) }
+        request["to"]?.toString()?.takeIf { it.isNotBlank() }?.let { put("to", it) }
+    }
+
+    private fun trySendClipboardViaReverseGateway(text: String, items: List<HubDispatchPayloadItem>): List<HubDispatchPayloadItem> {
+        val gateway = reverseGateway ?: return items
+        if (!gateway.isConnected()) {
+            reverseRelayFallback.addAndGet(items.size.toLong())
+            logReverseRoutingMetricsIfNeeded()
+            return items
+        }
+        val config = activeReverseGatewayConfig
+        val sender = listOf(
+            config?.userId,
+            settings.hubClientId,
+            settings.authToken,
+            settings.deviceId
+        ).firstOrNull { !it.isNullOrBlank() } ?: "android"
+
+        val pendingItems = mutableListOf<HubDispatchPayloadItem>()
+        for (item in items) {
+            reverseRelayAttempts.incrementAndGet()
+            val target = extractClipboardTarget(item.request)
+            if (target == null) {
+                pendingItems.add(item)
+                reverseRelayFallback.incrementAndGet()
+                logReverseRoutingMetricsIfNeeded()
+                continue
+            }
+            val sent = gateway.sendRelay(
+                type = "clipboard",
+                data = buildClipboardRelayPayload(text, item.request),
+                target = target,
+                route = "local",
+                namespace = config?.namespace,
+                from = sender
+            )
+            if (!sent) {
+                pendingItems.add(item)
+                reverseRelayFailures.incrementAndGet()
+                reverseRelayFallback.incrementAndGet()
+                logReverseRoutingMetricsIfNeeded()
+                continue
+            }
+            reverseRelaySuccess.incrementAndGet()
+            DaemonLog.debug("Daemon", "clipboard forwarded via reverse WS target=$target")
+        }
+        logReverseRoutingMetricsIfNeeded()
+        return pendingItems
     }
 
     private fun handleShareTarget(activity: Activity?) {
@@ -446,10 +720,11 @@ class Daemon(
         }
     }
 
-    private fun buildHubDispatchItems(text: String): List<HubDispatchPayloadItem> {
+    private fun buildHubDispatchItems(text: String, requestedTargets: List<String>? = null): List<HubDispatchPayloadItem> {
         val associations = PeerAssociationStore.load(application)
         val out = mutableListOf<HubDispatchPayloadItem>()
-        for (raw in settings.destinations) {
+        val resolvedTargets = resolveClipboardDestinations(requestedTargets)
+        for (raw in resolvedTargets) {
             val target = raw.trim()
             if (target.isBlank()) continue
 
@@ -457,15 +732,24 @@ class Daemon(
             val isDeviceTarget = lower.startsWith("device:") || lower.startsWith("local-device:") || lower.startsWith("id:") || lower.startsWith("l-") || lower.startsWith("p-") || (!lower.contains(".") && !lower.contains(":") && !lower.contains("/"))
             val normalizedTarget = normalizeDestinationHost(target).trim()
             if (normalizedTarget.isBlank()) continue
+            val peerAddressHint = normalizedTarget.lowercase().replace(Regex("^[a-z]+-", RegexOption.IGNORE_CASE), "")
             val dispatchDeviceId = resolveDispatchDeviceId(normalizedTarget)
-            val maybeCachedUrl = associations[normalizedTarget.lowercase()] ?: associations[dispatchDeviceId.lowercase()]
+            val maybeCachedUrl = associations[normalizedTarget.lowercase()]
+                ?: associations[dispatchDeviceId.lowercase()]
+                ?: associations[peerAddressHint.lowercase()]
+            val hasAddressHint = isAddressLikePeerTarget(normalizedTarget) || isAddressLikePeerTarget(peerAddressHint)
             val directCandidate = if (isDeviceTarget && isAddressLikePeerTarget(normalizedTarget)) {
                 normalizeDestinationUrl(target, "/clipboard")
+            } else if (isDeviceTarget && isAddressLikePeerTarget(peerAddressHint)) {
+                normalizeDestinationUrl(peerAddressHint, "/clipboard")
             } else {
                 null
             }
             if (directCandidate != null && directCandidate.isNotBlank()) {
                 PeerAssociationStore.save(application, normalizedTarget, directCandidate)
+                if (peerAddressHint.isNotBlank() && peerAddressHint != normalizedTarget) {
+                    PeerAssociationStore.save(application, peerAddressHint, directCandidate)
+                }
                 if (dispatchDeviceId != normalizedTarget) {
                     PeerAssociationStore.save(application, dispatchDeviceId, directCandidate)
                 }
@@ -482,12 +766,15 @@ class Daemon(
                     }
                 )
                 if (!maybeCachedUrl.isNullOrBlank()) {
-                    request["url"] = maybeCachedUrl
-                    if (maybeCachedUrl.startsWith("http://")) {
-                        request["unencrypted"] = true
+                    val validatedCacheUrl = maybeCachedUrl.trim()
+                    if (validatedCacheUrl.isNotBlank() && isCachedUrlForPeer(validatedCacheUrl, normalizedTarget, dispatchDeviceId, peerAddressHint)) {
+                        request["url"] = validatedCacheUrl
+                        if (validatedCacheUrl.startsWith("http://")) {
+                            request["unencrypted"] = true
+                        }
                     }
                 }
-                if (isAddressLikePeerTarget(normalizedTarget) && maybeCachedUrl == null && directCandidate != null) {
+                if (hasAddressHint && request["url"] == null && directCandidate != null) {
                     request["url"] = directCandidate
                     if (directCandidate.startsWith("http://")) {
                         request["unencrypted"] = true
@@ -513,8 +800,75 @@ class Daemon(
         return out
     }
 
+    private fun resolveClipboardDestinations(requestedTargets: List<String>?): List<String> {
+        val explicitTargets = requestedTargets
+            ?.flatMap { splitClipboardTargets(it) }
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+
+        if (explicitTargets.isEmpty()) {
+            return settings.destinations
+        }
+
+        val hasBroadcast = explicitTargets.any { target ->
+            val normalized = target.lowercase()
+            normalized == "broadcast" || normalized == "all" || normalized == "*"
+        }
+        if (hasBroadcast) {
+            return settings.destinations
+        }
+
+        return explicitTargets
+    }
+
+    private fun splitClipboardTargets(value: String): List<String> {
+        return value
+            .split("[;,]".toRegex())
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+    }
+
     private fun isAddressLikePeerTarget(target: String): Boolean {
         return ADDRESS_LIKE_PEER_TARGET.containsMatchIn(target)
+    }
+
+    private fun isCachedUrlForPeer(
+        cachedUrl: String,
+        normalizedTarget: String,
+        dispatchDeviceId: String,
+        peerAddressHint: String
+    ): Boolean {
+        val parsed = parseHostFromUrl(cachedUrl)
+        if (parsed.isBlank()) return false
+        val hostWithPort = parsed
+        val hostOnly = parsed.substringBefore(":")
+        val candidates = mutableSetOf<String>()
+        addPeerAliasCandidates(normalizedTarget, candidates)
+        addPeerAliasCandidates(dispatchDeviceId, candidates)
+        addPeerAliasCandidates(peerAddressHint, candidates)
+        return candidates.contains(hostWithPort) || candidates.contains(hostOnly)
+    }
+
+    private fun parseHostFromUrl(raw: String): String {
+        return try {
+            val uri = URI(raw)
+            val host = uri.host?.trim()?.lowercase() ?: return ""
+            val port = uri.port
+            if (port > 0) "${host}:${port}" else host
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun addPeerAliasCandidates(raw: String, out: MutableSet<String>) {
+        var value = raw.trim().lowercase()
+        if (value.isBlank()) return
+        value = value.replace(Regex("^[a-z0-9_-]+:"), "")
+            .replace(Regex("^[a-z0-9_-]+-"), "")
+        if (value.isBlank()) return
+        out.add(value)
+        out.add(value.substringBefore(":"))
     }
 
     private fun resolveDispatchDeviceId(rawDeviceId: String): String {
@@ -524,16 +878,97 @@ class Daemon(
         return settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
     }
 
+    data class DaemonConnectionSnapshot(
+        val daemonRunning: Boolean,
+        val localHttpServer: Boolean,
+        val localHttpsServer: Boolean,
+        val reverseGatewayConfigured: Boolean,
+        val reverseGatewayEnabled: Boolean,
+        val reverseGatewayConnected: Boolean,
+        val reverseGatewayState: String,
+        val reverseGatewayStateDetail: String?,
+        val reverseGatewayStateUpdatedAtMs: Long,
+        val transportEndpoint: String,
+        val reverseRelayAttempts: Long,
+        val reverseRelaySuccess: Long,
+        val reverseRelayFallback: Long,
+        val reverseRelayFailures: Long,
+        val reverseHttpAttempts: Long,
+        val reverseHttpSuccesses: Long,
+        val reverseHttpFailures: Long,
+        val reverseGatewayCandidateState: String?,
+        val reverseGatewayActiveCandidate: String?,
+        val reverseGatewayCandidateList: String?,
+        val reverseGatewayLastError: String?
+    ) {
+        companion object {
+            fun stopped(): DaemonConnectionSnapshot = DaemonConnectionSnapshot(
+                daemonRunning = false,
+                localHttpServer = false,
+                localHttpsServer = false,
+                reverseGatewayConfigured = false,
+                reverseGatewayEnabled = false,
+                reverseGatewayConnected = false,
+                reverseGatewayState = "stopped",
+                reverseGatewayStateDetail = "daemon inactive",
+                reverseGatewayStateUpdatedAtMs = System.currentTimeMillis(),
+                transportEndpoint = "",
+                reverseRelayAttempts = 0,
+                reverseRelaySuccess = 0,
+                reverseRelayFallback = 0,
+                reverseRelayFailures = 0,
+                reverseHttpAttempts = 0,
+                reverseHttpSuccesses = 0,
+                reverseHttpFailures = 0,
+                reverseGatewayCandidateState = null,
+                reverseGatewayActiveCandidate = null,
+                reverseGatewayCandidateList = null,
+                reverseGatewayLastError = null
+            )
+        }
+
+        fun asStatusLines(): List<String> {
+            val endpointLabel = transportEndpoint.ifBlank { "not configured" }
+            val gatewayState = if (reverseGatewayStateDetail.isNullOrBlank()) reverseGatewayState else "$reverseGatewayState (${reverseGatewayStateDetail})"
+            val candidateState = reverseGatewayCandidateState ?: "not-initialized"
+            val activeCandidate = reverseGatewayActiveCandidate ?: "not-initialized"
+            val candidateList = reverseGatewayCandidateList ?: "not-initialized"
+            val lastError = reverseGatewayLastError
+                ?.takeIf { it.isNotBlank() }
+                ?: "none"
+            return listOf(
+                "Daemon: ${if (daemonRunning) "running" else "stopped"}",
+                "Local HTTP: ${if (localHttpServer) "up" else "off"} / Local HTTPS: ${if (localHttpsServer) "up" else "off"}",
+                "Reverse gateway: ${if (reverseGatewayConfigured) "configured" else "not configured"} | connected=${reverseGatewayConnected} | state=$gatewayState | endpoint=$endpointLabel",
+                "ws-state: candidate=$candidateState | active=$activeCandidate | list=$candidateList",
+                "ws-state: last_error=$lastError",
+                "Relay: ws=$reverseRelayAttempts/$reverseRelaySuccess/$reverseRelayFallback/$reverseRelayFailures (ok/success/fallback/fail), http=$reverseHttpAttempts/$reverseHttpSuccesses/$reverseHttpFailures"
+            )
+        }
+    }
+
+    private fun normalizeReverseGatewayLogLine(event: String, details: String?): String {
+        val normalizedDetails = if (details.isNullOrBlank()) {
+            "event=$event"
+        } else if (details.contains("event=")) {
+            details
+        } else {
+            "event=$event $details"
+        }
+        return "[ws-state] $normalizedDetails"
+    }
+
     private data class HubDispatchPayloadItem(
         val request: Map<String, Any>,
         val directFallbackUrl: String? = null
     )
 
-    data class SyncCallbacks(
+data class SyncCallbacks(
         val setClipboardTextSync: (String) -> Unit,
         val setClipboardText: suspend (String) -> Unit,
         val dispatch: suspend (List<DispatchRequest>) -> List<DispatchResult>,
         val sendSms: suspend (String, String) -> Unit,
+        val postClipboard: suspend (String, List<String>) -> Unit,
         val listSms: suspend (Int) -> List<SmsItem>,
         val listNotifications: suspend (Int) -> List<NotificationEvent>,
         val speakNotificationText: suspend (String) -> Unit

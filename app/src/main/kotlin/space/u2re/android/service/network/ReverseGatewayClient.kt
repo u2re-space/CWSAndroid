@@ -16,13 +16,24 @@ import okhttp3.WebSocketListener
 import okhttp3.Response
 import java.net.URI
 import java.net.URLEncoder
+import java.io.ByteArrayInputStream
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 import com.google.gson.Gson
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import java.security.cert.CertificateFactory
+import java.security.KeyStore
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.SSLContext
+import javax.net.ssl.X509TrustManager
+import javax.net.ssl.TrustManagerFactory
 
 class ReverseGatewayClient(
     private val config: ReverseGatewayConfig,
-    private val onMessage: (String, String, String?) -> Unit = { _, _, _ -> }
+    private val onMessage: (String, String, String?) -> Unit = { _, _, _ -> },
+    private val onState: (String, String?) -> Unit = { _, _ -> }
 ) {
     companion object {
         private const val DEFAULT_REVERSE_ROLES = "endpoint,peer,node,app"
@@ -48,21 +59,125 @@ class ReverseGatewayClient(
         )
     }
 
+    data class Diagnostics(
+        val candidateState: String,
+        val activeCandidate: String,
+        val candidateCount: Int,
+        val activeScheme: String,
+        val candidateListText: String,
+        val lastFailureReason: String?
+    )
+
+    private data class WebsocketCandidate(
+        val endpoint: String,
+        val scheme: String
+    )
+
     private val archetypeCandidates = buildArchetypeCandidates(config.roles)
     private var archetypeAttempt = 0
     private val configuredKeepAliveMs = config.keepAliveIntervalMs.coerceAtLeast(1_000L)
     private val configuredReconnectMs = config.reconnectDelayMs.coerceAtLeast(500L)
 
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val client = OkHttpClient.Builder()
-        .pingInterval(configuredKeepAliveMs, TimeUnit.MILLISECONDS)
-        .build()
+    private val client = buildOkHttpClient()
+    private fun buildOkHttpClient(): OkHttpClient {
+        val builder = OkHttpClient.Builder()
+            .pingInterval(configuredKeepAliveMs, TimeUnit.MILLISECONDS)
+        if (config.allowInsecureTls) {
+            val trustAll = trustAllManager()
+            val sslContext = SSLContext.getInstance("TLS").apply {
+                init(null, arrayOf(trustAll), SecureRandom())
+            }
+            builder.sslSocketFactory(sslContext.socketFactory, trustAll)
+            builder.hostnameVerifier(HostnameVerifier { _, _ -> true })
+            return builder.build()
+        }
+
+        val trustedCa = loadReverseTrustedCa(config.trustedCa)
+        trustedCa?.let { caManager ->
+            val sslContext = SSLContext.getInstance("TLS").apply {
+                init(null, arrayOf(caManager), SecureRandom())
+            }
+            builder.sslSocketFactory(sslContext.socketFactory, caManager)
+        }
+        return builder.build()
+    }
+
+    private fun loadReverseTrustedCa(raw: String): X509TrustManager? {
+        val material = resolveTrustedCaMaterial(raw) ?: return null
+        val certificates = extractCertificates(material)
+        if (certificates.isEmpty()) return null
+        val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+            load(null, null)
+        }
+        val keyManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+        certificates.forEachIndexed { index, certificate ->
+            keyStore.setCertificateEntry("reverse-root-ca-${index + 1}", certificate)
+        }
+        keyManagerFactory.init(keyStore)
+        return keyManagerFactory.trustManagers.filterIsInstance<X509TrustManager>().firstOrNull()
+    }
+
+    private fun resolveTrustedCaMaterial(raw: String): String? {
+        val trimmed = raw.trim()
+        if (trimmed.isBlank()) return null
+        val pathOrContent = when {
+            trimmed.startsWith("fs:", ignoreCase = true) -> trimmed.removePrefix("fs:").trim()
+            trimmed.startsWith("file:", ignoreCase = true) -> trimmed.removePrefix("file:").trim()
+            else -> trimmed
+        }
+        val file = File(pathOrContent)
+        if (file.exists() && file.isFile) {
+            return try {
+                file.readText()
+            } catch (_: Exception) {
+                pathOrContent
+            }
+        }
+        return pathOrContent
+    }
+
+    private fun extractCertificates(material: String): List<X509Certificate> {
+        val content = material.trim()
+        if (content.isBlank()) return emptyList()
+
+        val pemBlocks = CERTIFICATE_PEM_RE.findAll(content).map { it.value }.toList()
+        val sources = if (pemBlocks.isNotEmpty()) pemBlocks else listOf(content)
+        val certificateFactory = CertificateFactory.getInstance("X.509")
+        val out = mutableListOf<X509Certificate>()
+        for (source in sources) {
+            val normalized = source.trim()
+            if (normalized.isBlank()) continue
+            val parsed = runCatching {
+                certificateFactory.generateCertificate(ByteArrayInputStream(normalized.toByteArray(Charsets.UTF_8))) as X509Certificate
+            }.getOrNull()
+            if (parsed != null) out.add(parsed)
+        }
+        return out
+    }
+
+    private val CERTIFICATE_PEM_RE = Regex("-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----", RegexOption.IGNORE_CASE)
+
+    private fun trustAllManager(): X509TrustManager = object : X509TrustManager {
+        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+        override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+    }
+
 
     private var socket: WebSocket? = null
     private var heartbeatJob: Job? = null
     private var reconnectJob: Job? = null
     private var reconnectDelayMs = configuredReconnectMs
+    private var pendingReconnectRequest = false
+    private var immediateReconnect = true
+    private var socketConnected = false
     private var running = false
+    private var websocketCandidates: List<WebsocketCandidate> = emptyList()
+    private var websocketCandidateIndex = 0
+    private var activeCandidate: WebsocketCandidate? = null
+    private var activeConnectScheme = "wss"
+    private var lastFailureReason: String? = null
 
     private fun normalizeRoleToken(value: String): String = value.trim().lowercase()
 
@@ -138,22 +253,65 @@ class ReverseGatewayClient(
         socket?.send(message)
     }
 
-    fun sendRelay(type: String, data: Any?, target: String? = null, route: String? = null, namespace: String? = null) {
-        val payload = mapOf(
-            "type" to type,
-            "target" to (target ?: "broadcast"),
-            "route" to (route ?: "local"),
-            "namespace" to (namespace ?: config.namespace),
-            "data" to data,
-            "ts" to System.currentTimeMillis()
-        )
-        val encoded = ReverseRelayCodec.encodeForServer(
-            deviceId = config.deviceId,
-            payload = payload,
-            aesMasterKey = config.masterKey.ifBlank { null },
-            signingPrivateKeyPem = config.signingPrivateKeyPem.ifBlank { null }
-        )
-        socket?.send(encoded)
+    fun isConnected(): Boolean = socket != null && socketConnected
+
+    fun sendRelay(
+        type: String,
+        data: Any?,
+        target: String? = null,
+        route: String? = null,
+        namespace: String? = null,
+        from: String? = null
+    ): Boolean {
+        if (!socketConnected) return false
+        val activeSocket = socket ?: return false
+        return try {
+            val payload = mutableMapOf<String, Any?>(
+                "type" to type,
+                "target" to (target ?: "broadcast"),
+                "route" to (route ?: "local"),
+                "namespace" to (namespace ?: config.namespace),
+                "data" to data,
+                "ts" to System.currentTimeMillis()
+            )
+            if (!from.isNullOrBlank()) {
+                payload["from"] = from
+            }
+            val encoded = ReverseRelayCodec.encodeForServer(
+                deviceId = config.deviceId,
+                payload = payload,
+                aesMasterKey = config.masterKey.ifBlank { null },
+                signingPrivateKeyPem = config.signingPrivateKeyPem.ifBlank { null }
+            )
+            activeSocket.send(encoded)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun requestReconnect(immediate: Boolean = true) {
+        if (!running) return
+        pendingReconnectRequest = true
+        immediateReconnect = immediate
+        websocketCandidateIndex = 0
+        lastFailureReason = null
+        onState("reconnect-requested", buildWsStatusLine("reconnect-requested", phase = if (immediate) "manual" else "queued"))
+        reconnectDelayMs = configuredReconnectMs
+        reconnectJob?.cancel()
+        activeCandidate = null
+        try {
+            socket?.close(1000, "manual-reconnect")
+        } catch (_: Exception) {
+            // no-op
+        }
+        if (immediate) {
+            connect()
+        } else {
+            if (socket == null) {
+                scheduleReconnect(immediate = false)
+            }
+        }
     }
 
     fun start() {
@@ -172,6 +330,10 @@ class ReverseGatewayClient(
             return;
         }
         running = true;
+        websocketCandidates = emptyList()
+        websocketCandidateIndex = 0
+        activeCandidate = null
+        lastFailureReason = null
         connect();
     }
 
@@ -181,21 +343,76 @@ class ReverseGatewayClient(
         reconnectJob?.cancel();
         heartbeatJob = null;
         reconnectJob = null;
+        pendingReconnectRequest = false;
+        socketConnected = false
+        websocketCandidateIndex = 0
+        websocketCandidates = emptyList()
+        activeCandidate = null
+        lastFailureReason = null
         socket?.close(1000, "stopped");
         socket = null;
+    }
+
+    fun getDiagnostics(): Diagnostics {
+        val count = websocketCandidates.size
+        val active = activeCandidate
+        val index = when {
+            count <= 0 -> 0
+            websocketCandidateIndex < 0 -> 0
+            websocketCandidateIndex >= count -> count - 1
+            else -> websocketCandidateIndex
+        }
+        return Diagnostics(
+            candidateState = if (count == 0) "0/0" else "${index + 1}/$count",
+            activeCandidate = active?.let { describeCandidateLabel(it) } ?: "not initialized",
+            candidateCount = count,
+            activeScheme = active?.scheme ?: activeConnectScheme,
+            candidateListText = if (count == 0) "not initialized" else websocketCandidates.joinToString(", ") { describeCandidateLabel(it) },
+            lastFailureReason = lastFailureReason
+        )
     }
 
     private fun connect() {
         if (!running) return;
         if (config.endpointUrl.isBlank()) return;
+        val trimmedEndpoint = config.endpointUrl.trim().trimStart('/')
+        if (trimmedEndpoint.isBlank()) return
+        if (websocketCandidates.isEmpty()) {
+            websocketCandidates = resolveWebsocketCandidates(trimmedEndpoint)
+        }
+        if (websocketCandidates.isEmpty()) {
+            websocketCandidates = listOf(WebsocketCandidate(trimmedEndpoint, "wss"), WebsocketCandidate(trimmedEndpoint, "ws"))
+        }
+        if (websocketCandidateIndex < 0 || websocketCandidateIndex >= websocketCandidates.size) {
+            websocketCandidateIndex = 0
+        }
+        val active = websocketCandidates[websocketCandidateIndex]
+        activeCandidate = active
+        activeConnectScheme = active.scheme
+        onState(
+            "connecting",
+            buildWsStatusLine(
+                "connecting",
+                candidate = active,
+                index = websocketCandidateIndex,
+                phase = if (pendingReconnectRequest) "manual" else "normal"
+            )
+        )
+        if (pendingReconnectRequest && socket == null) {
+            pendingReconnectRequest = false
+        }
 
-        val request = buildRequest() ?: run {
+        val request = buildRequest(active) ?: run {
             Log.e(LOG_TAG, "Reverse gateway URL is invalid");
             return;
         };
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                socketConnected = true
                 val helloClientId = (config.userId.ifBlank { config.deviceId }).ifBlank { "android-client" }
+                lastFailureReason = null
+                onState("connected", buildWsStatusLine("connected", candidate = active, index = websocketCandidateIndex, phase = "ready"))
+                pendingReconnectRequest = false
                 reconnectDelayMs = configuredReconnectMs
                 heartbeatJob?.cancel()
                 heartbeatJob = scope.launch {
@@ -210,6 +427,7 @@ class ReverseGatewayClient(
                     """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","archetype":"${escapeJson(getCurrentArchetype())}"}"""
                 )
                 Log.i(LOG_TAG, "Reverse gateway connected");
+                onState("connected", buildWsStatusLine("connected", candidate = active, index = websocketCandidateIndex, phase = "hello"))
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -254,15 +472,46 @@ class ReverseGatewayClient(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (t is CancellationException) return
+                socketConnected = false
+                if (socket === webSocket) {
+                    socket = null
+                }
+                val reason = describeFailureCause(t, response)
+                lastFailureReason = reason
                 Log.w(LOG_TAG, "Reverse gateway failed", t)
+                onState("failure", buildWsStatusLine("failure", candidate = active, index = websocketCandidateIndex, phase = "transport", message = reason))
                 webSocket.close(1000, "failure")
+                if (tryAdvanceCandidate("failure")) {
+                    return
+                }
                 scheduleReconnect()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.i(LOG_TAG, "Reverse gateway closed: code=$code reason=$reason")
+                socketConnected = false
+                if (socket === webSocket) {
+                    socket = null
+                }
+                if (reason.isNotBlank()) {
+                    lastFailureReason = "closed: code=$code reason=$reason"
+                }
+                onState("disconnected", buildWsStatusLine("disconnected", candidate = active, index = websocketCandidateIndex, phase = "closed", message = "code=$code reason=$reason"))
+                if (pendingReconnectRequest && reason == "manual-reconnect") {
+                    if (immediateReconnect) {
+                        connect()
+                    } else {
+                        scheduleReconnect(immediate = false)
+                    }
+                    return
+                }
+                if (running && reason.lowercase() != "manual-reconnect" && tryAdvanceCandidate("close")) {
+                    return
+                }
                 if (running && isArchetypeReject(code, reason) && nextArchetypeCandidate()) {
                     Log.i(LOG_TAG, "Trying fallback archetype ${getCurrentArchetype()}")
+                    websocketCandidateIndex = 0
+                    activeCandidate = null
                     connect()
                     return
                 }
@@ -271,11 +520,29 @@ class ReverseGatewayClient(
         })
     }
 
-    private fun scheduleReconnect() {
+    private fun tryAdvanceCandidate(source: String): Boolean {
+        if (websocketCandidates.size <= 1) return false
+        websocketCandidateIndex = (websocketCandidateIndex + 1) % websocketCandidates.size
+        val nextCandidate = websocketCandidates[websocketCandidateIndex]
+        onState(
+            "connecting",
+            buildWsStatusLine(
+                "connecting",
+                candidate = nextCandidate,
+                index = websocketCandidateIndex,
+                phase = "rotate",
+                message = source
+            )
+        )
+        connect()
+        return true
+    }
+
+    private fun scheduleReconnect(immediate: Boolean = false) {
         if (!running) return
         heartbeatJob?.cancel()
         heartbeatJob = null
-        val delayMs = reconnectDelayMs.coerceAtLeast(1_000).coerceAtMost(30_000)
+        val delayMs = if (immediate) 250 else reconnectDelayMs.coerceAtLeast(1_000).coerceAtMost(30_000)
         reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(30_000)
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
@@ -284,7 +551,116 @@ class ReverseGatewayClient(
         }
     }
 
-    private fun buildRequest(): Request? {
+    private fun buildWsStatusLine(
+        event: String,
+        candidate: WebsocketCandidate? = activeCandidate,
+        index: Int = websocketCandidateIndex,
+        phase: String? = null,
+        message: String? = null
+    ): String {
+        val count = websocketCandidates.size
+        val safeIndex = if (count <= 0) 0 else (index % count).coerceAtLeast(0) + 1
+        val safeCandidate = candidate ?: activeCandidate
+        val candidateLabel = safeCandidate?.let { describeCandidateLabel(it) } ?: "n/a"
+        val safeScheme = safeCandidate?.scheme ?: activeConnectScheme.ifBlank { "wss" }
+        return buildString {
+            append("event=$event")
+            append(" candidate=$safeIndex/$count")
+            append(" scheme=$safeScheme")
+            append(" url=$candidateLabel")
+            if (!phase.isNullOrBlank()) append(" phase=$phase")
+            if (!message.isNullOrBlank()) append(" reason=${message.trim()}")
+        }
+    }
+
+    private fun resolveWebsocketCandidates(trimmedEndpoint: String): List<WebsocketCandidate> {
+        val entries = trimmedEndpoint
+            .split(Regex("[,;\n]"))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        val candidates = mutableListOf<WebsocketCandidate>()
+        val seen = HashSet<String>()
+
+        fun addCandidate(endpoint: String, scheme: String) {
+            val normalizedEndpoint = endpoint.trim()
+            val normalizedScheme = scheme.lowercase()
+            if (normalizedEndpoint.isBlank()) return
+            val key = "$normalizedScheme|$normalizedEndpoint"
+            if (seen.add(key)) {
+                candidates.add(WebsocketCandidate(normalizedEndpoint, normalizedScheme))
+            }
+        }
+
+        for (entry in entries) {
+            when {
+                entry.startsWith("ws://") || entry.startsWith("wss://") -> {
+                    val explicitScheme = entry.substringBefore("://").lowercase()
+                    addCandidate(entry, explicitScheme)
+                }
+
+                entry.startsWith("http://") -> {
+                    addCandidate(entry, "ws")
+                }
+
+                entry.startsWith("https://") -> {
+                    addCandidate(entry, "wss")
+                }
+
+                else -> {
+                    addCandidate(entry, "wss")
+                    addCandidate(entry, "ws")
+                }
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            addCandidate(trimmedEndpoint, "wss")
+            addCandidate(trimmedEndpoint, "ws")
+        }
+
+        return candidates
+    }
+
+    private fun describeCandidateLabel(candidate: WebsocketCandidate): String {
+        return if (
+            candidate.endpoint.startsWith("ws://") ||
+            candidate.endpoint.startsWith("wss://")
+        ) {
+            candidate.endpoint
+        } else {
+            "${candidate.scheme}://${candidate.endpoint}"
+        }
+    }
+
+    private fun describeFailureCause(throwable: Throwable?, response: Response?): String {
+        val code = response?.code
+        val responseMessage = response?.message
+        val throwableMessage = throwable?.message?.trim()?.ifBlank { null }
+        val details = when {
+            !throwableMessage.isNullOrBlank() -> throwableMessage
+            !responseMessage.isNullOrBlank() -> responseMessage
+            else -> "unknown"
+        }
+        val candidate = activeCandidate?.let { describeCandidateLabel(it) } ?: "not initialized"
+        val codeText = if (code == null) "" else "code=$code "
+        return "$candidate ${codeText}failure: ${details}"
+    }
+
+    private fun resolveWebsocketBase(trimmedEndpoint: String, scheme: String): String {
+        return when {
+            trimmedEndpoint.startsWith("ws://") || trimmedEndpoint.startsWith("wss://") -> trimmedEndpoint.replaceFirst(
+                Regex("^\\w+://"), "$scheme://"
+            )
+            trimmedEndpoint.startsWith("http://") && scheme == "ws" -> trimmedEndpoint.replaceFirst("http://", "ws://")
+            trimmedEndpoint.startsWith("http://") && scheme == "wss" -> trimmedEndpoint.replaceFirst("http://", "wss://")
+            trimmedEndpoint.startsWith("https://") && scheme == "ws" -> trimmedEndpoint.replaceFirst("https://", "ws://")
+            trimmedEndpoint.startsWith("https://") && scheme == "wss" -> trimmedEndpoint.replaceFirst("https://", "wss://")
+            else -> "$scheme://$trimmedEndpoint"
+        }.trimEnd('/')
+    }
+
+    private fun buildRequest(candidate: WebsocketCandidate): Request? {
         val encodedUserId = encodeQuery(config.userId)
         val encodedUserKey = encodeQuery(config.userKey)
         val encodedDeviceId = encodeQuery(config.deviceId)
@@ -294,15 +670,10 @@ class ReverseGatewayClient(
         val encodedArchetype = encodeQuery(getCurrentArchetype())
         val encodedClientId = encodeQuery((config.userId.ifBlank { config.deviceId }).ifBlank { "android-client" })
         val wsMode = if (getCurrentArchetype().contains("forward")) "push" else "reverse"
-        val trimmed = config.endpointUrl.trim().trimStart('/')
+        val trimmed = candidate.endpoint.trim().trimStart('/')
         if (trimmed.isBlank()) return null
 
-        val websocketBase = when {
-            trimmed.startsWith("ws://") || trimmed.startsWith("wss://") -> trimmed
-            trimmed.startsWith("http://") -> trimmed.replaceFirst("http://", "ws://")
-            trimmed.startsWith("https://") -> trimmed.replaceFirst("https://", "wss://")
-            else -> "wss://$trimmed"
-        }.trimEnd('/')
+        val websocketBase = resolveWebsocketBase(trimmed, candidate.scheme)
         val parsed = try {
             URI(websocketBase)
         } catch (_: Exception) {

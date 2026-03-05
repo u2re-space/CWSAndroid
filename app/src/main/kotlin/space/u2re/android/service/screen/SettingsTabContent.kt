@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import space.u2re.cws.daemon.Daemon.DaemonConnectionSnapshot
 
 @Composable
 fun GeneralSettingsTab(
@@ -141,7 +142,7 @@ fun AccessTab(
     OutlinedTextField(
         value = hubClientId,
         onValueChange = onHubClientIdChange,
-        label = { Text("Client ID") },
+        label = { Text("CWS_ASSOCIATED_ID") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
@@ -149,7 +150,7 @@ fun AccessTab(
     OutlinedTextField(
         value = authToken,
         onValueChange = onAuthTokenChange,
-        label = { Text("Client Token") },
+        label = { Text("CWS_ASSOCIATED_TOKEN") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
@@ -250,9 +251,12 @@ fun GatewayTab(
     hubToken: String,
     onHubTokenChange: (String) -> Unit,
     onSelectHubFromDestination: (String) -> Unit,
+    daemonSnapshot: DaemonConnectionSnapshot,
+    onRefreshDaemonStatus: () -> Unit
 ) {
     val switchColors = settingsSwitchColors()
     var showPeers by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val daemonLines = daemonSnapshot.asStatusLines()
 
     Text(
         "Gateway & Configuration",
@@ -403,6 +407,22 @@ fun GatewayTab(
                 }
             }
         }
+    }
+
+    Spacer(Modifier.size(16.dp))
+    Text("Daemon / protocol status", color = MaterialTheme.colorScheme.onSurface)
+    daemonLines.forEach { line ->
+        Text(line, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 2.dp))
+    }
+    Button(
+        onClick = onRefreshDaemonStatus,
+        enabled = true,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.secondary,
+            contentColor = MaterialTheme.colorScheme.onSecondary
+        )
+    ) {
+        Text("Refresh protocol status")
     }
 }
 
