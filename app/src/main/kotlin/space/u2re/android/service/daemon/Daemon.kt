@@ -41,6 +41,11 @@ class Daemon(
     private val application: Application,
     private val activityProvider: () -> Activity?
 ) {
+    companion object {
+        private const val REVERSE_CONNECT_ERROR_COOLDOWN_MS = 10_000L
+        private const val REVERSE_BRIDGE_ERROR_COOLDOWN_MS = 10_000L
+    }
+
     private var settings: Settings = SettingsStore.load(application).resolve()
     private val scope = CoroutineScope(Dispatchers.IO)
     private var clipboardWatcher: ClipboardSyncWatcher? = null
@@ -65,6 +70,12 @@ class Daemon(
     private @Volatile var reverseGatewayStateDetail: String? = "not-started"
     private @Volatile var reverseGatewayStateUpdatedAtMs = 0L
     private @Volatile var reverseGatewayConfigured = false
+    private var lastReverseGatewayLogKey: String? = null
+    private var lastReverseGatewayLogAtMs = 0L
+    private var lastReverseGatewaySuppressedCount = 0
+    private val reversePathErrorLogAt = HashMap<String, Long>()
+    private val reversePathErrorSuppressedCount = HashMap<String, Int>()
+    private val reverseGatewayLogCooldownMs = 2_500L
     private val reverseHttpAttempts = AtomicLong(0)
     private val reverseHttpSuccesses = AtomicLong(0)
     private val reverseHttpFailures = AtomicLong(0)
@@ -118,6 +129,9 @@ class Daemon(
             syncTimer = null
             clipboardFallbackTimer?.cancel()
             clipboardFallbackTimer = null
+            reversePathErrorLogAt.clear()
+            reversePathErrorSuppressedCount.clear()
+            lastReverseGatewaySuppressedCount = 0
             DaemonLog.info("Daemon", "daemon stopped")
         }
     }
@@ -193,23 +207,42 @@ class Daemon(
                             callbacks = syncCallbacks
                         )
                     }.onFailure { e ->
-                        DaemonLog.warn("Daemon", "reverse bridge failed", e)
+                        logSuppressedReverseGatewayError(
+                            category = "reverse-bridge",
+                            signature = "reverse bridge failed",
+                            cooldownMs = REVERSE_BRIDGE_ERROR_COOLDOWN_MS
+                        ) {
+                            DaemonLog.warn("Daemon", "reverse bridge failed", e)
+                        }
                     }
                 }
             },
             onState = { event, details ->
                 setReverseGatewayState(event, details)
                 val detailText = normalizeReverseGatewayLogLine(event, details)
-                when (event) {
-                    "connected" -> {
-                        reverseWsReconnectSuccess.incrementAndGet()
-                        DaemonLog.info("Daemon", "reverse gateway state $detailText")
+                if (event == "failure" || event == "disconnected") {
+                    logSuppressedReverseGatewayError(
+                        category = "reverse-connect",
+                        signature = detailText,
+                        cooldownMs = REVERSE_CONNECT_ERROR_COOLDOWN_MS
+                    ) {
+                        DaemonLog.warn("Daemon", "reverse gateway state $detailText")
                     }
-                    "connecting" -> DaemonLog.debug("Daemon", "reverse gateway state $detailText")
-                    "disconnected" -> DaemonLog.warn("Daemon", "reverse gateway state $detailText")
-                    "reconnect-requested" -> DaemonLog.info("Daemon", "reverse gateway state $detailText")
-                    "failure" -> DaemonLog.warn("Daemon", "reverse gateway state $detailText")
-                    "stopped", "started" -> DaemonLog.debug("Daemon", "reverse gateway state $detailText")
+                } else if (shouldLogReverseGatewayState(detailText)) {
+                    when (event) {
+                        "connected" -> {
+                            reverseWsReconnectSuccess.incrementAndGet()
+                            DaemonLog.info("Daemon", "reverse gateway state $detailText")
+                        }
+                        "connecting" -> DaemonLog.debug("Daemon", "reverse gateway state $detailText")
+                        "reconnect-requested" -> DaemonLog.info("Daemon", "reverse gateway state $detailText")
+                        "stopped", "started" -> DaemonLog.debug("Daemon", "reverse gateway state $detailText")
+                    }
+                } else {
+                    lastReverseGatewaySuppressedCount++
+                    if (lastReverseGatewaySuppressedCount % 10 == 0) {
+                        DaemonLog.debug("Daemon", "reverse gateway state suppressed x$lastReverseGatewaySuppressedCount")
+                    }
                 }
             }
         )
@@ -271,6 +304,49 @@ class Daemon(
         reverseWsReconnectRequests.incrementAndGet()
         DaemonLog.debug("Daemon", "reverse gateway reconnect triggered by network event: $reason")
         client.requestReconnect()
+    }
+
+    private inline fun logSuppressedReverseGatewayError(
+        category: String,
+        signature: String,
+        cooldownMs: Long,
+        crossinline log: () -> Unit
+    ) {
+        if (shouldLogReverseGatewayError(category, signature, cooldownMs)) {
+            log()
+        }
+    }
+
+    private fun shouldLogReverseGatewayError(category: String, signature: String, cooldownMs: Long): Boolean {
+        val now = System.currentTimeMillis()
+        val key = "$category|$signature"
+        val suppressed = reversePathErrorSuppressedCount[key] ?: 0
+        val last = reversePathErrorLogAt[key] ?: 0L
+        if (now - last < cooldownMs) {
+            reversePathErrorSuppressedCount[key] = suppressed + 1
+            return false
+        }
+        if (suppressed > 0) {
+            DaemonLog.debug("Daemon", "reverse $category errors suppressed x$suppressed for $signature")
+            reversePathErrorSuppressedCount.remove(key)
+        }
+        reversePathErrorLogAt[key] = now
+        return true
+    }
+
+    private fun shouldLogReverseGatewayState(detailText: String): Boolean {
+        val now = System.currentTimeMillis()
+        val key = detailText.trim()
+        if (key.isEmpty()) return true
+        val sameKey = lastReverseGatewayLogKey == key
+        val elapsed = now - lastReverseGatewayLogAtMs
+        if (!sameKey || elapsed >= reverseGatewayLogCooldownMs) {
+            lastReverseGatewayLogKey = key
+            lastReverseGatewayLogAtMs = now
+            lastReverseGatewaySuppressedCount = 0
+            return true
+        }
+        return false
     }
 
     private fun setReverseGatewayState(state: String, detail: String? = null) {

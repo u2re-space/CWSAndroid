@@ -3,6 +3,8 @@ package space.u2re.cws.network
 import io.socket.client.IO
 import io.socket.client.Socket
 import java.net.URI
+import android.util.Log
+import java.util.HashMap
 
 class SocketIoTunnelClient(
     private val serverUrl: String,
@@ -11,6 +13,15 @@ class SocketIoTunnelClient(
 ) {
     private var socket: Socket? = null
     private var started = false
+    private val eventLogThrottle = HashMap<String, Long>()
+    private var lastSocketEventLogCount = 0
+    private var lastSocketEvent: String? = null
+
+    companion object {
+        private const val LOG_TAG = "SocketIoTunnel"
+        private const val SOCKET_IO_EVENT_LOG_COOLDOWN_MS = 3_000L
+        private const val LOW_LEVEL_ERROR_COOLDOWN_MS = 10_000L
+    }
 
     fun start() {
         if (started) return
@@ -35,11 +46,41 @@ class SocketIoTunnelClient(
         }
 
         socket?.on(Socket.EVENT_CONNECT) {
-            // keep channel open and available
+            logSocketIoEvent("connected", "endpoint=$endpoint namespace=${namespace ?: "default"}")
         }
-        socket?.on(Socket.EVENT_DISCONNECT) {
-            // no-op
+
+        socket?.on(Socket.EVENT_DISCONNECT) { args ->
+            val reason = (args.firstOrNull() ?: "unknown").toString()
+            logSocketIoEvent("disconnected", "endpoint=$endpoint namespace=${namespace ?: "default"} reason=$reason")
         }
+
+        socket?.on("reconnect") {
+            logSocketIoEvent("reconnect", "endpoint=$endpoint namespace=${namespace ?: "default"}")
+        }
+
+        socket?.on("reconnecting") { args ->
+            logSocketIoEvent("reconnecting", "endpoint=$endpoint namespace=${namespace ?: "default"}")
+        }
+
+        socket?.on("reconnect_error") { args ->
+            val error = args.firstOrNull()?.toString() ?: "error"
+            logSocketIoEvent("reconnect-error", "endpoint=$endpoint namespace=${namespace ?: "default"} error=$error")
+        }
+
+        socket?.on("reconnect_failed") {
+            logSocketIoEvent("reconnect-failed", "endpoint=$endpoint namespace=${namespace ?: "default"}")
+        }
+
+        socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
+            val error = args.firstOrNull()?.toString() ?: "connect error"
+            logSocketIoEvent("connect-error", "endpoint=$endpoint namespace=${namespace ?: "default"} error=$error")
+        }
+
+        socket?.on("error") { args ->
+            val error = args.firstOrNull()?.toString() ?: "socket error"
+            logSocketIoEvent("socket-error", "endpoint=$endpoint namespace=${namespace ?: "default"} error=$error")
+        }
+
         socket?.on("message") { args ->
             val text = args.firstOrNull()?.toString() ?: return@on
             onMessage(text)
@@ -59,13 +100,52 @@ class SocketIoTunnelClient(
         if (!started) return
         started = false
         socket?.disconnect()
+        logSocketIoEvent("stopped", "endpoint=$serverUrl namespace=${namespace ?: "default"}")
         socket?.off()
         socket = null
+        eventLogThrottle.clear()
+        lastSocketEventLogCount = 0
+        lastSocketEvent = null
     }
 
     fun isConnected(): Boolean = socket?.connected() ?: false
 
     private fun normalizeServerUrl(raw: String): String = raw.trim().ifBlank {
         "http://127.0.0.1:3000"
+    }
+
+    private fun shouldLogSocketIoEvent(event: String, detail: String): Boolean {
+        val isErrorEvent = event == "connect-error" || event == "reconnect-error" || event == "socket-error"
+        val key = if (isErrorEvent) event else "$event|$detail"
+        val now = System.currentTimeMillis()
+        val last = eventLogThrottle[key] ?: 0L
+        val cooldown = if (isErrorEvent) LOW_LEVEL_ERROR_COOLDOWN_MS else SOCKET_IO_EVENT_LOG_COOLDOWN_MS
+        if (now - last < cooldown) {
+            val previous = lastSocketEvent
+            if (previous == event) {
+                lastSocketEventLogCount++
+            } else {
+                if (lastSocketEventLogCount > 1) {
+                    Log.d(LOG_TAG, "Socket.IO event '$previous' repeated x$lastSocketEventLogCount")
+                }
+                lastSocketEvent = event
+                lastSocketEventLogCount = 1
+            }
+            return false
+        }
+        eventLogThrottle[key] = now
+        if (lastSocketEvent == event) {
+            if (lastSocketEventLogCount > 1) {
+                Log.d(LOG_TAG, "Socket.IO event '$event' repeated x$lastSocketEventLogCount")
+            }
+            lastSocketEventLogCount = 0
+        }
+        lastSocketEvent = event
+        return true
+    }
+
+    private fun logSocketIoEvent(event: String, detail: String) {
+        if (!shouldLogSocketIoEvent(event, detail)) return
+        Log.d(LOG_TAG, "Socket.IO $event [$detail]")
     }
 }

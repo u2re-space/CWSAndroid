@@ -39,6 +39,9 @@ class ReverseGatewayClient(
         private const val DEFAULT_REVERSE_ROLES = "endpoint,peer,node,app"
         private const val LOG_TAG = "ReverseGateway"
         private val gson = Gson()
+        private const val STATE_LOG_COOLDOWN_MS = 3_000L
+        private const val FAILURE_LOG_COOLDOWN_MS = 12_000L
+        private const val PARSE_FAIL_LOG_COOLDOWN_MS = 10_000L
 
         private val CLIENT_REVERSE_ROLE_TOKENS = setOf(
             "client-reverse",
@@ -178,6 +181,10 @@ class ReverseGatewayClient(
     private var activeCandidate: WebsocketCandidate? = null
     private var activeConnectScheme = "wss"
     private var lastFailureReason: String? = null
+    private val lastStateLogAtByKey = HashMap<String, Long>()
+    private var lastFailureLogSignature: String? = null
+    private var lastFailureLogAtMs = 0L
+    private var lastFailureLogCount = 0
 
     private fun normalizeRoleToken(value: String): String = value.trim().lowercase()
 
@@ -389,15 +396,17 @@ class ReverseGatewayClient(
         val active = websocketCandidates[websocketCandidateIndex]
         activeCandidate = active
         activeConnectScheme = active.scheme
-        onState(
-            "connecting",
-            buildWsStatusLine(
+        if (shouldLogLifecycleEvent("connecting", describeCandidateLabel(active), active.scheme)) {
+            onState(
                 "connecting",
-                candidate = active,
-                index = websocketCandidateIndex,
-                phase = if (pendingReconnectRequest) "manual" else "normal"
+                buildWsStatusLine(
+                    "connecting",
+                    candidate = active,
+                    index = websocketCandidateIndex,
+                    phase = if (pendingReconnectRequest) "manual" else "normal"
+                )
             )
-        )
+        }
         if (pendingReconnectRequest && socket == null) {
             pendingReconnectRequest = false
         }
@@ -411,7 +420,9 @@ class ReverseGatewayClient(
                 socketConnected = true
                 val helloClientId = (config.userId.ifBlank { config.deviceId }).ifBlank { "android-client" }
                 lastFailureReason = null
-                onState("connected", buildWsStatusLine("connected", candidate = active, index = websocketCandidateIndex, phase = "ready"))
+                if (shouldLogLifecycleEvent("connected", "phase=ready:${describeCandidateLabel(active)}", active.scheme)) {
+                    onState("connected", buildWsStatusLine("connected", candidate = active, index = websocketCandidateIndex, phase = "ready"))
+                }
                 pendingReconnectRequest = false
                 reconnectDelayMs = configuredReconnectMs
                 heartbeatJob?.cancel()
@@ -426,7 +437,9 @@ class ReverseGatewayClient(
                 webSocket.send(
                     """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","archetype":"${escapeJson(getCurrentArchetype())}"}"""
                 )
-                Log.i(LOG_TAG, "Reverse gateway connected");
+                if (shouldLogLifecycleEvent("connected", describeCandidateLabel(active), active.scheme)) {
+                    Log.i(LOG_TAG, "Reverse gateway connected");
+                }
                 onState("connected", buildWsStatusLine("connected", candidate = active, index = websocketCandidateIndex, phase = "hello"))
             }
 
@@ -466,7 +479,7 @@ class ReverseGatewayClient(
                         webSocket.send("""{"type":"pong","ts":${System.currentTimeMillis()}}""")
                     }
                 } catch (e: Exception) {
-                    Log.w(LOG_TAG, "Reverse gateway message parse failure", e)
+                    logParseFailure(e)
                 }
             }
 
@@ -478,8 +491,12 @@ class ReverseGatewayClient(
                 }
                 val reason = describeFailureCause(t, response)
                 lastFailureReason = reason
-                Log.w(LOG_TAG, "Reverse gateway failed", t)
-                onState("failure", buildWsStatusLine("failure", candidate = active, index = websocketCandidateIndex, phase = "transport", message = reason))
+                maybeLogFailure(active, reason, t)
+                if (shouldLogLifecycleEvent("failure", reason, active.scheme)) {
+                    onState("failure", buildWsStatusLine("failure", candidate = active, index = websocketCandidateIndex, phase = "transport", message = reason))
+                } else {
+                    onState("failure", buildWsStatusLine("failure", candidate = active, index = websocketCandidateIndex, phase = "transport", message = "queued"))
+                }
                 webSocket.close(1000, "failure")
                 if (tryAdvanceCandidate("failure")) {
                     return
@@ -488,7 +505,9 @@ class ReverseGatewayClient(
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.i(LOG_TAG, "Reverse gateway closed: code=$code reason=$reason")
+                if (shouldLogLifecycleEvent("closed", "code=$code reason=$reason", active.scheme)) {
+                    Log.i(LOG_TAG, "Reverse gateway closed: code=$code reason=$reason")
+                }
                 socketConnected = false
                 if (socket === webSocket) {
                     socket = null
@@ -496,7 +515,11 @@ class ReverseGatewayClient(
                 if (reason.isNotBlank()) {
                     lastFailureReason = "closed: code=$code reason=$reason"
                 }
-                onState("disconnected", buildWsStatusLine("disconnected", candidate = active, index = websocketCandidateIndex, phase = "closed", message = "code=$code reason=$reason"))
+                if (shouldLogLifecycleEvent("disconnected", "code=$code reason=$reason", active.scheme)) {
+                    onState("disconnected", buildWsStatusLine("disconnected", candidate = active, index = websocketCandidateIndex, phase = "closed", message = "code=$code reason=$reason"))
+                } else {
+                    onState("disconnected", buildWsStatusLine("disconnected", candidate = active, index = websocketCandidateIndex, phase = "closed", message = "queued"))
+                }
                 if (pendingReconnectRequest && reason == "manual-reconnect") {
                     if (immediateReconnect) {
                         connect()
@@ -509,7 +532,9 @@ class ReverseGatewayClient(
                     return
                 }
                 if (running && isArchetypeReject(code, reason) && nextArchetypeCandidate()) {
-                    Log.i(LOG_TAG, "Trying fallback archetype ${getCurrentArchetype()}")
+                    if (shouldLogLifecycleEvent("fallback-archetype", getCurrentArchetype(), active.scheme)) {
+                        Log.i(LOG_TAG, "Trying fallback archetype ${getCurrentArchetype()}")
+                    }
                     websocketCandidateIndex = 0
                     activeCandidate = null
                     connect()
@@ -524,18 +549,54 @@ class ReverseGatewayClient(
         if (websocketCandidates.size <= 1) return false
         websocketCandidateIndex = (websocketCandidateIndex + 1) % websocketCandidates.size
         val nextCandidate = websocketCandidates[websocketCandidateIndex]
-        onState(
-            "connecting",
-            buildWsStatusLine(
+        if (shouldLogLifecycleEvent("connecting", "rotate:$source", nextCandidate.scheme)) {
+            onState(
                 "connecting",
-                candidate = nextCandidate,
-                index = websocketCandidateIndex,
-                phase = "rotate",
-                message = source
+                buildWsStatusLine(
+                    "connecting",
+                    candidate = nextCandidate,
+                    index = websocketCandidateIndex,
+                    phase = "rotate",
+                    message = source
+                )
             )
-        )
+        }
         connect()
         return true
+    }
+
+    private fun shouldLogLifecycleEvent(event: String, detail: String, scheme: String): Boolean {
+        val key = "$event|$scheme|$detail"
+        val now = System.currentTimeMillis()
+        val last = lastStateLogAtByKey[key] ?: 0L
+        if (now - last < STATE_LOG_COOLDOWN_MS) return false
+        lastStateLogAtByKey[key] = now
+        return true
+    }
+
+    private fun maybeLogFailure(candidate: WebsocketCandidate?, reason: String, cause: Throwable?) {
+        val signature = "${describeCandidateLabel(candidate ?: WebsocketCandidate("unknown", activeConnectScheme))}|$reason"
+        val now = System.currentTimeMillis()
+        if (signature == lastFailureLogSignature && now - lastFailureLogAtMs < FAILURE_LOG_COOLDOWN_MS) {
+            lastFailureLogCount++
+            return
+        }
+        if (lastFailureLogSignature != null && lastFailureLogCount > 1) {
+            Log.w(LOG_TAG, "Reverse gateway failure repeated x${lastFailureLogCount}: $lastFailureLogSignature")
+        }
+        lastFailureLogSignature = signature
+        lastFailureLogAtMs = now
+        lastFailureLogCount = 1
+        Log.w(LOG_TAG, "Reverse gateway failed: $reason", cause)
+    }
+
+    private fun logParseFailure(cause: Throwable) {
+        val now = System.currentTimeMillis()
+        val key = "parseFailure"
+        val last = lastStateLogAtByKey[key] ?: 0L
+        if (now - last < PARSE_FAIL_LOG_COOLDOWN_MS) return
+        lastStateLogAtByKey[key] = now
+        Log.w(LOG_TAG, "Reverse gateway message parse failure", cause)
     }
 
     private fun scheduleReconnect(immediate: Boolean = false) {

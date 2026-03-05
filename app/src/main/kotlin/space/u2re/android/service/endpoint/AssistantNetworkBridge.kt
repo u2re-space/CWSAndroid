@@ -30,8 +30,8 @@ object AssistantNetworkBridge {
                 ?: messageType.lowercase()
             val namespace = extractString(payload["namespace"])?.trim()?.ifBlank { null }
             val target = extractTarget(payload)
-            if (!isTargetMatch(target, config.deviceId, settings)) {
-                Log.d(BridgeLogger, "Skip message for different target=$target")
+            if (!isTargetMatch(target, config.deviceId, settings, config.userId)) {
+                Log.d(BridgeLogger, "Skip reverse message: target=$target deviceId=${config.deviceId} userId=${config.userId} aliases=${buildTargetAliases(config.deviceId, settings, config.userId).joinToString(",")}")
                 return@withContext false
             }
 
@@ -48,8 +48,10 @@ object AssistantNetworkBridge {
                         }
                     }
                 }
-                "clipboard", "clipboard.set", "set_clipboard", "copy", "paste", "write_clipboard" ->
+                "clipboard", "clipboard.set", "set_clipboard", "copy", "paste", "write_clipboard" -> {
+                    Log.d(BridgeLogger, "Reverse clipboard message accepted target=$target namespace=${namespace.orEmpty()} type=$action")
                     sendLocalClipboard(context, payload, settings, callbacks)
+                }
                 "sms", "send_sms", "sms.send", "sms-send", "send.sms" ->
                     sendLocalSms(context, payload, settings, callbacks)
                 "speak", "notifications.speak", "notification.speak", "speak.notification" ->
@@ -195,35 +197,59 @@ object AssistantNetworkBridge {
         return mapOf("x-auth-token" to auth)
     }
 
-private fun buildTargetAliases(localDeviceId: String, settings: Settings): Set<String> {
-    val normalized = listOf(
-        localDeviceId,
-        settings.deviceId,
-        settings.authToken,
-        settings.hubClientId,
-        settings.hubToken
+private fun buildTargetAliases(localDeviceId: String, settings: Settings, userId: String? = null): Set<String> {
+    val normalized = listOfNotNull(
+        localDeviceId.ifBlank { null },
+        settings.deviceId.ifBlank { null },
+        settings.authToken.ifBlank { null },
+        settings.hubClientId.ifBlank { null },
+        settings.hubToken.ifBlank { null },
+        userId?.ifBlank { null }
     ).map { it.trim().lowercase() }
         .filter { it.isNotEmpty() }
         .toMutableSet()
     val expanded = normalized.flatMap { value ->
-        if (value.startsWith("l-")) listOf(value, value.removePrefix("l-")) else listOf(value)
+        val noPrefix = normalizeAddressAlias(value)
+        listOf(
+            value,
+            noPrefix,
+            "l-$noPrefix",
+            "h-$noPrefix",
+            "p-$noPrefix",
+            "l_${noPrefix}",
+            "h_${noPrefix}",
+            "p_${noPrefix}"
+        )
     }
     return normalized.union(expanded.toSet())
 }
 
-private fun isTargetMatch(target: String?, localDeviceId: String, settings: Settings): Boolean {
+private fun normalizeAddressAlias(value: String): String {
+    val normalized = value.trim().lowercase()
+    if (normalized.isBlank()) return normalized
+    val noDashPrefix = normalized
+        .replaceFirst("^l-|^h-|^p-".toRegex(), "")
+        .trim()
+    return noDashPrefix
+        .replaceFirst("^l_|^h_|^p_".toRegex(), "")
+        .trim()
+}
+
+private fun isTargetMatch(target: String?, localDeviceId: String, settings: Settings, userId: String? = null): Boolean {
     val trimmed = target?.trim()
     if (trimmed.isNullOrBlank()) return true
     if (trimmed.equals("broadcast", ignoreCase = true)) return true
     if (trimmed.equals("all", ignoreCase = true)) return true
 
     val normalizedTarget = trimmed.lowercase()
-    val aliases = buildTargetAliases(localDeviceId, settings)
+    val aliases = buildTargetAliases(localDeviceId, settings, userId)
+    val normalizedAliases = aliases.map { normalizeAddressAlias(it) }.toSet()
     if (aliases.contains(normalizedTarget)) return true
-    if (normalizedTarget.startsWith("l-") && aliases.contains(normalizedTarget.removePrefix("l-"))) return true
-    if (!normalizedTarget.startsWith("l-")) {
-        val prefixed = "l-$normalizedTarget"
-        return aliases.contains(prefixed)
+    if (normalizedAliases.contains(normalizeAddressAlias(normalizedTarget))) return true
+    if (normalizedAliases.isNotEmpty()) {
+        if (!normalizedTarget.startsWith("l-") && aliases.contains("l-$normalizedTarget")) return true
+        if (!normalizedTarget.startsWith("h-") && aliases.contains("h-$normalizedTarget")) return true
+        if (!normalizedTarget.startsWith("p-") && aliases.contains("p-$normalizedTarget")) return true
     }
     return false
 }
