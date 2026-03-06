@@ -27,3 +27,34 @@ To keep context windows clean and save tokens:
 - Restrict file reading bounds if the file is massive.
 - Do not proactively load generated code (`build/`, `.gradle/`, minified scripts) into context.
 - Be concise in your thoughts and responses.
+
+## Cursor Cloud specific instructions
+
+### Project overview
+
+This is **CWS (CrossWord Sync)** — a Kotlin/Jetpack Compose Android application (`space.u2re.cws`). It is a multi-device synchronization system with clipboard sharing, encrypted communication, and command forwarding.
+
+### Prerequisites
+
+- **JDK 21** at `/usr/lib/jvm/java-21-openjdk-amd64` — must set `JAVA_HOME`.
+- **Android SDK** at `/opt/android-sdk` — requires `platforms;android-36`, `build-tools;36.0.0`, and `platform-tools`.
+- `local.properties` with `sdk.dir=/opt/android-sdk` must exist in the project root (gitignored).
+
+### Key commands
+
+| Task | Command |
+|---|---|
+| Assemble debug APK | `./gradlew :app:assembleDebug` |
+| Lint | `./gradlew :app:lintDebug` |
+| Unit tests | `./gradlew :app:testDebugUnitTest` |
+| Full build (compile+test+lint) | `./gradlew build` |
+
+All Gradle commands require `JAVA_HOME` and `ANDROID_HOME` to be set. The `npm run build` / `npm run dev` scripts in `package.json` are convenience wrappers around Gradle.
+
+### Gotchas
+
+- **No physical device or emulator** is available in the Cloud VM. You can build and lint but cannot deploy or run the app on a device.
+- The `endpoint` and `airpad` symlinks in the repo root are **broken** (they point to a sibling repo `../U2RE.space/` that doesn't exist in this workspace). They are not build dependencies.
+- Unit test task reports `NO-SOURCE` because the project currently has no unit test files — this is expected, not an error.
+- Gradle auto-downloads additional SDK components (e.g., `build-tools;35`) during the first build if they're missing — this is normal.
+- The `audioswitch-stub` module is a stub replacement for a Twilio dependency and has no Kotlin sources.
