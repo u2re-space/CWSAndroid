@@ -43,23 +43,15 @@ class ReverseGatewayClient(
         private const val FAILURE_LOG_COOLDOWN_MS = 12_000L
         private const val PARSE_FAIL_LOG_COOLDOWN_MS = 10_000L
 
-        private val CLIENT_REVERSE_ROLE_TOKENS = setOf(
-            "client-reverse",
-            "reverse-client",
-            "client-downstream",
-            "server-downstream",
-            "server-reverse",
-            "reverse-server"
-        )
+    private val RESPONSER_INITIATOR_ROLE_TOKENS = setOf(
+        "responser-initiator",
+        "responser"
+    )
 
-        private val CLIENT_FORWARD_ROLE_TOKENS = setOf(
-            "client-forward",
-            "forward-client",
-            "client-bridge",
-            "server-bridge",
-            "server-forward",
-            "forward-server"
-        )
+    private val REQUESTOR_INITIATOR_ROLE_TOKENS = setOf(
+        "requestor-initiator",
+        "requestor"
+    )
     }
 
     data class Diagnostics(
@@ -76,8 +68,7 @@ class ReverseGatewayClient(
         val scheme: String
     )
 
-    private val archetypeCandidates = buildArchetypeCandidates(config.roles)
-    private var archetypeAttempt = 0
+    private val connectionType = determineConnectionType(config.roles)
     private val configuredKeepAliveMs = config.keepAliveIntervalMs.coerceAtLeast(1_000L)
     private val configuredReconnectMs = config.reconnectDelayMs.coerceAtLeast(500L)
 
@@ -193,14 +184,14 @@ class ReverseGatewayClient(
         .map { normalizeRoleToken(it) }
         .filter { it.isNotEmpty() }
 
-    private fun buildArchetypeCandidates(rolesRaw: String): List<String> {
+    private fun determineConnectionType(rolesRaw: String): String {
         val roles = parseRoleTokens(rolesRaw.ifBlank { "" })
-        val hasReverse = roles.any(CLIENT_REVERSE_ROLE_TOKENS::contains)
-        val hasForward = roles.any(CLIENT_FORWARD_ROLE_TOKENS::contains)
+        val hasRequestorInitiator = roles.any(REQUESTOR_INITIATOR_ROLE_TOKENS::contains)
+        val hasResponserInitiator = roles.any(RESPONSER_INITIATOR_ROLE_TOKENS::contains)
         return when {
-            hasReverse -> listOf("client-reverse")
-            hasForward -> listOf("client-forward")
-            else -> listOf("client-reverse")
+            hasRequestorInitiator -> "requestor-initiator"
+            hasResponserInitiator -> "responser-initiator"
+            else -> "responser-initiator"
         }
     }
 
@@ -209,30 +200,24 @@ class ReverseGatewayClient(
         val out = LinkedHashSet<String>()
         input.forEach { token ->
             when (token) {
-                in CLIENT_REVERSE_ROLE_TOKENS -> {
-                    out.add("client-reverse")
-                    out.add("reverse-client")
-                    out.add("client")
+                in RESPONSER_INITIATOR_ROLE_TOKENS -> {
+                    out.add("responser-initiator")
                 }
-                in CLIENT_FORWARD_ROLE_TOKENS -> {
-                    out.add("client-forward")
-                    out.add("forward-client")
-                    out.add("client")
+                in REQUESTOR_INITIATOR_ROLE_TOKENS -> {
+                    out.add("requestor-initiator")
                 }
-                "server-reverse", "reverse-server" -> {
-                    out.add("server-reverse")
-                    out.add("reverse-server")
-                    out.add("server")
+                "requestor-initiated" -> {
+                    out.add("requestor-initiated")
                 }
-                "server-forward", "forward-server" -> {
-                    out.add("server-forward")
-                    out.add("forward-server")
-                    out.add("server")
+                "responser-initiated" -> {
+                    out.add("responser-initiated")
                 }
+                "exchanger-initiator" -> out.add("exchanger-initiator")
+                "exchanger-initiated" -> out.add("exchanger-initiated")
                 else -> out.add(token)
             }
         }
-        if (out.none { it in setOf("client", "server", "endpoint", "peer", "node", "app", "hub") }) {
+        if (out.none { it in setOf("endpoint", "peer", "node", "app", "hub") }) {
             out.add("endpoint")
             out.add("peer")
             out.add("node")
@@ -241,19 +226,30 @@ class ReverseGatewayClient(
         return out.joinToString(",")
     }
 
-    private fun getCurrentArchetype(): String = archetypeCandidates[archetypeAttempt]
-
-    private fun nextArchetypeCandidate(): Boolean {
-        val next = archetypeAttempt + 1
-        if (next >= archetypeCandidates.size) return false
-        archetypeAttempt = next
-        return true
+    private fun describeTopology(type: String): String {
+        val local = when (type) {
+            "requestor-initiator" -> "requestor-initiator"
+            "responser-initiator" -> "responser-initiator"
+            "requestor-initiated" -> "requestor-initiated"
+            "responser-initiated" -> "responser-initiated"
+            "exchanger-initiator", "exchanger-initiated" -> "exchanger-initiator"
+            else -> type
+        }
+        val remote = when (local) {
+            "requestor-initiator" -> "responser-initiated"
+            "responser-initiator" -> "requestor-initiated"
+            "requestor-initiated" -> "responser-initiator"
+            "responser-initiated" -> "requestor-initiator"
+            "exchanger-initiator" -> "exchanger-initiator"
+            else -> "exchanger-initiator"
+        }
+        return "$local ↔ $remote"
     }
 
-    private fun isArchetypeReject(code: Int, reason: String?): Boolean {
+    private fun isConnectionTypeReject(code: Int, reason: String?): Boolean {
         if (code == 4005) return true
         val normalized = reason?.lowercase() ?: return false
-        return normalized.contains("archetype")
+        return normalized.contains("connectiontype") || normalized.contains("archetype")
     }
 
     fun send(message: String) {
@@ -430,12 +426,12 @@ class ReverseGatewayClient(
                     while (isActive) {
                         delay(configuredKeepAliveMs)
                         webSocket.send(
-                            """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","archetype":"${escapeJson(getCurrentArchetype())}","ts":${System.currentTimeMillis()}}"""
+                            """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","connectionType":"${escapeJson(connectionType)}","ts":${System.currentTimeMillis()}}"""
                         )
                     }
                 }
                 webSocket.send(
-                    """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","archetype":"${escapeJson(getCurrentArchetype())}"}"""
+                    """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","connectionType":"${escapeJson(connectionType)}"}"""
                 )
                 if (shouldLogLifecycleEvent("connected", describeCandidateLabel(active), active.scheme)) {
                     Log.i(LOG_TAG, "Reverse gateway connected");
@@ -531,14 +527,8 @@ class ReverseGatewayClient(
                 if (running && reason.lowercase() != "manual-reconnect" && tryAdvanceCandidate("close")) {
                     return
                 }
-                if (running && isArchetypeReject(code, reason) && nextArchetypeCandidate()) {
-                    if (shouldLogLifecycleEvent("fallback-archetype", getCurrentArchetype(), active.scheme)) {
-                        Log.i(LOG_TAG, "Trying fallback archetype ${getCurrentArchetype()}")
-                    }
-                    websocketCandidateIndex = 0
-                    activeCandidate = null
-                    connect()
-                    return
+                if (running && isConnectionTypeReject(code, reason)) {
+                    Log.w(LOG_TAG, "Connection type rejected by server: $connectionType")
                 }
                 if (running) scheduleReconnect()
             }
@@ -728,9 +718,10 @@ class ReverseGatewayClient(
         val encodedNamespace = encodeQuery(config.namespace.ifBlank { "default" })
         val normalizedRoles = normalizeRolesForWire(config.roles.ifBlank { "endpoint,peer,node,app" })
         val encodedRoles = encodeQuery(normalizedRoles)
-        val encodedArchetype = encodeQuery(getCurrentArchetype())
+        val encodedConnectionType = encodeQuery(connectionType)
         val encodedClientId = encodeQuery((config.userId.ifBlank { config.deviceId }).ifBlank { "android-client" })
-        val wsMode = if (getCurrentArchetype().contains("forward")) "push" else "reverse"
+        val wsMode = if (connectionType == "requestor-initiator") "push" else "reverse"
+        val topology = describeTopology(connectionType)
         val trimmed = candidate.endpoint.trim().trimStart('/')
         if (trimmed.isBlank()) return null
 
@@ -762,7 +753,7 @@ class ReverseGatewayClient(
             null
         ).toString()
 
-        val url = "$websocketUrl?mode=$wsMode&archetype=$encodedArchetype&userId=$encodedUserId&userKey=$encodedUserKey&deviceId=$encodedDeviceId&clientId=$encodedClientId&namespace=$encodedNamespace&roles=$encodedRoles"
+        val url = "$websocketUrl?mode=$wsMode&connectionType=$encodedConnectionType&userId=$encodedUserId&userKey=$encodedUserKey&deviceId=$encodedDeviceId&clientId=$encodedClientId&namespace=$encodedNamespace&roles=$encodedRoles&topology=${encodeQuery(topology)}"
 
         return try {
             Request.Builder().url(url).build()
