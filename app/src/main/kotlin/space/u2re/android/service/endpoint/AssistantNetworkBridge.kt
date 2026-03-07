@@ -78,8 +78,8 @@ object AssistantNetworkBridge {
         val text = extractString(payload["text"]) 
             ?: extractString(dataObj?.get("text"))
             ?: extractString(dataObj?.get("content"))
-            ?: extractString(payload["data"]) 
-            ?: extractString(payload["body"]) 
+            ?: extractPrimitiveString(payload["data"])
+            ?: extractPrimitiveString(payload["body"])
             ?: ""
         if (text.isBlank()) return false
         if (callbacks != null) {
@@ -133,15 +133,15 @@ object AssistantNetworkBridge {
         val dispatchDataObj = ensureObject(payload["data"])
         val dispatchDataAction = extractString(dispatchDataObj?.get("action"))?.lowercase()
             ?: extractString(dispatchDataObj?.get("type"))?.lowercase()
-        val dispatchText = extractString(payload["text"])
-            ?: extractString(payload["body"])
-            ?: extractString(payload["data"])
-            ?: extractString(dispatchDataObj?.get("text"))
-            ?: extractString(dispatchDataObj?.get("content"))
-            ?: extractString(dispatchDataObj?.get("body"))
+        val dispatchText = extractPrimitiveString(payload["text"])
+            ?: extractPrimitiveString(payload["body"])
+            ?: extractPrimitiveString(payload["data"])
+            ?: extractPrimitiveString(dispatchDataObj?.get("text"))
+            ?: extractPrimitiveString(dispatchDataObj?.get("content"))
+            ?: extractPrimitiveString(dispatchDataObj?.get("body"))
         if (!payload.has("requests")) {
             val nestedClipboardAction = dispatchDataAction?.contains("clipboard") == true
-            if (nestedClipboardAction || !dispatchText.isNullOrBlank()) {
+            if (nestedClipboardAction && !dispatchText.isNullOrBlank()) {
                 val clipboardPayload = JsonObject().apply {
                     addProperty("type", "clipboard")
                     if (!dispatchText.isNullOrBlank()) {
@@ -293,6 +293,12 @@ private fun isTargetMatch(target: String?, localDeviceId: String, settings: Sett
         value == null || value.isJsonNull -> null
         value.isJsonPrimitive -> value.asString.trim().ifBlank { null }
         else -> value.toString()
+    }
+
+    private fun extractPrimitiveString(value: JsonElement?): String? = when {
+        value == null || value.isJsonNull -> null
+        value.isJsonPrimitive -> value.asString.trim().ifBlank { null }
+        else -> null
     }
 
     private fun ensureObject(value: JsonElement?): JsonObject? {
