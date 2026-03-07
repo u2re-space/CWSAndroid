@@ -13,6 +13,7 @@ import space.u2re.cws.daemon.SettingsStore
 import space.u2re.cws.daemon.resolve
 import space.u2re.cws.network.postJson
 import space.u2re.cws.network.postText
+import space.u2re.cws.network.EndpointIdentity
 
 import space.u2re.cws.daemon.Daemon
 import space.u2re.cws.network.DispatchRequest
@@ -198,60 +199,33 @@ object AssistantNetworkBridge {
     }
 
 private fun buildTargetAliases(localDeviceId: String, settings: Settings, userId: String? = null): Set<String> {
-    val normalized = listOfNotNull(
+    val localTokens = listOfNotNull(
         localDeviceId.ifBlank { null },
         settings.deviceId.ifBlank { null },
         settings.authToken.ifBlank { null },
         settings.hubClientId.ifBlank { null },
         settings.hubToken.ifBlank { null },
         userId?.ifBlank { null }
-    ).map { it.trim().lowercase() }
-        .filter { it.isNotEmpty() }
-        .toMutableSet()
-    val expanded = normalized.flatMap { value ->
-        val noPrefix = normalizeAddressAlias(value)
-        listOf(
-            value,
-            noPrefix,
-            "l-$noPrefix",
-            "h-$noPrefix",
-            "p-$noPrefix",
-            "l_${noPrefix}",
-            "h_${noPrefix}",
-            "p_${noPrefix}"
-        )
+    )
+    val aliases = linkedSetOf<String>()
+    for (token in localTokens) {
+        aliases.addAll(EndpointIdentity.aliases(token))
     }
-    return normalized.union(expanded.toSet())
+    return aliases
 }
 
 private fun normalizeAddressAlias(value: String): String {
-    val normalized = value.trim().lowercase()
-    if (normalized.isBlank()) return normalized
-    val noDashPrefix = normalized
-        .replaceFirst("^l-|^h-|^p-".toRegex(), "")
-        .trim()
-    return noDashPrefix
-        .replaceFirst("^l_|^h_|^p_".toRegex(), "")
-        .trim()
+    return EndpointIdentity.canonical(value)
 }
 
 private fun isTargetMatch(target: String?, localDeviceId: String, settings: Settings, userId: String? = null): Boolean {
-    val trimmed = target?.trim()
-    if (trimmed.isNullOrBlank()) return true
-    if (trimmed.equals("broadcast", ignoreCase = true)) return true
-    if (trimmed.equals("all", ignoreCase = true)) return true
+    val normalizedTarget = EndpointIdentity.normalize(target)
+    if (normalizedTarget.isBlank() || EndpointIdentity.isBroadcast(normalizedTarget)) return true
 
-    val normalizedTarget = trimmed.lowercase()
     val aliases = buildTargetAliases(localDeviceId, settings, userId)
-    val normalizedAliases = aliases.map { normalizeAddressAlias(it) }.toSet()
     if (aliases.contains(normalizedTarget)) return true
-    if (normalizedAliases.contains(normalizeAddressAlias(normalizedTarget))) return true
-    if (normalizedAliases.isNotEmpty()) {
-        if (!normalizedTarget.startsWith("l-") && aliases.contains("l-$normalizedTarget")) return true
-        if (!normalizedTarget.startsWith("h-") && aliases.contains("h-$normalizedTarget")) return true
-        if (!normalizedTarget.startsWith("p-") && aliases.contains("p-$normalizedTarget")) return true
-    }
-    return false
+    val targetAliases = EndpointIdentity.aliases(normalizedTarget)
+    return targetAliases.any { aliases.contains(it) }
 }
 
     private fun extractTarget(payload: JsonObject): String? {
@@ -259,6 +233,7 @@ private fun isTargetMatch(target: String?, localDeviceId: String, settings: Sett
             ?: extractString(payload["deviceId"])
             ?: extractString(payload["device"])
             ?: extractString(payload["targetId"])
+            ?: extractString(payload["targetDeviceId"])
             ?: extractString(payload["to"])
     }
 

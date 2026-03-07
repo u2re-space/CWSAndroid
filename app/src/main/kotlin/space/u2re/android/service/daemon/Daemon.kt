@@ -31,6 +31,7 @@ import space.u2re.cws.network.TlsConfig
 import space.u2re.cws.network.HttpServerOptions
 import space.u2re.cws.network.LocalHttpServer
 import space.u2re.cws.network.ReverseGatewayClient
+import space.u2re.cws.network.EndpointIdentity
 import space.u2re.cws.reverse.ReverseGatewayConfigProvider
 import space.u2re.cws.reverse.ReverseGatewayConfig
 import space.u2re.cws.reverse.AssistantNetworkBridge
@@ -161,8 +162,12 @@ class Daemon(
 
     private fun startReverseGateway(syncCallbacks: SyncCallbacks) {
         val baseReverseConfig = ReverseGatewayConfigProvider.load(application)
-        val reverseDeviceId = settings.hubClientId.ifBlank { settings.authToken.ifBlank { baseReverseConfig.deviceId } }
-        val reverseClientId = settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
+        val reverseDeviceId = EndpointIdentity.bestRouteTarget(
+            settings.hubClientId.ifBlank { settings.authToken.ifBlank { baseReverseConfig.deviceId } }
+        ).ifBlank { baseReverseConfig.deviceId }
+        val reverseClientId = EndpointIdentity.bestRouteTarget(
+            settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
+        ).ifBlank { settings.deviceId }
         val resolvedEndpointUrl = baseReverseConfig.endpointUrl.ifBlank { settings.hubDispatchUrl }
         val resolvedUserId = baseReverseConfig.userId.ifBlank { reverseClientId }
         val resolvedUserKey = baseReverseConfig.userKey.ifBlank { settings.hubToken.ifBlank { settings.authToken } }
@@ -691,20 +696,24 @@ class Daemon(
 
     private fun extractClipboardTarget(request: Map<String, Any>): String? {
         val directTarget = request["deviceId"] ?: request["targetId"] ?: request["target"] ?: request["to"]
-        val normalized = directTarget?.toString()?.trim()?.lowercase()
-        if (normalized.isNullOrBlank()) return null
-        if (normalized == "broadcast" || normalized == "all" || normalized == "*") return null
+        val normalized = EndpointIdentity.bestRouteTarget(directTarget?.toString())
+        if (normalized.isBlank() || EndpointIdentity.isBroadcast(normalized)) return null
         return normalized
     }
 
     private fun buildClipboardRelayPayload(text: String, request: Map<String, Any>): Map<String, Any> = buildMap {
+        val normalizedTarget = extractClipboardTarget(request)
         put("text", text)
         put("action", "clipboard")
         put("type", "clipboard")
-        request["deviceId"]?.toString()?.takeIf { it.isNotBlank() }?.let { put("deviceId", it) }
-        request["targetId"]?.toString()?.takeIf { it.isNotBlank() }?.let { put("targetId", it) }
-        request["target"]?.toString()?.takeIf { it.isNotBlank() }?.let { put("target", it) }
-        request["to"]?.toString()?.takeIf { it.isNotBlank() }?.let { put("to", it) }
+        normalizedTarget?.let {
+            put("deviceId", it)
+            put("targetId", it)
+            put("target", it)
+            put("targetDeviceId", it)
+            put("to", it)
+            put("targetAliases", EndpointIdentity.aliases(it).toList())
+        }
     }
 
     private fun trySendClipboardViaReverseGateway(text: String, items: List<HubDispatchPayloadItem>): List<HubDispatchPayloadItem> {
@@ -938,13 +947,16 @@ class Daemon(
     }
 
     private fun addPeerAliasCandidates(raw: String, out: MutableSet<String>) {
-        var value = raw.trim().lowercase()
-        if (value.isBlank()) return
-        value = value.replace(Regex("^[a-z0-9_-]+:"), "")
-            .replace(Regex("^[a-z0-9_-]+-"), "")
-        if (value.isBlank()) return
-        out.add(value)
-        out.add(value.substringBefore(":"))
+        val aliases = EndpointIdentity.aliases(raw)
+        if (aliases.isEmpty()) return
+        out.addAll(aliases)
+        aliases.forEach { alias ->
+            val canonical = EndpointIdentity.canonical(alias)
+            if (canonical.isNotBlank()) {
+                out.add(canonical)
+                out.add(canonical.substringBefore(":"))
+            }
+        }
     }
 
     private fun resolveDispatchDeviceId(rawDeviceId: String): String {

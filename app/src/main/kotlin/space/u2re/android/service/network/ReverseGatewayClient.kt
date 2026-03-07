@@ -269,9 +269,10 @@ class ReverseGatewayClient(
         if (!socketConnected) return false
         val activeSocket = socket ?: return false
         return try {
+            val normalizedTarget = EndpointIdentity.bestRouteTarget(target ?: "broadcast")
             val payload = mutableMapOf<String, Any?>(
                 "type" to type,
-                "target" to (target ?: "broadcast"),
+                "target" to (if (normalizedTarget.isBlank()) "broadcast" else normalizedTarget),
                 "route" to (route ?: "local"),
                 "namespace" to (namespace ?: config.namespace),
                 "data" to data,
@@ -414,7 +415,8 @@ class ReverseGatewayClient(
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 socketConnected = true
-                val helloClientId = (config.userId.ifBlank { config.deviceId }).ifBlank { "android-client" }
+                val helloClientId = EndpointIdentity.bestRouteTarget(config.userId.ifBlank { config.deviceId }).ifBlank { "android-client" }
+                val wireDeviceId = EndpointIdentity.bestRouteTarget(config.deviceId).ifBlank { config.deviceId }
                 lastFailureReason = null
                 if (shouldLogLifecycleEvent("connected", "phase=ready:${describeCandidateLabel(active)}", active.scheme)) {
                     onState("connected", buildWsStatusLine("connected", candidate = active, index = websocketCandidateIndex, phase = "ready"))
@@ -426,12 +428,12 @@ class ReverseGatewayClient(
                     while (isActive) {
                         delay(configuredKeepAliveMs)
                         webSocket.send(
-                            """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","connectionType":"${escapeJson(connectionType)}","ts":${System.currentTimeMillis()}}"""
+                            """{"type":"hello","deviceId":"${escapeJson(wireDeviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","connectionType":"${escapeJson(connectionType)}","ts":${System.currentTimeMillis()}}"""
                         )
                     }
                 }
                 webSocket.send(
-                    """{"type":"hello","deviceId":"${escapeJson(config.deviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","connectionType":"${escapeJson(connectionType)}"}"""
+                    """{"type":"hello","deviceId":"${escapeJson(wireDeviceId)}","clientId":"${escapeJson(helloClientId)}","namespace":"${escapeJson(config.namespace)}","roles":"${escapeJson(normalizeRolesForWire(config.roles))}","connectionType":"${escapeJson(connectionType)}"}"""
                 )
                 if (shouldLogLifecycleEvent("connected", describeCandidateLabel(active), active.scheme)) {
                     Log.i(LOG_TAG, "Reverse gateway connected");
@@ -712,14 +714,17 @@ class ReverseGatewayClient(
     }
 
     private fun buildRequest(candidate: WebsocketCandidate): Request? {
-        val encodedUserId = encodeQuery(config.userId)
+        val wireUserId = EndpointIdentity.bestRouteTarget(config.userId).ifBlank { config.userId.trim() }
+        val wireDeviceId = EndpointIdentity.bestRouteTarget(config.deviceId).ifBlank { config.deviceId.trim() }
+        val wireClientId = EndpointIdentity.bestRouteTarget(config.userId.ifBlank { config.deviceId }).ifBlank { "android-client" }
+        val encodedUserId = encodeQuery(wireUserId)
         val encodedUserKey = encodeQuery(config.userKey)
-        val encodedDeviceId = encodeQuery(config.deviceId)
+        val encodedDeviceId = encodeQuery(wireDeviceId)
         val encodedNamespace = encodeQuery(config.namespace.ifBlank { "default" })
         val normalizedRoles = normalizeRolesForWire(config.roles.ifBlank { "endpoint,peer,node,app" })
         val encodedRoles = encodeQuery(normalizedRoles)
         val encodedConnectionType = encodeQuery(connectionType)
-        val encodedClientId = encodeQuery((config.userId.ifBlank { config.deviceId }).ifBlank { "android-client" })
+        val encodedClientId = encodeQuery(wireClientId)
         val wsMode = if (connectionType == "requestor-initiator") "push" else "reverse"
         val topology = describeTopology(connectionType)
         val trimmed = candidate.endpoint.trim().trimStart('/')
