@@ -130,6 +130,33 @@ object AssistantNetworkBridge {
         action: String,
         callbacks: Daemon.SyncCallbacks?
     ): Boolean {
+        val dispatchDataObj = ensureObject(payload["data"])
+        val dispatchDataAction = extractString(dispatchDataObj?.get("action"))?.lowercase()
+            ?: extractString(dispatchDataObj?.get("type"))?.lowercase()
+        val dispatchText = extractString(payload["text"])
+            ?: extractString(payload["body"])
+            ?: extractString(payload["data"])
+            ?: extractString(dispatchDataObj?.get("text"))
+            ?: extractString(dispatchDataObj?.get("content"))
+            ?: extractString(dispatchDataObj?.get("body"))
+        if (!payload.has("requests")) {
+            val nestedClipboardAction = dispatchDataAction?.contains("clipboard") == true
+            if (nestedClipboardAction || !dispatchText.isNullOrBlank()) {
+                val clipboardPayload = JsonObject().apply {
+                    addProperty("type", "clipboard")
+                    if (!dispatchText.isNullOrBlank()) {
+                        addProperty("text", dispatchText)
+                    }
+                    val dataObj = JsonObject()
+                    if (!dispatchText.isNullOrBlank()) {
+                        dataObj.addProperty("text", dispatchText)
+                    }
+                    add("data", dataObj)
+                }
+                return sendLocalClipboard(context, clipboardPayload, settings, callbacks)
+            }
+        }
+
         if (action == "dispatch") {
             val rawTarget = extractTarget(payload)
             val localIdentity = listOf(

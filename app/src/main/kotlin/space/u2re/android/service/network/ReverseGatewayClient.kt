@@ -462,11 +462,8 @@ class ReverseGatewayClient(
                             is Map<*, *> -> {
                                 val type = inner["type"] as? String
                                 if (type != null) messageType = type
-                                val body = inner["body"] ?: inner["data"] ?: inner["text"] ?: inner
-                        when (body) {
-                            is String -> body
-                            else -> gson.toJson(body)
-                        }
+                                // Keep full envelope for routing/target-aware handlers.
+                                gson.toJson(inner)
                             }
                             else -> inner?.toString() ?: "{}"
                         }
