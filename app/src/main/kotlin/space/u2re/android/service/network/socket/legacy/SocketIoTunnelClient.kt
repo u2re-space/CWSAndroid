@@ -1,15 +1,26 @@
 package space.u2re.cws.network
 
+import android.net.Uri
 import io.socket.client.IO
 import io.socket.client.Socket
 import java.net.URI
 import android.util.Log
 import java.util.HashMap
 
+data class SocketIoTunnelOptions(
+    val auth: Map<String, String> = emptyMap(),
+    val query: Map<String, String> = emptyMap(),
+    val transports: List<String> = listOf("websocket", "polling"),
+    val secure: Boolean? = null,
+    val upgrade: Boolean? = null
+)
+
 class SocketIoTunnelClient(
     private val serverUrl: String,
     private val namespace: String? = null,
-    private val onMessage: (String) -> Unit = {}
+    private val onMessage: (String) -> Unit = {},
+    private val options: SocketIoTunnelOptions = SocketIoTunnelOptions(),
+    private val onState: (String, String?) -> Unit = { _, _ -> }
 ) {
     private var socket: Socket? = null
     private var started = false
@@ -31,6 +42,12 @@ class SocketIoTunnelClient(
             reconnection = true
             reconnectionAttempts = 10
             reconnectionDelay = 1_000
+            auth.putAll(this@SocketIoTunnelClient.options.auth)
+            query = this@SocketIoTunnelClient.options.query.entries.joinToString("&") { (key, value) ->
+                "${Uri.encode(key)}=${Uri.encode(value)}"
+            }
+            transports = this@SocketIoTunnelClient.options.transports.toTypedArray()
+            this@SocketIoTunnelClient.options.upgrade?.let { upgrade = it }
         }
 
         val endpoint = normalizeServerUrl(serverUrl)
@@ -47,40 +64,52 @@ class SocketIoTunnelClient(
 
         socket?.on(Socket.EVENT_CONNECT) {
             logSocketIoEvent("connected", "endpoint=$endpoint namespace=${namespace ?: "default"}")
+            onState("connected", "socketio endpoint=$endpoint namespace=${namespace ?: "default"}")
         }
 
         socket?.on(Socket.EVENT_DISCONNECT) { args ->
             val reason = (args.firstOrNull() ?: "unknown").toString()
             logSocketIoEvent("disconnected", "endpoint=$endpoint namespace=${namespace ?: "default"} reason=$reason")
+            onState("disconnected", "socketio endpoint=$endpoint namespace=${namespace ?: "default"} reason=$reason")
         }
 
         socket?.on("reconnect") {
             logSocketIoEvent("reconnect", "endpoint=$endpoint namespace=${namespace ?: "default"}")
+            onState("reconnect", "socketio endpoint=$endpoint namespace=${namespace ?: "default"}")
         }
 
-        socket?.on("reconnecting") { args ->
+        socket?.on("reconnecting") { _ ->
             logSocketIoEvent("reconnecting", "endpoint=$endpoint namespace=${namespace ?: "default"}")
+            onState("reconnecting", "socketio endpoint=$endpoint namespace=${namespace ?: "default"}")
         }
 
         socket?.on("reconnect_error") { args ->
             val error = args.firstOrNull()?.toString() ?: "error"
             logSocketIoEvent("reconnect-error", "endpoint=$endpoint namespace=${namespace ?: "default"} error=$error")
+            onState("reconnect-error", "socketio endpoint=$endpoint namespace=${namespace ?: "default"} error=$error")
         }
 
         socket?.on("reconnect_failed") {
             logSocketIoEvent("reconnect-failed", "endpoint=$endpoint namespace=${namespace ?: "default"}")
+            onState("reconnect-failed", "socketio endpoint=$endpoint namespace=${namespace ?: "default"}")
         }
 
         socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
             val error = args.firstOrNull()?.toString() ?: "connect error"
             logSocketIoEvent("connect-error", "endpoint=$endpoint namespace=${namespace ?: "default"} error=$error")
+            onState("connect-error", "socketio endpoint=$endpoint namespace=${namespace ?: "default"} error=$error")
         }
 
         socket?.on("error") { args ->
             val error = args.firstOrNull()?.toString() ?: "socket error"
             logSocketIoEvent("socket-error", "endpoint=$endpoint namespace=${namespace ?: "default"} error=$error")
+            onState("socket-error", "socketio endpoint=$endpoint namespace=${namespace ?: "default"} error=$error")
         }
 
+        socket?.on("data") { args ->
+            val text = args.firstOrNull()?.toString() ?: return@on
+            onMessage(text)
+        }
         socket?.on("message") { args ->
             val text = args.firstOrNull()?.toString() ?: return@on
             onMessage(text)

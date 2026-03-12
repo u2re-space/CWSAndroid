@@ -56,13 +56,16 @@ import space.u2re.cws.daemon.DaemonController
 import space.u2re.cws.daemon.Settings
 import space.u2re.cws.daemon.SettingsPatch
 import space.u2re.cws.daemon.SettingsStore
+import space.u2re.cws.daemon.resolve
 import space.u2re.cws.agent.sendResponsesRequest
 import space.u2re.cws.daemon.DaemonForegroundService
 import space.u2re.cws.overlay.FloatingButtonService
 import space.u2re.cws.accessibility.ClipboardAccessibilityService
+import space.u2re.cws.network.ServerV2HttpClient
 import space.u2re.cws.network.normalizeHubDispatchUrl
 import space.u2re.cws.network.normalizeResponsesEndpoint
 import space.u2re.cws.network.postJson
+import space.u2re.cws.network.toEndpointCoreConfig
 
 @Composable
 fun SettingsScreen(
@@ -72,12 +75,13 @@ fun SettingsScreen(
     val app = remember(context) { context.applicationContext as Application }
     val scope = rememberCoroutineScope()
     val settings: Settings = SettingsStore.load(app)
+    val endpointConfig = remember(settings) { settings.resolve().toEndpointCoreConfig() }
 
     var destinationText by rememberSaveable { mutableStateOf(settings.destinations.joinToString("\n")) }
-    var hubDispatchUrl by rememberSaveable { mutableStateOf(settings.hubDispatchUrl) }
+    var hubDispatchUrl by rememberSaveable { mutableStateOf(endpointConfig.endpointUrl.ifBlank { settings.hubDispatchUrl }) }
     var configPath by rememberSaveable { mutableStateOf(settings.configPath) }
     var storagePath by rememberSaveable { mutableStateOf(settings.storagePath) }
-    var hubClientId by rememberSaveable { mutableStateOf(settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }) }
+    var hubClientId by rememberSaveable { mutableStateOf(endpointConfig.userId.ifBlank { settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } } }) }
     var allowInsecure by rememberSaveable { mutableStateOf(settings.allowInsecureTls) }
     var apiEndpoint by rememberSaveable { mutableStateOf(settings.apiEndpoint) }
     var apiKey by rememberSaveable { mutableStateOf(settings.apiKey) }
@@ -101,7 +105,7 @@ fun SettingsScreen(
     var listenPortHttps by rememberSaveable { mutableStateOf(settings.listenPortHttps.toString()) }
     var enableLocalServer by rememberSaveable { mutableStateOf(settings.enableLocalServer) }
     var authToken by rememberSaveable { mutableStateOf(settings.authToken) }
-    var hubToken by rememberSaveable { mutableStateOf(settings.hubToken) }
+    var hubToken by rememberSaveable { mutableStateOf(endpointConfig.userKey.ifBlank { settings.hubToken }) }
     var tlsEnabled by rememberSaveable { mutableStateOf(settings.tlsEnabled) }
     var tlsKeystorePath by rememberSaveable { mutableStateOf(settings.tlsKeystoreAssetPath) }
     var tlsKeystorePassword by rememberSaveable { mutableStateOf(settings.tlsKeystorePassword) }
@@ -115,6 +119,17 @@ fun SettingsScreen(
     var saving by rememberSaveable { mutableStateOf(false) }
     var localIps by rememberSaveable { mutableStateOf(loadLocalIpAddresses()) }
     var selectedTab by rememberSaveable { mutableIntStateOf(SettingsTab.GENERAL.ordinal) }
+
+    fun previewEndpointConfig() = settings.copy(
+        hubDispatchUrl = hubDispatchUrl.trim(),
+        hubClientId = hubClientId.trim(),
+        hubToken = hubToken.trim(),
+        authToken = authToken.trim(),
+        allowInsecureTls = allowInsecure,
+        destinations = destinationText.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toList(),
+        configPath = configPath.trim(),
+        storagePath = storagePath.trim()
+    ).resolve().toEndpointCoreConfig()
 
     LaunchedEffect(Unit) {
         localIps = loadLocalIpAddresses()
@@ -426,32 +441,22 @@ fun SettingsScreen(
                 onAllowInsecureChange = { allowInsecure = it },
                 testingHub = testingHub,
                 onTestHub = {
-                    val normalizedHubUrl = space.u2re.cws.network.normalizeHubDispatchUrl(hubDispatchUrl)
-                    if (normalizedHubUrl.isNullOrBlank()) {
-                        message = "Set a valid Hub dispatch URL (for example http://192.168.0.200/api/broadcast or ws://192.168.0.200/ws)"
+                    val previewConfig = previewEndpointConfig()
+                    if (!previewConfig.hasRemoteEndpoint()) {
+                        message = "Set a valid endpoint URL (for example http://192.168.0.200/api or http://192.168.0.200/api/broadcast)"
                         return@GatewayTab
                     }
                     testingHub = true
-                    message = "Testing hub…"
+                    message = "Testing endpoint…"
                     scope.launch {
                         try {
-                            val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                space.u2re.cws.network.postJson(
-                                    url = normalizedHubUrl,
-                                    json = buildMap<String, Any> {
-                                        put("requests", emptyList<Any>())
-                                        val trimmedClientId = hubClientId.ifBlank { settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } } }
-                                        val trimmedToken = hubToken.ifBlank { settings.hubToken.ifBlank { settings.authToken } }
-                                        if (trimmedClientId.isNotBlank()) put("clientId", trimmedClientId)
-                                        if (trimmedToken.isNotBlank()) put("token", trimmedToken)
-                                    },
-                                    allowInsecureTls = allowInsecure,
-                                    timeoutMs = 8000
-                                )
+                            val response = withContext(Dispatchers.IO) {
+                                val client = ServerV2HttpClient(previewConfig)
+                                client.probe().takeIf { it.ok } ?: client.broadcastDispatch(emptyList())
                             }
-                            message = "Hub test status: ${response.status}"
+                            message = "Endpoint test status: ${response.status}"
                         } catch (e: Exception) {
-                            message = "Hub test failed: ${e.message ?: "error"}"
+                            message = "Endpoint test failed: ${e.message ?: "error"}"
                         } finally {
                             testingHub = false
                         }
@@ -459,6 +464,18 @@ fun SettingsScreen(
                 },
                 hubToken = hubToken,
                 onHubTokenChange = { hubToken = it },
+                endpointSummary = previewEndpointConfig().let { preview ->
+                    "Resolved endpoint: ${preview.endpointUrl.ifBlank { preview.dispatchUrl.ifBlank { "not set" } }} | userId=${preview.userId.ifBlank { "-" }} | userKey=${if (preview.userKey.isBlank()) "-" else "set"}"
+                },
+                endpointWarning = previewEndpointConfig().let { preview ->
+                    when {
+                        !preview.hasRemoteEndpoint() -> "Endpoint URL is missing."
+                        preview.userId.isBlank() -> "Endpoint User ID is missing."
+                        preview.userKey.isBlank() -> "Endpoint User Key is missing."
+                        preview.dispatchUrl.isBlank() -> "Legacy /api/broadcast fallback is unavailable for this endpoint."
+                        else -> null
+                    }
+                },
                 destinationText = destinationText,
                 onDestinationTextChange = { destinationText = it },
                 localIps = localIps,

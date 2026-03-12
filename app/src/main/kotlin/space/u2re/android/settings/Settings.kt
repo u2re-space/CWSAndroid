@@ -300,6 +300,30 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
             }
         }
     }
+    val coreAlias = raw["core"] as? Map<*, *>
+    if (coreAlias != null) {
+        val coreAliases = mapOf(
+            "endpointUrl" to "endpointUrl",
+            "userId" to "userId",
+            "userKey" to "userKey",
+            "preferBackendSync" to "preferBackendSync",
+            "encrypt" to "encrypt"
+        )
+        for ((from, to) in coreAliases) {
+            if (!mergedSource.containsKey(to) && coreAlias.containsKey(from)) {
+                mergedSource[to] = coreAlias[from]
+            }
+        }
+    }
+    val aiAlias = raw["ai"] as? Map<*, *>
+    if (aiAlias != null) {
+        if (!mergedSource.containsKey("apiEndpoint") && aiAlias.containsKey("baseUrl")) {
+            mergedSource["apiEndpoint"] = aiAlias["baseUrl"]
+        }
+        if (!mergedSource.containsKey("apiKey") && aiAlias.containsKey("apiKey")) {
+            mergedSource["apiKey"] = aiAlias["apiKey"]
+        }
+    }
 
     val pickString: (Map<Any?, Any?>, Iterable<String>) -> String? = { source, keys ->
         var result: String? = null
@@ -329,10 +353,34 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
         result ?: defaults.destinations
     }
 
+    val extractRemoteTargetUrls: (Any?) -> List<String> = { value ->
+        when (value) {
+            is List<*> -> value.mapNotNull { entry ->
+                when (entry) {
+                    is String -> entry.trim().ifBlank { null }
+                    is Map<*, *> -> entry["url"]?.toString()?.trim()?.ifBlank { null }
+                    else -> null
+                }
+            }
+            else -> emptyList()
+        }
+    }
+
+    val opsTargets = buildList {
+        val ops = coreAlias?.get("ops") as? Map<*, *>
+        if (ops != null) {
+            addAll(extractRemoteTargetUrls(ops["httpTargets"]))
+            addAll(extractRemoteTargetUrls(ops["wsTargets"]))
+            addAll(extractRemoteTargetUrls(ops["syncTargets"]))
+        }
+    }.distinct()
+
     return copy(
         listenPortHttps = (mergedSource["listenPortHttps"] as? Number)?.toInt() ?: defaults.listenPortHttps,
         listenPortHttp = (mergedSource["listenPortHttp"] as? Number)?.toInt() ?: defaults.listenPortHttp,
-        destinations = pickStringList(mergedSource, listOf("destinations", "targets", "peers")),
+        destinations = pickStringList(mergedSource, listOf("destinations", "targets", "peers")).ifEmpty {
+            if (opsTargets.isNotEmpty()) opsTargets else defaults.destinations
+        },
         deviceId = pickString(mergedSource, listOf("deviceId", "device_id", "clientDeviceId", "CWS_DEVICE_ID")) ?: defaults.deviceId,
         authToken = pickString(
             mergedSource,

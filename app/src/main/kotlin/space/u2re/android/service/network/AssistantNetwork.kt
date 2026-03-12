@@ -26,10 +26,10 @@ object AssistantNetworkBridge {
         withContext(Dispatchers.IO) {
             val settings = SettingsStore.load(context).resolve()
             val payload = parsePayload(rawPayload, messageType) ?: return@withContext false
-            val action = extractString(payload["action"])?.lowercase()
-                ?: extractString(payload["type"])?.lowercase()
-                ?: messageType.lowercase()
+            val op = extractString(payload["op"])?.lowercase()
+            val action = extractAction(payload, messageType)
             val namespace = extractString(payload["namespace"])?.trim()?.ifBlank { null }
+                ?: extractString(nestedPayloadElement(payload)?.let(::ensureObject)?.get("namespace"))?.trim()?.ifBlank { null }
             val target = extractTarget(payload)
             if (!isTargetMatch(target, config.deviceId, settings, config.userId)) {
                 Log.d(BridgeLogger, "Skip reverse message: target=$target deviceId=${config.deviceId} userId=${config.userId} aliases=${buildTargetAliases(config.deviceId, settings, config.userId).joinToString(",")}")
@@ -37,6 +37,7 @@ object AssistantNetworkBridge {
             }
 
             return@withContext when (action) {
+                "result", "resolve", "error" -> true
                 "feature" -> {
                     val featureName = extractString(payload["data"]?.let { ensureObject(it)?.get("feature") })?.lowercase()
                     val featurePayload = ensureObject(payload["data"])?.get("payload")?.let { ensureObject(it) } ?: JsonObject()
@@ -53,11 +54,20 @@ object AssistantNetworkBridge {
                     Log.d(BridgeLogger, "Reverse clipboard message accepted target=$target namespace=${namespace.orEmpty()} type=$action")
                     sendLocalClipboard(context, payload, settings, callbacks)
                 }
+                "clipboard:update", "clipboard:write" ->
+                    sendLocalClipboard(context, payload, settings, callbacks)
+                "clipboard:read", "clipboard:get", "clipboard:isready" ->
+                    op == "ask" || op == "act"
                 "sms", "send_sms", "sms.send", "sms-send", "send.sms" ->
                     sendLocalSms(context, payload, settings, callbacks)
+                "sms:send" -> sendLocalSms(context, payload, settings, callbacks)
                 "speak", "notifications.speak", "notification.speak", "speak.notification" ->
                     sendLocalSpeak(context, payload, settings, callbacks)
+                "notification:speak", "notifications:speak" ->
+                    sendLocalSpeak(context, payload, settings, callbacks)
                 "dispatch", "forward", "http", "network.dispatch" ->
+                    sendLocalDispatch(context, payload, settings, namespace, action, callbacks)
+                "network:dispatch", "http:dispatch", "request:dispatch" ->
                     sendLocalDispatch(context, payload, settings, namespace, action, callbacks)
                 else -> {
                     val forwarded = payload.has("requests") || payload.has("to")
@@ -74,11 +84,12 @@ object AssistantNetworkBridge {
         }
 
     private suspend fun sendLocalClipboard(context: Context, payload: JsonObject, settings: Settings, callbacks: Daemon.SyncCallbacks?): Boolean {
-        val dataObj = ensureObject(payload["data"])
+        val dataObj = nestedPayloadObject(payload)
         val text = extractString(payload["text"]) 
             ?: extractString(dataObj?.get("text"))
             ?: extractString(dataObj?.get("content"))
             ?: extractPrimitiveString(payload["data"])
+            ?: extractPrimitiveString(payload["payload"])
             ?: extractPrimitiveString(payload["body"])
             ?: ""
         if (text.isBlank()) return false
@@ -92,10 +103,12 @@ object AssistantNetworkBridge {
     }
 
     private suspend fun sendLocalSms(context: Context, payload: JsonObject, settings: Settings, callbacks: Daemon.SyncCallbacks?): Boolean {
-        val number = extractString(payload["number"]) ?: extractString(payload["data"]?.let { ensureObject(payload["data"])?.get("number") })
+        val dataObj = nestedPayloadObject(payload)
+        val number = extractString(payload["number"]) ?: extractString(dataObj?.get("number"))
         val content = extractString(payload["content"])
             ?: extractString(payload["text"])
-            ?: extractString(payload["data"]?.let { ensureObject(payload["data"])?.get("content") })
+            ?: extractString(dataObj?.get("content"))
+            ?: extractString(dataObj?.get("text"))
         if (number.isNullOrBlank() || content.isNullOrBlank()) return false
         if (callbacks != null) {
             callbacks.sendSms(number, content)
@@ -107,11 +120,12 @@ object AssistantNetworkBridge {
     }
 
     private suspend fun sendLocalSpeak(context: Context, payload: JsonObject, settings: Settings, callbacks: Daemon.SyncCallbacks?): Boolean {
-        val dataObj = ensureObject(payload["data"])
+        val dataObj = nestedPayloadObject(payload)
         val text = extractString(payload["text"])
             ?: extractString(dataObj?.get("text"))
             ?: extractString(dataObj?.get("content"))
             ?: extractString(payload["data"])
+            ?: extractString(payload["payload"])
             ?: extractString(payload["body"])
             ?: return false
         if (callbacks != null) {
@@ -130,12 +144,14 @@ object AssistantNetworkBridge {
         action: String,
         callbacks: Daemon.SyncCallbacks?
     ): Boolean {
-        val dispatchDataObj = ensureObject(payload["data"])
+        val dispatchDataObj = nestedPayloadObject(payload)
         val dispatchDataAction = extractString(dispatchDataObj?.get("action"))?.lowercase()
             ?: extractString(dispatchDataObj?.get("type"))?.lowercase()
+            ?: extractString(payload["what"])?.lowercase()
         val dispatchText = extractPrimitiveString(payload["text"])
             ?: extractPrimitiveString(payload["body"])
             ?: extractPrimitiveString(payload["data"])
+            ?: extractPrimitiveString(payload["payload"])
             ?: extractPrimitiveString(dispatchDataObj?.get("text"))
             ?: extractPrimitiveString(dispatchDataObj?.get("content"))
             ?: extractPrimitiveString(dispatchDataObj?.get("body"))
@@ -257,11 +273,33 @@ private fun isTargetMatch(target: String?, localDeviceId: String, settings: Sett
 
     private fun extractTarget(payload: JsonObject): String? {
         return extractString(payload["target"])
+            ?: extractString(payload["byId"])
+            ?: payload["nodes"]?.takeIf { it.isJsonArray }?.asJsonArray?.firstOrNull()?.let(::extractString)
             ?: extractString(payload["deviceId"])
             ?: extractString(payload["device"])
             ?: extractString(payload["targetId"])
             ?: extractString(payload["targetDeviceId"])
             ?: extractString(payload["to"])
+            ?: nestedPayloadObject(payload)?.let(::extractTarget)
+    }
+
+    private fun extractAction(payload: JsonObject, fallbackType: String): String {
+        return extractString(payload["what"])?.lowercase()
+            ?: extractString(payload["action"])?.lowercase()
+            ?: extractString(payload["type"])?.lowercase()
+            ?: fallbackType.lowercase()
+    }
+
+    private fun nestedPayloadElement(payload: JsonObject): JsonElement? {
+        val packetPayload = payload["payload"]
+        if (packetPayload != null && !packetPayload.isJsonNull) return packetPayload
+        val dataPayload = payload["data"]
+        if (dataPayload != null && !dataPayload.isJsonNull) return dataPayload
+        return null
+    }
+
+    private fun nestedPayloadObject(payload: JsonObject): JsonObject? {
+        return ensureObject(nestedPayloadElement(payload))
     }
 
     private fun parsePayload(rawPayload: String, fallbackType: String): JsonObject? {

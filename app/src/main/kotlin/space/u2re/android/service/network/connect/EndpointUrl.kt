@@ -86,6 +86,9 @@ fun normalizeDestinationHost(raw: String): String {
     return stripKnownDestinationPrefix(raw)
 }
 
+fun normalizeEndpointServerUrl(raw: String): String? =
+    normalizeDestinationWithProtocol(stripKnownDestinationPrefix(raw), "/api")
+
 fun normalizeHubDispatchUrl(raw: String): String? = normalizeDestinationWithProtocol(stripKnownDestinationPrefix(raw), "/api/broadcast")
 
 fun normalizeResponsesEndpoint(raw: String): String? {

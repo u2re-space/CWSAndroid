@@ -66,6 +66,9 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                     if (uri == "/health") {
                         return json(200, mapOf("ok" to true, "port" to opts.port))
                     }
+                    if (uri == "/hello") {
+                        return json(200, mapOf("ok" to true, "message" to "hello from android-cws"))
+                    }
 
                     if (method != "POST" && method != "GET") {
                         return text(405, "Method Not Allowed")
@@ -96,9 +99,10 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                                 "POST $uri contentType=$ct payloadLength=${payload.text.length} targets=${payload.targets.size}"
                             )
                             if (payload.text.isBlank()) return text(400, "No text provided")
-                            if (payload.targets.isNotEmpty() && opts.postClipboard != null) {
+                            val postClipboard = opts.postClipboard
+                            if (payload.targets.isNotEmpty() && postClipboard != null) {
                                 return try {
-                                    runBlocking { opts.postClipboard(payload.text, payload.targets) }
+                                    runBlocking { postClipboard(payload.text, payload.targets) }
                                     DaemonLog.info("LocalHttpServer", "clipboard request routed to targets=${payload.targets}")
                                     json(200, mapOf("ok" to true, "targets" to payload.targets))
                                 } catch (e: Exception) {
@@ -182,7 +186,13 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                                 json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
                             }
                         }
-                        uri == "/core/ops/http/dispatch" -> {
+                        uri == "/core/ops/http/dispatch" ||
+                            uri == "/core/network/dispatch" ||
+                            uri == "/api/network/dispatch" ||
+                            uri == "/core/ops/ws/send" ||
+                            uri == "/api/ws" ||
+                            uri == "/core/reverse/send" ||
+                            uri == "/api/reverse/send" -> {
                             if (method != "POST") return text(405, "Method Not Allowed")
                             val parsed = try {
                                 readBody(session)

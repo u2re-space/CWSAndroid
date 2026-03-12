@@ -85,7 +85,7 @@ fun GeneralSettingsTab(
         color = MaterialTheme.colorScheme.onSurface
     )
     Text(
-        "Use Hub for dispatch URL and server connectivity tests.",
+        "Use Gateway for endpoint URL and remote connectivity tests.",
         color = MaterialTheme.colorScheme.onSurface
     )
     Text(
@@ -142,7 +142,7 @@ fun AccessTab(
     OutlinedTextField(
         value = hubClientId,
         onValueChange = onHubClientIdChange,
-        label = { Text("CWS_ASSOCIATED_ID") },
+        label = { Text("Endpoint User ID") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
@@ -150,7 +150,7 @@ fun AccessTab(
     OutlinedTextField(
         value = authToken,
         onValueChange = onAuthTokenChange,
-        label = { Text("CWS_ASSOCIATED_TOKEN") },
+        label = { Text("Local Auth Token") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
@@ -250,6 +250,8 @@ fun GatewayTab(
     onAppendLocalAsDestinations: () -> Unit,
     hubToken: String,
     onHubTokenChange: (String) -> Unit,
+    endpointSummary: String,
+    endpointWarning: String?,
     onSelectHubFromDestination: (String) -> Unit,
     daemonSnapshot: DaemonConnectionSnapshot,
     onRefreshDaemonStatus: () -> Unit
@@ -259,14 +261,26 @@ fun GatewayTab(
     val daemonLines = daemonSnapshot.asStatusLines()
 
     Text(
-        "Gateway & Configuration",
+        "Endpoint & Configuration",
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurface
     )
+    Text(
+        endpointSummary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    if (!endpointWarning.isNullOrBlank()) {
+        Spacer(Modifier.size(6.dp))
+        Text(
+            endpointWarning,
+            color = MaterialTheme.colorScheme.error
+        )
+    }
+    Spacer(Modifier.size(8.dp))
     OutlinedTextField(
         value = gatewayUrls,
         onValueChange = onGatewayUrlsChange,
-        label = { Text("Gateway URLs (comma separated)") },
+        label = { Text("Endpoint URL(s)") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
@@ -274,7 +288,7 @@ fun GatewayTab(
     OutlinedTextField(
         value = hubToken,
         onValueChange = onHubTokenChange,
-        label = { Text("Gateway Auth Token") },
+        label = { Text("Endpoint User Key") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
@@ -322,7 +336,7 @@ fun GatewayTab(
             contentColor = MaterialTheme.colorScheme.onPrimary
         )
     ) {
-        Text(if (testingHub) "Testing..." else "Test Gateway")
+        Text(if (testingHub) "Testing..." else "Test Endpoint")
     }
 
     Spacer(Modifier.size(16.dp))

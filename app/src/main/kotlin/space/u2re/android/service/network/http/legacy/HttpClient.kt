@@ -91,6 +91,24 @@ suspend fun postText(
     return executeRequest(request, allowInsecureTls, timeoutMs)
 }
 
+suspend fun getText(
+    url: String,
+    allowInsecureTls: Boolean,
+    timeoutMs: Int = 8000,
+    headers: Map<String, String> = emptyMap()
+): HttpResult {
+    val request = Request.Builder()
+        .url(url)
+        .get()
+        .apply {
+            headers.forEach { (key, value) ->
+                addHeader(key, value)
+            }
+        }
+        .build()
+    return executeRequest(request, allowInsecureTls, timeoutMs)
+}
+
 suspend fun postJson(
     url: String,
     json: Any,
