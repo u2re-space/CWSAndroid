@@ -56,6 +56,7 @@ object ConnectRoute
 fun ConnectScreen(
     navigateToVoiceAssistant: (VoiceAssistantRoute) -> Unit,
     navigateToSettings: () -> Unit,
+    navigateToHistory: () -> Unit,
     navigateToLocalResponses: (ResponsesAssistantRoute) -> Unit
 ) {
     val context = LocalContext.current
@@ -173,6 +174,14 @@ fun ConnectScreen(
                 onClick = navigateToSettings
             ) {
                 Text("Settings")
+            }
+            Spacer(Modifier.size(12.dp))
+            Button(
+                colors = buttonColors,
+                shape = RoundedCornerShape(20),
+                onClick = navigateToHistory
+            ) {
+                Text("History")
             }
             Spacer(Modifier.size(12.dp))
             Button(

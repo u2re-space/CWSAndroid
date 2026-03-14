@@ -5,7 +5,9 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import space.u2re.cws.daemon.Daemon
+import space.u2re.cws.history.HistoryRepository
 import space.u2re.cws.network.ServerV2Packet
+import space.u2re.cws.network.ServerV2PacketCodec
 import space.u2re.cws.settings.SettingsStore
 import space.u2re.cws.settings.resolve
 
@@ -17,7 +19,17 @@ object AssistantNetworkBridge {
         packet: ServerV2Packet,
         config: ReverseGatewayConfig,
         callbacks: Daemon.SyncCallbacks? = null
-    ): Boolean = handleInbound(context, parseInboundPacket(packet), config, callbacks)
+    ): Boolean {
+        if (packet.op.equals("result", ignoreCase = true)
+            || packet.op.equals("resolve", ignoreCase = true)
+            || packet.op.equals("error", ignoreCase = true)
+        ) {
+            if (HistoryRepository.handleRemotePacket(packet)) {
+                return true
+            }
+        }
+        return handleInbound(context, parseInboundPacket(packet), config, callbacks)
+    }
 
     suspend fun handleReverseMessage(
         context: Context,
@@ -27,6 +39,15 @@ object AssistantNetworkBridge {
         callbacks: Daemon.SyncCallbacks? = null
     ): Boolean {
         val inbound = parseInboundMessage(rawPayload, messageType) ?: return false
+        if (inbound.action == "result" || inbound.action == "resolve" || inbound.action == "error") {
+            val packet = ServerV2PacketCodec.fromJsonObject(inbound.payload).copy(
+                op = extractString(inbound.payload["op"]) ?: inbound.action,
+                what = extractString(inbound.payload["what"]) ?: extractAction(inbound.payload, inbound.action)
+            )
+            if (HistoryRepository.handleRemotePacket(packet)) {
+                return true
+            }
+        }
         return handleInbound(context, inbound, config, callbacks)
     }
 

@@ -93,6 +93,7 @@ internal fun isAnyTargetMatch(targets: List<String>, localDeviceId: String, sett
 internal fun extractReplyTarget(payload: JsonObject): String? {
     return extractString(payload["byId"])
         ?: extractString(payload["from"])
+        ?: nestedPayloadObject(payload)?.let(::extractReplyTarget)
         ?: payload["nodes"]?.takeIf { it.isJsonArray }?.asJsonArray?.firstOrNull()?.let(::extractString)
 }
 
@@ -104,6 +105,7 @@ internal fun sendResultPacket(
 ): Boolean {
     val replyTarget = extractReplyTarget(requestPayload) ?: return false
     val requestUuid = extractString(requestPayload["uuid"])
+        ?: nestedPayloadObject(requestPayload)?.let { nested -> extractString(nested["uuid"]) }
     return callbacks.sendPacket(
         ServerV2Packet(
             op = "result",

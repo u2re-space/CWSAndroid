@@ -124,7 +124,38 @@ class DaemonTransportRuntime(
     )
 
     fun sendPacket(packet: ServerV2Packet): Boolean {
-        return v2Socket?.sendPacket(packet) == true
+        if (v2Socket?.sendPacket(packet) == true) return true
+        return sendPacketViaBridge(packet)
+    }
+
+    private fun sendPacketViaBridge(packet: ServerV2Packet): Boolean {
+        val bridge = legacyBridge ?: return false
+        if (!bridge.isConnected()) return false
+        val senderId = ServerV2WireContract.normalizeNodeId(
+            packet.byId ?: packet.from ?: endpointConfig.userId.ifBlank { endpointConfig.deviceId }
+        ).ifBlank {
+            ServerV2WireContract.resolve(endpointConfig).senderId()
+        }
+        val payload = ServerV2PacketCodec.toMap(packet)
+        val messageType = packet.what.ifBlank { ServerV2PacketCodec.inferLegacyRelayType(packet) }
+        val targets = packet.nodes
+            .map { ServerV2WireContract.normalizeNodeId(it) }
+            .filter { it.isNotBlank() }
+            .distinct()
+        if (targets.isEmpty()) return false
+        var delivered = false
+        for (target in targets) {
+            val sent = bridge.sendRelay(
+                type = messageType,
+                data = payload,
+                target = target,
+                route = "local",
+                namespace = reverseConfig.namespace,
+                from = senderId
+            )
+            delivered = delivered || sent
+        }
+        return delivered
     }
 
     fun sendClipboardViaSockets(

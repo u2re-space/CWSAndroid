@@ -109,6 +109,20 @@ class LocalHttpServer(private val opts: HttpServerOptions) {
                             }
                         }
                         uri == "/clipboard" || uri == "/clipboard/" -> {
+                            if (method == "GET") {
+                                return try {
+                                    val payload = runBlocking { opts.readClipboardEnvelope() }
+                                    json(
+                                        200,
+                                        mapOf(
+                                            "ok" to (payload?.hasContent() == true),
+                                            "clipboard" to (payload?.toMap() ?: emptyMap<String, Any>())
+                                        )
+                                    )
+                                } catch (e: Exception) {
+                                    json(500, mapOf("ok" to false, "error" to (e.message ?: e.toString())))
+                                }
+                            }
                             if (method != "POST") return text(405, "Method Not Allowed")
                             val bodyText = readBody(session)
                             val ct = getHeader(session.headers, "content-type")?.lowercase() ?: ""

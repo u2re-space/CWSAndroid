@@ -4,6 +4,7 @@ import android.content.Context
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
+import space.u2re.cws.data.ClipboardEnvelopeCodec
 import space.u2re.cws.daemon.Daemon
 import space.u2re.cws.network.DispatchRequest
 import space.u2re.cws.network.postJson
@@ -66,6 +67,11 @@ internal object ReverseDispatchHandler {
         val requestsObj = payload["requests"] ?: payload["data"]?.let(::parseDispatchRequests) ?: parseDispatchRequests(payload)
         if (requestsObj == null) return false
 
+        val recoveredClipboard = recoverClipboardDispatches(context, payload, requestsObj, settings, callbacks)
+        if (recoveredClipboard) {
+            return true
+        }
+
         if (callbacks != null) {
             val requestsList = toDispatchRequests(requestsObj)
             if (requestsList.isNotEmpty()) {
@@ -85,6 +91,64 @@ internal object ReverseDispatchHandler {
         }
         val url = localBaseUrl(settings) + "/core/ops/http/dispatch"
         return postJson(url, routeBody, allowInsecureTls = true, headers = requestHeaders(settings)).ok
+    }
+
+    private suspend fun recoverClipboardDispatches(
+        context: Context,
+        payload: JsonObject,
+        requestsObj: Any,
+        settings: Settings,
+        callbacks: Daemon.SyncCallbacks?
+    ): Boolean {
+        val requestMaps = try {
+            val requestsRaw = if (requestsObj is JsonElement) requestsObj.toString() else reverseBridgeGson.toJson(requestsObj)
+            reverseBridgeGson.fromJson<List<Map<String, Any?>>>(requestsRaw, object : TypeToken<List<Map<String, Any?>>>() {}.type).orEmpty()
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (requestMaps.isEmpty()) return false
+
+        val sourceId = extractString(payload["from"]) ?: extractString(payload["byId"])
+        val requestUuid = extractString(payload["uuid"])
+        var delivered = false
+        for (request in requestMaps) {
+            val type = listOf(
+                request["type"]?.toString(),
+                request["action"]?.toString()
+            ).firstOrNull { !it.isNullOrBlank() }?.trim()?.lowercase().orEmpty()
+            val url = request["url"]?.toString()?.trim().orEmpty()
+            val looksClipboard = type.contains("clipboard") || url.contains("/clipboard", ignoreCase = true)
+            if (!looksClipboard) continue
+
+            val targetId = listOf(
+                request["targetId"]?.toString(),
+                request["target"]?.toString(),
+                request["deviceId"]?.toString(),
+                request["to"]?.toString()
+            ).firstOrNull { !it.isNullOrBlank() }?.trim()
+            val envelopeRaw = request["payload"] ?: request["data"] ?: request["body"]
+            val envelope = ClipboardEnvelopeCodec.fromAny(envelopeRaw, source = sourceId ?: "dispatch", defaultUuid = requestUuid)
+            if (!envelope.hasContent()) continue
+
+            val recoveredPayload = reverseBridgeGson.toJsonTree(
+                linkedMapOf<String, Any?>(
+                    "type" to "clipboard:update",
+                    "what" to "clipboard:update",
+                    "from" to sourceId,
+                    "byId" to sourceId,
+                    "uuid" to requestUuid,
+                    "target" to targetId,
+                    "targetId" to targetId,
+                    "deviceId" to targetId,
+                    "payload" to envelope.toMap(),
+                    "data" to envelope.toMap(),
+                    "text" to envelope.bestText()
+                ).filterValues { it != null }
+            ).asJsonObject
+
+            delivered = ReverseClipboardHandler.handleDelivery(context, recoveredPayload, settings, callbacks) || delivered
+        }
+        return delivered
     }
 
     private fun toDispatchRequests(requestsObj: Any): List<DispatchRequest> {

@@ -1,5 +1,7 @@
 package space.u2re.cws.network
 
+import java.net.URI
+
 object EndpointIdentity {
     private val NODE_PREFIX_RE = Regex("^(?:l-|h-|p-|l_|h_|p_)", RegexOption.IGNORE_CASE)
     private val TYPE_PREFIX_RE = Regex("^(?:device:|local-device:|id:|client:|peer:)", RegexOption.IGNORE_CASE)
@@ -30,6 +32,34 @@ object EndpointIdentity {
         val canonical = canonical(normalized)
         if (canonical.isBlank()) return normalized
         return if (IPV4_RE.matches(canonical)) "l-$canonical" else canonical
+    }
+
+    fun isExplicitHttpUrl(value: String?): Boolean {
+        val normalized = normalize(value)
+        return normalized.startsWith("http://") || normalized.startsWith("https://")
+    }
+
+    fun isLikelyNodeTarget(value: String?): Boolean {
+        val normalized = normalize(value)
+        if (normalized.isBlank() || isBroadcast(normalized)) return false
+        if (isExplicitHttpUrl(normalized)) return false
+        if (TYPE_PREFIX_RE.containsMatchIn(normalized)) return true
+        if (NODE_PREFIX_RE.containsMatchIn(normalized)) return true
+        if (IPV4_RE.matches(normalized)) return true
+        if (normalized.contains("/") || normalized.contains("?") || normalized.contains("#")) return false
+        return !normalized.contains("://")
+    }
+
+    fun sourceIdFromTargetOrUrl(value: String?): String {
+        val normalized = normalize(value)
+        if (normalized.isBlank()) return ""
+        if (isExplicitHttpUrl(normalized)) {
+            val host = runCatching { URI(normalized).host?.trim() }.getOrNull().orEmpty()
+            if (host.isNotBlank()) {
+                return bestRouteTarget(host)
+            }
+        }
+        return bestRouteTarget(normalized)
     }
 
     fun aliases(value: String?): Set<String> {

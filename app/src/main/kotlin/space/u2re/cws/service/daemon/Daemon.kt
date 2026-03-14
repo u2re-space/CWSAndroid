@@ -17,6 +17,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import space.u2re.cws.data.ClipboardEnvelope
 import space.u2re.cws.data.ClipboardEnvelopeCodec
+import space.u2re.cws.history.HistoryChannel
+import space.u2re.cws.history.HistoryOrigin
+import space.u2re.cws.history.HistoryRepository
 import space.u2re.cws.notifications.NotificationEvent
 import space.u2re.cws.notifications.NotificationEventStore
 import space.u2re.cws.notifications.NotificationSpeaker
@@ -44,6 +47,7 @@ import space.u2re.cws.settings.SettingsPatch
 import space.u2re.cws.settings.SettingsStore
 import space.u2re.cws.settings.resolve
 import java.net.URI
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 class Daemon(
@@ -564,6 +568,11 @@ class Daemon(
             }
             val decision = clipboardRuntime.recordLocalRead(envelope)
             if (!decision.accepted) return@launch
+            HistoryRepository.recordClipboard(
+                envelope = envelope,
+                sourceId = currentLocalHistorySourceId(),
+                origin = HistoryOrigin.LOCAL
+            )
             postClipboardToPeers(envelope)
         }
     }
@@ -573,8 +582,42 @@ class Daemon(
             if (!envelope.hasContent()) return@launch
             val decision = clipboardRuntime.recordLocalRead(envelope)
             if (!decision.accepted) return@launch
+            HistoryRepository.recordClipboard(
+                envelope = envelope,
+                sourceId = currentLocalHistorySourceId(),
+                origin = HistoryOrigin.LOCAL
+            )
             postClipboardToPeers(envelope)
         }
+    }
+
+    fun snapshotClipboardEnvelope(): ClipboardEnvelope? = readClipboardEnvelope()
+
+    fun requestClipboardHistory(target: String): Boolean {
+        return requestRemoteHistoryQuery(
+            target = target,
+            channel = HistoryChannel.CLIPBOARD,
+            what = "clipboard:get",
+            payload = mapOf("request" to "history")
+        )
+    }
+
+    fun requestSmsHistory(target: String, limit: Int = 50): Boolean {
+        return requestRemoteHistoryQuery(
+            target = target,
+            channel = HistoryChannel.SMS,
+            what = "sms:list",
+            payload = mapOf("limit" to limit.coerceIn(1, 200))
+        )
+    }
+
+    fun requestNotificationHistory(target: String, limit: Int = 50): Boolean {
+        return requestRemoteHistoryQuery(
+            target = target,
+            channel = HistoryChannel.NOTIFICATIONS,
+            what = "notifications:list",
+            payload = mapOf("limit" to limit.coerceIn(1, 200))
+        )
     }
 
     private fun startPeriodicSync() {
@@ -678,6 +721,11 @@ class Daemon(
             DaemonLog.debug("Daemon", "skip duplicate clipboard read reason=${decision.reason}")
             return
         }
+        HistoryRepository.recordClipboard(
+            envelope = envelope,
+            sourceId = currentLocalHistorySourceId(),
+            origin = HistoryOrigin.LOCAL
+        )
         postClipboardToPeers(envelope)
     }
 
@@ -696,6 +744,12 @@ class Daemon(
             DaemonLog.debug("Daemon", "skip inbound clipboard reason=${inbound.reason}")
             return false
         }
+        HistoryRepository.recordClipboard(
+            envelope = envelope,
+            sourceId = sourceId,
+            targetId = targetId,
+            origin = HistoryOrigin.INBOUND
+        )
         val writeDecision = clipboardRuntime.allowPlatformWrite(envelope, uuid, sourceId, targetId)
         if (!writeDecision.accepted) {
             DaemonLog.debug("Daemon", "skip clipboard write reason=${writeDecision.reason}")
@@ -749,6 +803,41 @@ class Daemon(
             return ClipboardEnvelope(text = currentText, source = "read-clipboard")
         }
         return clipboardRuntime.cache()
+    }
+
+    private fun requestRemoteHistoryQuery(
+        target: String,
+        channel: HistoryChannel,
+        what: String,
+        payload: Map<String, Any?>
+    ): Boolean {
+        val runtime = transportRuntime ?: return false
+        val normalizedTarget = EndpointIdentity.bestRouteTarget(target).ifBlank { target.trim() }
+        if (normalizedTarget.isBlank()) return false
+        val uuid = UUID.randomUUID().toString()
+        HistoryRepository.registerPendingQuery(uuid, channel, normalizedTarget)
+        val sent = runtime.sendPacket(
+            ServerV2Packet(
+                op = "ask",
+                what = what,
+                payload = payload,
+                nodes = listOf(normalizedTarget),
+                uuid = uuid
+            )
+        )
+        if (!sent) {
+            HistoryRepository.clearPendingQuery(uuid)
+        }
+        return sent
+    }
+
+    private fun currentLocalHistorySourceId(): String {
+        val endpointConfig = currentEndpointConfig()
+        return EndpointIdentity.bestRouteTarget(
+            endpointConfig.userId.ifBlank {
+                settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
+            }
+        ).ifBlank { "local-device" }
     }
 
     private fun startClipboardExpiryCleaner() {

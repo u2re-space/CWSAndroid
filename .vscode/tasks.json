@@ -5,7 +5,9 @@
       "label": "Android: Attach or launch debug (auto device)",
       "type": "shell",
       "command": "./gradlew",
-      "args": [":app:attachDebug"],
+      "args": [
+        ":app:attachDebug"
+      ],
       "windows": {
         "command": "gradlew.bat"
       },
@@ -16,7 +18,10 @@
       "label": "Android: Connect 192.168.0.196:5555",
       "type": "shell",
       "command": "adb",
-      "args": ["connect", "192.168.0.196:5555"],
+      "args": [
+        "connect",
+        "192.168.0.196:5555"
+      ],
       "group": "build",
       "problemMatcher": []
     },
@@ -24,7 +29,10 @@
       "label": "Android: Connect 192.168.0.208:5555",
       "type": "shell",
       "command": "adb",
-      "args": ["connect", "192.168.0.208:5555"],
+      "args": [
+        "connect",
+        "192.168.0.208:5555"
+      ],
       "group": "build",
       "problemMatcher": []
     },
@@ -32,7 +40,10 @@
       "label": "Android: Attach or launch debug (192.168.0.196:5555)",
       "type": "shell",
       "command": "./gradlew",
-      "args": [":app:attachDebug", "-PadbSerial=192.168.0.196:5555"],
+      "args": [
+        ":app:attachDebug",
+        "-PadbSerial=192.168.0.196:5555"
+      ],
       "windows": {
         "command": "gradlew.bat"
       },
@@ -43,7 +54,10 @@
       "label": "Android: Attach or launch debug (192.168.0.208:5555)",
       "type": "shell",
       "command": "./gradlew",
-      "args": [":app:attachDebug", "-PadbSerial=192.168.0.208:5555"],
+      "args": [
+        ":app:attachDebug",
+        "-PadbSerial=192.168.0.208:5555"
+      ],
       "windows": {
         "command": "gradlew.bat"
       },
@@ -53,19 +67,31 @@
     {
       "label": "Android: Attach or launch debug (forced target)",
       "type": "shell",
-      "command": "./gradlew",
-      "args": [":app:attachDebug", "-PadbSerial=${input:androidTargetSerial}"],
+      "command": "bash",
+      "args": [
+        "-lc",
+        "adb connect \"${input:androidTargetSerial}\" >/dev/null 2>&1 || true; ./gradlew :app:attachDebug -PadbSerial=\"${input:androidTargetSerial}\""
+      ],
       "windows": {
-        "command": "gradlew.bat"
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-Command",
+          "adb connect \"${input:androidTargetSerial}\" | Out-Null; .\\gradlew.bat :app:attachDebug \"-PadbSerial=${input:androidTargetSerial}\""
+        ]
       },
       "group": "build",
-      "detail": "Same as auto-device flow, but forces the given ADB serial/IP:port."
+      "detail": "Connects ADB if needed, then builds, installs and launches debug APK on the given serial/IP:port."
     },
     {
       "label": "Android: Logcat (192.168.0.196:5555)",
       "type": "shell",
       "command": "adb",
-      "args": ["-s", "192.168.0.196:5555", "logcat"],
+      "args": [
+        "-s",
+        "192.168.0.196:5555",
+        "logcat"
+      ],
       "group": "build",
       "problemMatcher": []
     },
@@ -73,7 +99,11 @@
       "label": "Android: Logcat (192.168.0.208:5555)",
       "type": "shell",
       "command": "adb",
-      "args": ["-s", "192.168.0.208:5555", "logcat"],
+      "args": [
+        "-s",
+        "192.168.0.208:5555",
+        "logcat"
+      ],
       "group": "build",
       "problemMatcher": []
     },
@@ -81,7 +111,10 @@
       "label": "Android: Connected devices (ADB)",
       "type": "shell",
       "command": "adb",
-      "args": ["devices", "-l"],
+      "args": [
+        "devices",
+        "-l"
+      ],
       "group": "build",
       "problemMatcher": []
     }
@@ -89,9 +122,21 @@
   "inputs": [
     {
       "id": "androidTargetSerial",
-      "type": "promptString",
-      "description": "ADB serial/IP:port",
-      "default": "192.168.0.196:5555"
+      "type": "command",
+      "command": "extension.commandvariable.remember",
+      "args": {
+        "key": "androidTargetSerial",
+        "default": "${promptStringRemember:androidTargetSerialPrompt}",
+        "transform": {
+          "promptStringRemember": {
+            "androidTargetSerialPrompt": {
+              "key": "androidTargetSerial",
+              "description": "ADB serial/IP:port",
+              "default": "192.168.0.196:5555"
+            }
+          }
+        }
+      }
     }
   ]
 }

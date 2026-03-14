@@ -75,6 +75,9 @@ class SharedChannelRuntime<T>(
         }
         val _sourceId = sourceId
         val _targetId = targetId
+        val normalizedUuid = uuid?.trim()?.ifBlank { null }
+        val normalizedSourceId = _sourceId?.trim()?.ifBlank { null }
+        val normalizedTargetId = _targetId?.trim()?.ifBlank { null }
         val cached = validCached(nowMs)
         if (cached != null && cached.fingerprint == fingerprint && !cached.remote) {
             return SharedChannelDecision(accepted = false, reason = "$channelName matches got cache", cached = cached.payload)
@@ -83,9 +86,15 @@ class SharedChannelRuntime<T>(
         if (previousOutbound != null && previousOutbound.fingerprint == fingerprint && nowMs - previousOutbound.timestampMs < duplicateWindowMs) {
             return SharedChannelDecision(accepted = false, reason = "$channelName duplicate outbound payload", cached = cached?.payload)
         }
-        if (!uuid.isNullOrBlank()) {
+        if (normalizedUuid != null) {
             val previousInbound = lastInbound
-            if (previousInbound?.uuid == uuid && nowMs - previousInbound.timestampMs < duplicateUuidWindowMs) {
+            val sameFreshInbound =
+                previousInbound?.uuid == normalizedUuid &&
+                previousInbound.fingerprint == fingerprint &&
+                previousInbound.sourceId == normalizedSourceId &&
+                previousInbound.targetId == normalizedTargetId &&
+                nowMs - previousInbound.timestampMs < duplicateUuidWindowMs
+            if (!sameFreshInbound && previousInbound?.uuid == normalizedUuid && nowMs - previousInbound.timestampMs < duplicateUuidWindowMs) {
                 return SharedChannelDecision(accepted = false, reason = "$channelName uuid still guarded", cached = cached?.payload)
             }
         }

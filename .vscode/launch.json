@@ -53,9 +53,21 @@
   "inputs": [
     {
       "id": "androidTargetSerial",
-      "type": "promptString",
-      "description": "ADB serial/IP:port",
-      "default": "192.168.0.196:5555"
+      "type": "command",
+      "command": "extension.commandvariable.remember",
+      "args": {
+        "key": "androidTargetSerial",
+        "default": "${promptStringRemember:androidTargetSerialPrompt}",
+        "transform": {
+          "promptStringRemember": {
+            "androidTargetSerialPrompt": {
+              "key": "androidTargetSerial",
+              "description": "ADB serial/IP:port",
+              "default": "192.168.0.196:5555"
+            }
+          }
+        }
+      }
     }
   ]
 }

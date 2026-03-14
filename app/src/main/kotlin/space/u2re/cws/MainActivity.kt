@@ -26,6 +26,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import space.u2re.cws.ui.screen.ConnectRoute
 import space.u2re.cws.ui.screen.ConnectScreen
+import space.u2re.cws.ui.screen.HistoryRoute
+import space.u2re.cws.ui.screen.HistoryScreen
 import space.u2re.cws.ui.screen.SettingsRoute
 import space.u2re.cws.ui.screen.SettingsScreen
 import space.u2re.cws.ui.screen.VoiceAssistantRoute
@@ -88,11 +90,21 @@ class MainActivity : ComponentActivity() {
                                         runOnUiThread {
                                             navController.navigate(SettingsRoute)
                                         }
+                                    },
+                                    navigateToHistory = {
+                                        runOnUiThread {
+                                            navController.navigate(HistoryRoute)
+                                        }
                                     }
                                 )
                             }
                             composable<SettingsRoute> {
                                 SettingsScreen(
+                                    navigateBack = { runOnUiThread { navController.navigateUp() } }
+                                )
+                            }
+                            composable<HistoryRoute> {
+                                HistoryScreen(
                                     navigateBack = { runOnUiThread { navController.navigateUp() } }
                                 )
                             }
