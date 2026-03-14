@@ -11,7 +11,7 @@ WINDOWS_SSH="${WINDOWS_SSH:-U2RE@192.168.0.110}"
 VDS_SSH="${VDS_SSH:-root@45.150.9.153}"
 VDS_SSH_KEY="${VDS_SSH_KEY:-$HOME/.ssh/id_ecdsa}"
 
-GATEWAY_DIR="${GATEWAY_DIR:-/home/u2re-dev/U2RE.space/apps/CrossWord/src/endpoint}"
+GATEWAY_DIR="${GATEWAY_DIR:-/home/u2re-dev/U2RE.space/runtime/endpoint}"
 WINDOWS_DIR="${WINDOWS_DIR:-C:\\Users\\U2RE\\endpoint-portable}"
 VDS_DIR="${VDS_DIR:-/root/endpoint-portable}"
 GATEWAY_URL="${GATEWAY_URL:-https://45.147.121.152:8443/}"
@@ -19,6 +19,8 @@ GATEWAY_URL="${GATEWAY_URL:-https://45.147.121.152:8443/}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-3}"
 WAIT_SECONDS="${WAIT_SECONDS:-30}"
 CLIP_AUTH_TOKEN="${CLIP_AUTH_TOKEN:-n3v3rm1nd}"
+VDS_FLOW_MODE="${VDS_FLOW_MODE:-socket}"
+VDS_FAKE_CLIENT_PM2="${VDS_FAKE_CLIENT_PM2:-cws-vds-fake-client}"
 
 log() {
   printf '[vds-e2e] %s\n' "$*"
@@ -99,6 +101,21 @@ restart_vds_pm2() {
   ssh_vds "bash -lc 'export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"; nvm install 25.8 >/dev/null 2>&1 || true; nvm alias default 25.8 >/dev/null 2>&1 || true; nvm use 25.8 >/dev/null 2>&1 || true; command -v pm2 >/dev/null 2>&1 || npm install -g pm2 >/dev/null 2>&1; cd \"${VDS_DIR}\"; pm2 stop cws || true; pm2 flush || true; pm2 restart ecosystem.config.cjs --only cws --env production --update-env || pm2 start ecosystem.config.cjs --only cws --env production --update-env'"
 }
 
+stop_vds_fake_client() {
+  ssh_vds "bash -lc 'export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"; nvm use 25.8 >/dev/null 2>&1 || true; command -v pm2 >/dev/null 2>&1 || npm install -g pm2 >/dev/null 2>&1; pm2 delete \"${VDS_FAKE_CLIENT_PM2}\" >/dev/null 2>&1 || true'"
+}
+
+start_vds_fake_client() {
+  local text="$1"
+  local text_b64
+  text_b64="$(printf '%s' "$text" | base64 -w0)"
+  ssh_vds "bash -lc 'export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"; nvm use 25.8 >/dev/null 2>&1 || true; command -v pm2 >/dev/null 2>&1 || npm install -g pm2 >/dev/null 2>&1; cd \"${VDS_DIR}\"; pm2 delete \"${VDS_FAKE_CLIENT_PM2}\" >/dev/null 2>&1 || true; CLIPBOARD_TEXT=\$(python3 - <<\"PY\"
+import base64
+print(base64.b64decode(\"${text_b64}\".encode(\"ascii\")).decode(\"utf-8\", errors=\"replace\"))
+PY
+); pm2 start \"\$(command -v node)\" --name \"${VDS_FAKE_CLIENT_PM2}\" -- ./node_modules/tsx/dist/cli.mjs server-v2/client/vds-fake-client.ts --config ./portable.config.json --once=true --exit-idle-ms=$(( (WAIT_SECONDS + 25) * 1000 )) --clipboard-text \"\$CLIPBOARD_TEXT\" --targets L-192.168.0.110'"
+}
+
 restart_windows_pm2() {
   ssh_windows "powershell -NoProfile -Command \"cd '${WINDOWS_DIR}'; pm2 stop cws 2>\$null; pm2 flush 2>\$null; pm2 restart ecosystem.config.cjs --only cws --env production --update-env; if (\$LASTEXITCODE -ne 0) { pm2 start ecosystem.config.cjs --only cws --env production --update-env }\""
 }
@@ -134,7 +151,10 @@ trigger_windows_clipboard() {
 \$text='${text}';\
 Set-Clipboard -Value \$text;\
 \$payload=@{ text=\$text; targetDeviceId='l-45.150.9.153' } | ConvertTo-Json -Depth 8;\
-Invoke-WebRequest -UseBasicParsing -Method Post -Uri 'http://127.0.0.1:8080/clipboard' -Headers @{ 'x-auth-token'='${CLIP_AUTH_TOKEN}' } -ContentType 'application/json' -Body \$payload | Out-Null\""
+\$tmp = [System.IO.Path]::GetTempFileName();\
+[System.IO.File]::WriteAllText(\$tmp, \$payload);\
+curl.exe -k -sS -X POST 'https://127.0.0.1:8443/clipboard' -H 'x-auth-token: ${CLIP_AUTH_TOKEN}' -H 'Content-Type: application/json' --data-binary \\\"@\$tmp\\\" | Out-Null;\
+Remove-Item \$tmp -Force\""
 }
 
 read_windows_clipboard() {
@@ -146,11 +166,29 @@ vds_logs_contain() {
   ssh_vds "bash -lc 'pm2 logs cws --lines 120 --nostream 2>/dev/null | grep -F \"${needle}\" >/dev/null'"
 }
 
+vds_fake_logs_contain() {
+  local needle="$1"
+  ssh_vds "bash -lc 'pm2 logs \"${VDS_FAKE_CLIENT_PM2}\" --lines 120 --nostream 2>/dev/null | grep -F \"${needle}\" >/dev/null'"
+}
+
+wait_vds_fake_result_from_windows() {
+  local deadline=$(( $(date +%s) + WAIT_SECONDS ))
+  local needle='"event":"packet-received","op":"result","what":"clipboard:update","byId":"L-192.168.0.110"'
+  while [[ $(date +%s) -lt $deadline ]]; do
+    if vds_fake_logs_contain "${needle}"; then
+      return 0
+    fi
+    sleep 3
+  done
+  return 1
+}
+
 collect_logs() {
   log "Collecting recent PM2 logs for diagnostics..."
   ssh_gateway "bash -lc 'export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"; command -v pm2 >/dev/null 2>&1 || npm install -g pm2 >/dev/null 2>&1; pm2 logs cws --lines 120 --nostream || true'"
   ssh_windows "powershell -NoProfile -Command \"pm2 logs cws --lines 120 --nostream\""
   ssh_vds "bash -lc 'pm2 logs cws --lines 120 --nostream || true'"
+  ssh_vds "bash -lc 'pm2 logs \"${VDS_FAKE_CLIENT_PM2}\" --lines 120 --nostream || true'"
 }
 
 wait_windows_clipboard_contains() {
@@ -178,22 +216,46 @@ main() {
     log "Attempt ${attempt}/${MAX_ATTEMPTS}: restarting PM2 services..."
     restart_gateway_pm2
     restart_windows_pm2
-    restart_vds_pm2
+    if [[ "${VDS_FLOW_MODE}" != "socket" ]]; then
+      restart_vds_pm2
+    fi
+    stop_vds_fake_client
     sleep 6
 
     local test_code="T$(date +%s)-A${attempt}"
     local vds_message="От VDS L-45.150.9.153 ${test_code}"
-    log "Sending VDS -> Windows clipboard probe: ${vds_message}"
-    trigger_vds_clipboard "${vds_message}" || true
+    if [[ "${VDS_FLOW_MODE}" == "socket" ]]; then
+      log "Sending VDS -> Windows clipboard probe via fake Socket.IO client: ${vds_message}"
+      start_vds_fake_client "${vds_message}" || true
+    else
+      log "Sending VDS -> Windows clipboard probe via local HTTP clipboard endpoint: ${vds_message}"
+      trigger_vds_clipboard "${vds_message}" || true
+    fi
 
-    if wait_windows_clipboard_contains "${test_code}"; then
+    local forward_ok=1
+    if [[ "${VDS_FLOW_MODE}" == "socket" ]]; then
+      if wait_vds_fake_result_from_windows; then
+        log "PASS: fake client received result from Windows endpoint for VDS probe (${test_code})."
+        forward_ok=0
+      fi
+    elif wait_windows_clipboard_contains "${test_code}"; then
       log "PASS: Windows clipboard contains VDS test code (${test_code})."
+      forward_ok=0
+    fi
+
+    if [[ ${forward_ok} -eq 0 ]]; then
       local win_code="W$(date +%s)-A${attempt}"
       local win_message="От WIN L-192.168.0.110 ${win_code}"
       log "Sending Windows -> VDS probe: ${win_message}"
       trigger_windows_clipboard "${win_message}" || true
       sleep 4
-      if vds_logs_contain "${win_code}"; then
+      if [[ "${VDS_FLOW_MODE}" == "socket" ]]; then
+        if vds_fake_logs_contain "${win_code}"; then
+          log "PASS: fake VDS client logs contain Windows probe code (${win_code})."
+        else
+          log "WARN: fake VDS client did not log the Windows probe code (${win_code}) yet."
+        fi
+      elif vds_logs_contain "${win_code}"; then
         log "PASS: VDS logs contain Windows probe code (${win_code})."
       else
         log "WARN: direct Windows->VDS confirmation found only partially (no code in VDS logs yet)."

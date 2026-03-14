@@ -13,6 +13,44 @@
       "detail": "Assembles and installs debug APK, then launches on first connected ADB device; falls back to 192.168.0.196:5555."
     },
     {
+      "label": "Android: Connect 192.168.0.196:5555",
+      "type": "shell",
+      "command": "adb",
+      "args": ["connect", "192.168.0.196:5555"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Connect 192.168.0.208:5555",
+      "type": "shell",
+      "command": "adb",
+      "args": ["connect", "192.168.0.208:5555"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Attach or launch debug (192.168.0.196:5555)",
+      "type": "shell",
+      "command": "./gradlew",
+      "args": [":app:attachDebug", "-PadbSerial=192.168.0.196:5555"],
+      "windows": {
+        "command": "gradlew.bat"
+      },
+      "group": "build",
+      "detail": "Build, install and launch debug APK on 192.168.0.196:5555."
+    },
+    {
+      "label": "Android: Attach or launch debug (192.168.0.208:5555)",
+      "type": "shell",
+      "command": "./gradlew",
+      "args": [":app:attachDebug", "-PadbSerial=192.168.0.208:5555"],
+      "windows": {
+        "command": "gradlew.bat"
+      },
+      "group": "build",
+      "detail": "Build, install and launch debug APK on 192.168.0.208:5555."
+    },
+    {
       "label": "Android: Attach or launch debug (forced target)",
       "type": "shell",
       "command": "./gradlew",
@@ -22,6 +60,22 @@
       },
       "group": "build",
       "detail": "Same as auto-device flow, but forces the given ADB serial/IP:port."
+    },
+    {
+      "label": "Android: Logcat (192.168.0.196:5555)",
+      "type": "shell",
+      "command": "adb",
+      "args": ["-s", "192.168.0.196:5555", "logcat"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Logcat (192.168.0.208:5555)",
+      "type": "shell",
+      "command": "adb",
+      "args": ["-s", "192.168.0.208:5555", "logcat"],
+      "group": "build",
+      "problemMatcher": []
     },
     {
       "label": "Android: Connected devices (ADB)",
