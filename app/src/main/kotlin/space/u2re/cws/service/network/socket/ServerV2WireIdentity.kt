@@ -95,6 +95,15 @@ object ServerV2WireContract {
     }
 
     fun buildQuery(identity: ServerV2WireIdentity): Map<String, String> {
+        // Dual-wire compatibility:
+        // some nodes/gateways only understand `connectionType=first-order`.
+        // Keep the local identity semantics (`exchanger-*`) but adapt the wire value.
+        val rawConnectionType = identity.connectionType.trim().lowercase()
+        val wireConnectionType = if (rawConnectionType.contains("exchanger")) {
+            "first-order"
+        } else {
+            identity.connectionType
+        }
         return buildMap {
             if (identity.userKey.isNotBlank()) {
                 put("token", identity.userKey)
@@ -106,7 +115,7 @@ object ServerV2WireContract {
                 put("__airpad_client", identity.clientId)
                 put("userId", identity.userId)
             }
-            put("connectionType", identity.connectionType)
+            put("connectionType", wireConnectionType)
             put("archetype", identity.archetype)
         }
     }

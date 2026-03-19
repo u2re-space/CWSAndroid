@@ -1,6 +1,13 @@
 package space.u2re.cws.network
 
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 data class ServerV2SocketDiagnostics(
     val connected: Boolean,
@@ -15,6 +22,11 @@ class ServerV2SocketClient(
     private val onPacket: (ServerV2Packet) -> Unit = {},
     private val onState: (String, String?) -> Unit = { _, _ -> }
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var reconnectMonitorJob: Job? = null
+    private var lastReconnectAtMs: Long = 0L
+    private val reconnectEveryMs: Long = 1_000L
+
     private var socket: SocketIoTunnelClient? = null
     private var started = false
     private var connected = false
@@ -54,11 +66,32 @@ class ServerV2SocketClient(
             }
         )
         socket?.start()
+
+        // Ensure stability even when network callbacks are not fired:
+        // attempt reconnect roughly every second after disconnect.
+        reconnectMonitorJob?.cancel()
+        reconnectMonitorJob = scope.launch {
+            while (isActive && started) {
+                val ok = socket?.isConnected() == true
+                if (!ok) {
+                    val now = System.currentTimeMillis()
+                    if (now - lastReconnectAtMs >= reconnectEveryMs) {
+                        lastReconnectAtMs = now
+                        updateState("reconnect-loop", "server-v2 disconnected; auto reconnecting")
+                        socket?.stop()
+                        socket?.start()
+                    }
+                }
+                delay(reconnectEveryMs)
+            }
+        }
     }
 
     fun stop() {
         started = false
         connected = false
+        reconnectMonitorJob?.cancel()
+        reconnectMonitorJob = null
         socket?.stop()
         socket = null
         updateState("stopped", "server-v2 socket stopped")
@@ -66,6 +99,7 @@ class ServerV2SocketClient(
 
     fun requestReconnect() {
         if (!started) return
+        lastReconnectAtMs = System.currentTimeMillis()
         updateState("reconnect-requested", "server-v2 socket reconnect requested")
         socket?.stop()
         socket?.start()

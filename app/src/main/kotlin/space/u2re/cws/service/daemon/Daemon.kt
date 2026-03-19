@@ -345,7 +345,7 @@ class Daemon(
             return
         }
         val now = System.currentTimeMillis()
-        if (now - lastNetworkReconnectAtMs < 3_000L) return
+        if (now - lastNetworkReconnectAtMs < 1_000L) return
         lastNetworkReconnectAtMs = now
         setReverseGatewayState("reconnect-requested", reason)
         reverseWsReconnectRequests.incrementAndGet()
