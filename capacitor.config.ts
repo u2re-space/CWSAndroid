@@ -1,0 +1,1 @@
+./runtime/cwsp/capacitor.config.ts
