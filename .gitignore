@@ -200,6 +200,9 @@ https
 https/
 https/*
 
+# CWSP Capacitor web bundle (copied from runtime/cwsp/dist/capacitor by Gradle preBuild)
+app/src/main/assets/public/
+
 # Build
 ./dist
 ./dist/

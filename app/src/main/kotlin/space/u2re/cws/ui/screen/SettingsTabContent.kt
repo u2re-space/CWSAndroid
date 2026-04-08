@@ -41,7 +41,8 @@ fun GeneralSettingsTab(
     apiKey: String,
     onApiKeyChange: (String) -> Unit,
     testingAi: Boolean,
-    onTestAi: () -> Unit
+    onTestAi: () -> Unit,
+    onOpenCapacitorWeb: () -> Unit
 ) {
     Text(
         "General",
@@ -78,6 +79,27 @@ fun GeneralSettingsTab(
         )
     ) {
         Text(if (testingAi) "Testing..." else "Test /responses")
+    }
+    Spacer(Modifier.size(12.dp))
+    Text(
+        "CrossWord web (CWSP Capacitor)",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Text(
+        "Opens the same bundled HTML/JS UI as runtime/cwsp Capacitor after you run build:capacitor:web (or full build:capacitor) there. " +
+            "The Capacitor Android package id is space.u2re.cwsp (cwsp product flavor); standalone Kotlin builds use space.u2re.cws.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.size(8.dp))
+    Button(
+        onClick = onOpenCapacitorWeb,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+    ) {
+        Text("Open web shell")
     }
     Spacer(Modifier.size(16.dp))
     Text(

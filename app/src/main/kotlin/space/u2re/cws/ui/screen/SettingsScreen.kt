@@ -66,6 +66,7 @@ import space.u2re.cws.network.normalizeHubDispatchUrl
 import space.u2re.cws.network.normalizeResponsesEndpoint
 import space.u2re.cws.network.postJson
 import space.u2re.cws.network.toEndpointCoreConfig
+import space.u2re.cws.CapacitorWebActivity
 
 @Composable
 fun SettingsScreen(
@@ -346,7 +347,10 @@ fun SettingsScreen(
                 apiKey = apiKey,
                 onApiKeyChange = { apiKey = it },
                 testingAi = testingAi,
-                onTestAi = testAi
+                onTestAi = testAi,
+                onOpenCapacitorWeb = {
+                    context.startActivity(Intent(context, CapacitorWebActivity::class.java))
+                }
             )
 
             SettingsTab.ACCESS -> AccessTab(

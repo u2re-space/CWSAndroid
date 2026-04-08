@@ -1,4 +1,6 @@
+import java.io.File
 import org.gradle.api.GradleException
+import org.gradle.api.tasks.Sync
 
 plugins {
     alias(libs.plugins.androidApplication)
@@ -12,7 +14,6 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "space.u2re.cws"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -21,6 +22,19 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
+        }
+    }
+
+    // cws = Kotlin-first standalone package id. cwsp = Capacitor-aligned `appId` (extended CWSP / CrossWord web shell); must match capacitor.config.ts.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("cws") {
+            dimension = "distribution"
+            applicationId = "space.u2re.cws"
+        }
+        create("cwsp") {
+            dimension = "distribution"
+            applicationId = "space.u2re.cwsp"
         }
     }
 
@@ -70,6 +84,8 @@ dependencies {
     // For local development with the LiveKit Compose SDK only.
     // implementation("io.livekit:livekit-compose-components")
 
+    implementation(project(":capacitor-android"))
+    implementation(libs.androidx.appcompat)
     implementation(project(":audioswitch-stub"))
     implementation(libs.livekit.lib)
     implementation(libs.livekit.components)
@@ -100,7 +116,47 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
 }
 
-val launchPackageName = android.defaultConfig.applicationId.orEmpty()
+/** Stage the same merged web tree as CWSP Capacitor (`npm run build:capacitor:web` in runtime/cwsp). */
+fun findCwspDistCapacitor(start: File): File? {
+    var dir: File? = start.canonicalFile
+    val rel = "runtime/cwsp/dist/capacitor"
+    while (dir != null) {
+        val candidate = File(dir, rel)
+        if (candidate.isDirectory) return candidate
+        dir = dir.parentFile
+    }
+    return null
+}
+
+val cwspCapacitorWebDir =
+    findCwspDistCapacitor(rootProject.rootDir)
+        ?: rootProject.file("../../runtime/cwsp/dist/capacitor")
+val capacitorPublicAssets = layout.projectDirectory.dir("src/main/assets/public")
+
+tasks.register<Sync>("syncCwspCapacitorWeb") {
+    group = "build"
+    description = "Copy runtime/cwsp/dist/capacitor into app assets/public for CapacitorWebActivity"
+    onlyIf { cwspCapacitorWebDir.isDirectory }
+    from(cwspCapacitorWebDir)
+    into(capacitorPublicAssets)
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(tasks.named("syncCwspCapacitorWeb"))
+}
+
+/** Which flavor `attachDebug` installs/launches: `cws` (standalone) or `cwsp` (Capacitor package id / extended app). */
+val cwsAdbFlavor: String =
+    (findProperty("cwsAdbFlavor")?.toString()?.trim()?.lowercase() ?: "cws").let {
+        if (it == "cwsp") "cwsp" else "cws"
+    }
+
+val launchPackageName =
+    when (cwsAdbFlavor) {
+        "cwsp" -> "space.u2re.cwsp"
+        else -> "space.u2re.cws"
+    }
+
 val debugAdbIp = "192.168.0.196:5555"
 
 fun Project.adbOutput(vararg args: String): Pair<Int, String> {
@@ -150,25 +206,20 @@ fun Project.resolveAdbSerial(preferredIp: String): String {
 
 tasks.register("attachDebug") {
     group = "android"
-    description = "Attach or launch debug on the first available ADB device."
-    dependsOn("assembleDebug")
+    description =
+        "Install and launch debug on ADB (flavor via -PcwsAdbFlavor=cws|cwsp, default cws). Package: $launchPackageName"
+    val flavorCap = cwsAdbFlavor.replaceFirstChar { it.titlecaseChar() }
+    dependsOn("install${flavorCap}Debug")
 
     doLast {
         val adbSerial = project.resolveAdbSerial(debugAdbIp)
-        val debugApk = project.layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
+        val debugApk =
+            project.layout.buildDirectory
+                .file("outputs/apk/$cwsAdbFlavor/debug/app-$cwsAdbFlavor-debug.apk")
+                .get()
+                .asFile
         if (!debugApk.exists()) {
-            throw GradleException("Debug APK not found: ${debugApk.absolutePath}")
-        }
-
-        val (installCode, installOutput) = adbOutput(
-            "-s",
-            adbSerial,
-            "install",
-            "-r",
-            debugApk.absolutePath
-        )
-        if (installCode != 0) {
-            throw GradleException("adb install failed with code $installCode: $installOutput")
+            throw GradleException("Debug APK not found: ${debugApk.absolutePath} (run install${cwsAdbFlavor.replaceFirstChar { it.titlecaseChar() }}Debug first)")
         }
 
         val (launchCode, launchOutput) = adbOutput(

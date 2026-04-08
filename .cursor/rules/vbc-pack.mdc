@@ -6,7 +6,7 @@ globs:
 
 ## Repo context
 
-- App id: `space.u2re.cws`
+- **Application id** (product flavor): `space.u2re.cws` (**cws**, Kotlin-first standalone) or `space.u2re.cwsp` (**cwsp**, **Capacitor `appId`** — extended CWSP/CrossWord application naming). Kotlin package / namespace stays `space.u2re.cws`.
 - Android workflows live in `package.json` scripts:
   - `npm run android:devices` (show adb devices)
   - `npm run android:log` (logcat filter)

@@ -4,8 +4,10 @@
   "description": "CWS is a multi-device synchronization system with encrypted communication, clipboard sharing, and command forwarding capabilities.",
   "scripts": {
     "build": "./gradlew build",
-    "dev": "./gradlew :app:installDebug",
-    "assemble": "./gradlew :app:assembleDebug",
+    "dev": "./gradlew :app:installCwsDebug",
+    "dev:cwsp": "./gradlew :app:installCwspDebug",
+    "assemble": "./gradlew :app:assembleCwsDebug",
+    "assemble:cwsp": "./gradlew :app:assembleCwspDebug",
     "android:devices": "adb devices -l"
   },
   "dependencies": {
