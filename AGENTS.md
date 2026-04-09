@@ -44,22 +44,22 @@ This is **CWS (CrossWord Sync)** — a Kotlin/Jetpack Compose Android applicatio
 
 | Task | Command |
 |---|---|
-| Assemble debug (standalone `space.u2re.cws`) | `./gradlew :app:assembleCwsDebug` |
-| Assemble debug (Capacitor package `space.u2re.cwsp` — extended CWSP / CrossWord) | `./gradlew :app:assembleCwspDebug` |
+| Assemble debug (**default hybrid** `space.u2re.cwsp` — CWSP + embedded WebView) | `./gradlew :app:assembleCwspDebug` or `npm run build` |
+| Assemble debug (standalone `space.u2re.cws` — Kotlin-only) | `./gradlew :app:assembleCwsDebug` or `npm run assemble:cws` |
 | Lint (cws debug) | `./gradlew :app:lintCwsDebug` |
 | Unit tests | `./gradlew :app:testCwsDebugUnitTest` (or `testCwspDebugUnitTest`) |
 | Full build (compile+test+lint) | `./gradlew build` |
 
-All Gradle commands require `JAVA_HOME` and `ANDROID_HOME` to be set. The `npm run dev` / `assemble` scripts default to the **cws** flavor; use `dev:cwsp` / `assemble:cwsp` for the **Capacitor-based** application id **`space.u2re.cwsp`** (extended CWSP stack).
+All Gradle commands require `JAVA_HOME` and `ANDROID_HOME` to be set. **`npm run dev`** / **`npm run assemble`** / **`npm run build`** default to the **cwsp** hybrid flavor (`space.u2re.cwsp`). Use **`npm run dev:cws`** / **`assemble:cws`** for the Kotlin-only **`space.u2re.cws`** package.
 
 ### Product flavors (`applicationId`)
 
 | Flavor | `applicationId` | Use |
 |--------|------------------|-----|
-| **cws** | `space.u2re.cws` | Standalone CWSAndroid — Kotlin/Compose-first package (default). |
-| **cwsp** | `space.u2re.cwsp` | **Capacitor naming**: same Android `applicationId` as `runtime/cwsp/capacitor.config.ts` `appId` — the more extended application (embedded web shell, CWSP/CrossWord interop, side-by-side with the dedicated Capacitor APK). Launcher strings: `app/src/cwsp/res/values/strings.xml`. |
+| **cwsp** | `space.u2re.cwsp` | **Default hybrid**: same `applicationId` as `runtime/cwsp/capacitor.config.ts` — embedded CWSP WebView + Kotlin (see Settings → Open web shell). |
+| **cws** | `space.u2re.cws` | Kotlin/Compose-first standalone; use `-PcwsAdbFlavor=cws` with `attachDebug` or `npm run dev:cws`. |
 
-`attachDebug` uses **cws** by default; pass `-PcwsAdbFlavor=cwsp` to install/launch the Capacitor-aligned package.
+`attachDebug` uses **cwsp** by default; pass `-PcwsAdbFlavor=cws` to install/launch the Kotlin-only package.
 
 ### CWSP Capacitor (embedded web UI)
 

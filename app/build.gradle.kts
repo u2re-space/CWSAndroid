@@ -145,10 +145,10 @@ tasks.named("preBuild").configure {
     dependsOn(tasks.named("syncCwspCapacitorWeb"))
 }
 
-/** Which flavor `attachDebug` installs/launches: `cws` (standalone) or `cwsp` (Capacitor package id / extended app). */
+/** Which flavor `attachDebug` installs/launches: `cwsp` (hybrid CWSP + WebView, default) or `cws` (Kotlin-only). */
 val cwsAdbFlavor: String =
-    (findProperty("cwsAdbFlavor")?.toString()?.trim()?.lowercase() ?: "cws").let {
-        if (it == "cwsp") "cwsp" else "cws"
+    (findProperty("cwsAdbFlavor")?.toString()?.trim()?.lowercase() ?: "cwsp").let {
+        if (it == "cws") "cws" else "cwsp"
     }
 
 val launchPackageName =
@@ -207,7 +207,7 @@ fun Project.resolveAdbSerial(preferredIp: String): String {
 tasks.register("attachDebug") {
     group = "android"
     description =
-        "Install and launch debug on ADB (flavor via -PcwsAdbFlavor=cws|cwsp, default cws). Package: $launchPackageName"
+        "Install and launch debug on ADB (flavor via -PcwsAdbFlavor=cws|cwsp, default cwsp hybrid). Package: $launchPackageName"
     val flavorCap = cwsAdbFlavor.replaceFirstChar { it.titlecaseChar() }
     dependsOn("install${flavorCap}Debug")
 
