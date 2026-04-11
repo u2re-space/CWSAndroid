@@ -4,8 +4,8 @@
 		"classpath": "com.capacitorjs.plugins.clipboard.ClipboardPlugin"
 	},
 	{
-		"pkg": "capacitor-cws-bridge",
-		"classpath": "space.u2re.cwsp.bridge.CwsBridgePlugin"
+		"pkg": "@capacitor/http",
+		"classpath": "com.getcapacitor.plugin.http.Http"
 	},
 	{
 		"pkg": "@gachlab/capacitor-permissions",

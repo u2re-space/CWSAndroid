@@ -5,8 +5,8 @@ project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/
 include ':capacitor-clipboard'
 project(':capacitor-clipboard').projectDir = new File('../node_modules/@capacitor/clipboard/android')
 
-include ':capacitor-cws-bridge'
-project(':capacitor-cws-bridge').projectDir = new File('../plugins/capacitor-cws-bridge/android')
+include ':capacitor-http'
+project(':capacitor-http').projectDir = new File('../node_modules/@capacitor/http/android')
 
 include ':gachlab-capacitor-permissions'
 project(':gachlab-capacitor-permissions').projectDir = new File('../node_modules/@gachlab/capacitor-permissions/android')

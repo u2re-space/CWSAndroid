@@ -1,4 +1,5 @@
 plugins {
+    // Versions come from the root project plugins { ... apply false } (libs.versions.toml); do not repeat a version here.
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
 }

@@ -5,6 +5,8 @@ import android.webkit.WebView;
 
 import com.getcapacitor.BridgeActivity;
 
+import space.u2re.cws.BuildConfig;
+
 /**
  * Debug builds: allow Chrome/VS Code attach to the Capacitor WebView over ADB
  * ({@code adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>}), see

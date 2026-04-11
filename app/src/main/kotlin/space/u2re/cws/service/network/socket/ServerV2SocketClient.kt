@@ -52,7 +52,9 @@ class ServerV2SocketClient(
             options = SocketIoTunnelOptions(
                 auth = ServerV2WireContract.buildAuth(identity),
                 query = ServerV2WireContract.buildQuery(identity),
-                transports = listOf("websocket", "polling"),
+                // OkHttp often throws "unexpected end of stream" on Engine.IO **polling** (HTTPS long-poll
+                // body cut off by TLS, proxy, or radio). WSS upgrade is a single handshake — skip polling.
+                transports = listOf("websocket"),
                 secure = identity.endpointUrl.startsWith("https://", ignoreCase = true),
                 allowInsecureTls = config.allowInsecureTls,
                 trustedCa = config.trustedCa

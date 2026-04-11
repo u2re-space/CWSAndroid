@@ -9,6 +9,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+apply(from = "../capacitor-cordova-android-plugins/cordova.variables.gradle")
+
 android {
     namespace = "space.u2re.cws"
     compileSdk = 36
@@ -58,6 +60,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.15"
@@ -69,6 +72,12 @@ android {
     }
     lint {
         disable.add("NullSafeMutableLiveData")
+    }
+}
+
+repositories {
+    flatDir {
+        dirs("../capacitor-cordova-android-plugins/src/main/libs", "libs")
     }
 }
 
@@ -85,7 +94,13 @@ dependencies {
     // implementation("io.livekit:livekit-compose-components")
 
     implementation(project(":capacitor-android"))
+    implementation(project(":capacitor-cordova-android-plugins"))
+    implementation(project(":capacitor-clipboard"))
+    implementation(project(":capacitor-cws-bridge"))
+    implementation(project(":gachlab-capacitor-permissions"))
+    implementation(project(":capacitor-native-settings"))
     implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.coordinatorlayout)
     implementation(project(":audioswitch-stub"))
     implementation(libs.livekit.lib)
     implementation(libs.livekit.components)

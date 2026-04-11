@@ -21,7 +21,7 @@ const config: CapacitorConfig = {
     /** Android `applicationId` for the Capacitor-based / extended CWSP app (Kotlin flavor `cwsp`; distinct from standalone `space.u2re.cws`). */
     appId: 'space.u2re.cwsp',
     appName: 'CWSP',
-    webDir: 'dist/capacitor',
+    webDir: '../frontend',
     android: {
         /** Mixed content: https app origin loading http assets (admin iframe, etc.) */
         allowMixedContent: true

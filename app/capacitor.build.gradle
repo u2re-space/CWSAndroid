@@ -10,7 +10,7 @@ android {
 apply from: "../capacitor-cordova-android-plugins/cordova.variables.gradle"
 dependencies {
     implementation project(':capacitor-clipboard')
-    implementation project(':capacitor-cws-bridge')
+    implementation project(':capacitor-http')
     implementation project(':gachlab-capacitor-permissions')
     implementation project(':capacitor-native-settings')
 

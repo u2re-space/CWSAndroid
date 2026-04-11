@@ -1,0 +1,20 @@
+{
+  "name": "capacitor-cws-bridge",
+  "version": "1.0.0",
+  "description": "Unified JS ↔ native bridge for CWSP Capacitor WebView and CWSAndroid (Kotlin)",
+  "type": "module",
+  "main": "noop.mjs",
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "files": [
+    "android",
+    "noop.mjs",
+    "package.json"
+  ]
+}
