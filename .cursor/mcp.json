@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx -y chrome-devtools-mcp@latest"
+    },
+    "vite": {
+      "url": "https://0.0.0.0:443/__mcp/sse"
+    },
+    "echovault": {
+      "args": [
+        "mcp"
+      ],
+      "command": "memory",
+      "type": "stdio"
+    },
+    "pantry": {
+      "args": [
+        "mcp"
+      ],
+      "command": "pantry"
+    }
+  }
+}

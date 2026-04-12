@@ -1,0 +1,108 @@
+# Dependencies
+node_modules/
+vendor/
+venv/
+.venv/
+__pycache__/
+
+# Build outputs
+dist/
+build/
+target/
+bin/
+obj/
+
+# Logs & temp
+*.log
+logs/
+*.tmp
+*.temp
+.cache/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# Git history
+.git/
+
+# Test coverage
+coverage/
+.nyc_output/
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Cursor - не тянуть в контекст
+.cursor/analysis/
+.cursor/plans/
+.cursor/snapshots/
+
+#
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.ico
+*.webp
+*.ico
+*.bin
+*.apk
+*.zip
+*.7z
+*.tar
+*.gz
+*.bz2
+*.rar
+*.iso
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.msi
+*.exe
+*.dll
+*.lib
+*.obj
+*.o
+*.so
+*.a
+*.la
+*.lo
+*.dylib
+*.bundle
+*.class
+*.jar
+*.iml
+
+# Android & Gradle
+.gradle/
+.kotlin/
+app/build/
+local.properties
+*.keystore
+*.jks
+*.hprof
+*.aar
+*.aab
+lint-baseline.xml
+
+# Node & Package Managers
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+.npm/
+
+# Caches
+.eslintcache
+.stylelintcache

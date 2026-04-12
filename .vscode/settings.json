@@ -1,0 +1,15 @@
+{
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "search.exclude": {
+        "**/.gradle": true,
+        "**/.kotlin": true,
+        "**/app/build": true,
+        "**/node_modules": true
+    },
+    "files.watcherExclude": {
+        "**/.gradle/**": true,
+        "**/.kotlin/**": true,
+        "**/app/build/**": true,
+        "**/node_modules/**": true
+    }
+}

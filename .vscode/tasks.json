@@ -1,0 +1,142 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Android: Attach or launch debug (auto device)",
+      "type": "shell",
+      "command": "./gradlew",
+      "args": [
+        ":app:attachDebug"
+      ],
+      "windows": {
+        "command": "gradlew.bat"
+      },
+      "group": "build",
+      "detail": "Assembles and installs debug APK, then launches on first connected ADB device; falls back to 192.168.0.196:5555."
+    },
+    {
+      "label": "Android: Connect 192.168.0.196:5555",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "connect",
+        "192.168.0.196:5555"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Connect 192.168.0.208:5555",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "connect",
+        "192.168.0.208:5555"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Attach or launch debug (192.168.0.196:5555)",
+      "type": "shell",
+      "command": "./gradlew",
+      "args": [
+        ":app:attachDebug",
+        "-PadbSerial=192.168.0.196:5555"
+      ],
+      "windows": {
+        "command": "gradlew.bat"
+      },
+      "group": "build",
+      "detail": "Build, install and launch debug APK on 192.168.0.196:5555."
+    },
+    {
+      "label": "Android: Attach or launch debug (192.168.0.208:5555)",
+      "type": "shell",
+      "command": "./gradlew",
+      "args": [
+        ":app:attachDebug",
+        "-PadbSerial=192.168.0.208:5555"
+      ],
+      "windows": {
+        "command": "gradlew.bat"
+      },
+      "group": "build",
+      "detail": "Build, install and launch debug APK on 192.168.0.208:5555."
+    },
+    {
+      "label": "Android: Attach or launch debug (forced target)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "adb connect \"${input:androidTargetSerial}\" >/dev/null 2>&1 || true; ./gradlew :app:attachDebug -PadbSerial=\"${input:androidTargetSerial}\""
+      ],
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-Command",
+          "adb connect \"${input:androidTargetSerial}\" | Out-Null; .\\gradlew.bat :app:attachDebug \"-PadbSerial=${input:androidTargetSerial}\""
+        ]
+      },
+      "group": "build",
+      "detail": "Connects ADB if needed, then builds, installs and launches debug APK on the given serial/IP:port."
+    },
+    {
+      "label": "Android: Logcat (192.168.0.196:5555)",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "-s",
+        "192.168.0.196:5555",
+        "logcat"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Logcat (192.168.0.208:5555)",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "-s",
+        "192.168.0.208:5555",
+        "logcat"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Android: Connected devices (ADB)",
+      "type": "shell",
+      "command": "adb",
+      "args": [
+        "devices",
+        "-l"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "androidTargetSerial",
+      "type": "command",
+      "command": "extension.commandvariable.remember",
+      "args": {
+        "key": "androidTargetSerial",
+        "default": "${promptStringRemember:androidTargetSerialPrompt}",
+        "transform": {
+          "promptStringRemember": {
+            "androidTargetSerialPrompt": {
+              "key": "androidTargetSerial",
+              "description": "ADB serial/IP:port",
+              "default": "192.168.0.196:5555"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

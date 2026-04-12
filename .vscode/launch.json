@@ -1,0 +1,73 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Android: Attach or Launch Debug (auto device)",
+      "type": "android",
+      "request": "attach",
+      "appSrcRoot": "${workspaceFolder}/app/src/main",
+      "apkFile": "${workspaceFolder}/app/build/outputs/apk/debug/app-debug.apk",
+      "targetDevice": "${input:androidTargetSerial}",
+      "preLaunchTask": "Android: Attach or launch debug (auto device)",
+      "android": {
+        "projectType": "apk"
+      }
+    },
+    {
+      "name": "Android: Attach or Launch Debug (192.168.0.196:5555)",
+      "type": "android",
+      "request": "attach",
+      "appSrcRoot": "${workspaceFolder}/app/src/main",
+      "apkFile": "${workspaceFolder}/app/build/outputs/apk/debug/app-debug.apk",
+      "targetDevice": "192.168.0.196:5555",
+      "preLaunchTask": "Android: Attach or launch debug (192.168.0.196:5555)",
+      "android": {
+        "projectType": "apk"
+      }
+    },
+    {
+      "name": "Android: Attach or Launch Debug (192.168.0.208:5555)",
+      "type": "android",
+      "request": "attach",
+      "appSrcRoot": "${workspaceFolder}/app/src/main",
+      "apkFile": "${workspaceFolder}/app/build/outputs/apk/debug/app-debug.apk",
+      "targetDevice": "192.168.0.208:5555",
+      "preLaunchTask": "Android: Attach or launch debug (192.168.0.208:5555)",
+      "android": {
+        "projectType": "apk"
+      }
+    },
+    {
+      "name": "Android: Attach or Launch Debug (forced target)",
+      "type": "android",
+      "request": "attach",
+      "appSrcRoot": "${workspaceFolder}/app/src/main",
+      "apkFile": "${workspaceFolder}/app/build/outputs/apk/debug/app-debug.apk",
+      "targetDevice": "${input:androidTargetSerial}",
+      "preLaunchTask": "Android: Attach or launch debug (forced target)",
+      "android": {
+        "projectType": "apk"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "androidTargetSerial",
+      "type": "command",
+      "command": "extension.commandvariable.remember",
+      "args": {
+        "key": "androidTargetSerial",
+        "default": "${promptStringRemember:androidTargetSerialPrompt}",
+        "transform": {
+          "promptStringRemember": {
+            "androidTargetSerialPrompt": {
+              "key": "androidTargetSerial",
+              "description": "ADB serial/IP:port",
+              "default": "192.168.0.196:5555"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

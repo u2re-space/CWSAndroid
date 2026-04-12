@@ -1,0 +1,43 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+# NOTE: This file is meant to be copied to ~/.termux/termux-url-opener.
+# This is a tiny launcher; all logic lives in `vbc.sh`.
+#
+# Install `vbc.sh` in one of:
+#   - next to this file
+#   - ~/.termux/vbc.sh
+#   - ~/bin/vbc.sh
+#   - $PREFIX/bin/vbc.sh
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+raw="${1:-}"
+raw="${raw//$'\r'/}"
+
+find_vbc_sh() {
+  local p=""
+  for p in \
+    "$SCRIPT_DIR/vbc.sh" \
+    "$HOME/.termux/vbc.sh" \
+    "$HOME/bin/vbc.sh" \
+    "${PREFIX:-}/bin/vbc.sh"
+  do
+    if [[ -n "$p" && -f "$p" ]]; then
+      printf '%s\n' "$p"
+      return 0
+    fi
+  done
+  if command -v vbc.sh >/dev/null 2>&1; then
+    command -v vbc.sh
+    return 0
+  fi
+  return 1
+}
+
+vbc_sh="$(find_vbc_sh || true)"
+if [[ -z "$vbc_sh" ]]; then
+  echo "Missing vbc.sh. Copy it next to this opener, or to ~/.termux/vbc.sh, ~/bin/vbc.sh, or \$PREFIX/bin/vbc.sh" >&2
+  exit 1
+fi
+
+exec /data/data/com.termux/files/usr/bin/bash "$vbc_sh" url-opener "$raw"

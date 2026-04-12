@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">CWS</string>
+    <string name="accessibility_service_name">CWS clipboard accessibility service</string>
+    <string name="floating_button_service_name">CWS floating control</string>
+    <string name="quick_action_name">CWS quick action</string>
+    <string name="floating_button_label_share">Share</string>
+    <string name="floating_button_label_copy_share">Copy &amp; Share</string>
+    <string name="capacitor_web_title">CrossWord (web)</string>
+</resources>

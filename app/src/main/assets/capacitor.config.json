@@ -1,0 +1,12 @@
+{
+	"appId": "space.u2re.cwsp",
+	"appName": "CWSP",
+	"webDir": "dist/capacitor",
+	"android": {
+		"allowMixedContent": true
+	},
+	"server": {
+		"cleartext": true,
+		"androidScheme": "https"
+	}
+}
