@@ -21,10 +21,6 @@ alwaysApply: true
 - **Архитектура, план**: Claude 4.6 (Sonnet / Opus) / Gemini 3.1 Pro / GPT-5.4
 - **Документации или спецификации**: Claude 4.6 (Sonnet / Opus) / Gemini 3.1 Pro / GPT-5.4 (low или medium thinking)
 
-- Анализ архитектуры: Opus + max thinking
-- Баги, тесты, документация: Haiku
-- Архитектура, план: Sonnet
-
 ## Оптимизация токенов контекста (Token Usage Optimization)
 
 - **Минимизация чтения файлов:** Используй `Grep` или `Glob` вместо `Read` всего файла, когда это возможно, чтобы не засорять контекст. Ограничивай количество строк при чтении объемных файлов.
@@ -66,3 +62,11 @@ alwaysApply: true
 Search and read in:
 - `/home/u2re-dev/U2RE.space/modules/projects/uniform.ts/src/newer/` (internal)
 - `/home/u2re-dev/U2RE.space/runtime/cwsp/endpoint/` (network)
+
+---
+
+## Доступы SSH
+
+- (`U2RE@192.168.0.110` или `U2RE@192.168.0.111`) и/или 
+- (`u2re-dev@192.168.0.200` или `u2re-dev@192.168.0.201`)
+- Для внешки (`u2re-dev@45.147.121.152`) с VDS например

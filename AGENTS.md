@@ -95,3 +95,11 @@ Search and read in:
 - **Баги, тесты, доработки**: Claude 4.5 Haiku / Gemini 3 Flash / GPT-5.3-codex-spark (для экономии токенов и времени на простых задачах)
 - **Архитектура, план**: Claude 4.6 (Sonnet / Opus) / Gemini 3.1 Pro / GPT-5.4
 - **Документации или спецификации**: Claude 4.6 (Sonnet / Opus) / Gemini 3.1 Pro / GPT-5.4 (low или medium thinking)
+
+---
+
+## Доступы SSH
+
+- (`U2RE@192.168.0.110` или `U2RE@192.168.0.111`) и/или 
+- (`u2re-dev@192.168.0.200` или `u2re-dev@192.168.0.201`)
+- Для внешки (`u2re-dev@45.147.121.152`) с VDS например
