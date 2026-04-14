@@ -1,72 +1,133 @@
 ---
-description: Token consumption optimization and output limits
+description: Token optimization, concise output, and low-noise workflow
 globs: "*"
 alwaysApply: true
 ---
 
-# Правила оптимизации Cursor
+# Optimization Rules
 
-## Ограничения output
+## Primary goal
 
-При выполнении ЛЮБОЙ задачи:
-1. Создавай ТОЛЬКО файлы с кодом и тестами
-2. НЕ создавай: BUGFIX*.md, SUMMARY*.md, CHECKLIST*.md, REPORT*.md, FINAL*.md
-3. Формат ответа: одна строка "✅ [задача выполнена]"
-4. Группируй изменения — один файл = один edit
+Minimize token usage, avoid unnecessary context loading, and keep outputs short unless more detail is necessary for correctness.
 
-## Выбор модели
+## Hard rules
 
-- **Анализ архитектуры**: Claude 4.6 (Sonnet / Opus) / GPT-5.4 + max thinking
-- **Баги, тесты, доработки**: Claude 4.5 Haiku / Gemini 3 Flash / GPT-5.3-codex-spark (для экономии токенов и времени на простых задачах)
-- **Архитектура, план**: Claude 4.6 (Sonnet / Opus) / Gemini 3.1 Pro / GPT-5.4
-- **Документации или спецификации**: Claude 4.6 (Sonnet / Opus) / Gemini 3.1 Pro / GPT-5.4 (low или medium thinking)
+### 1) Read narrowly
+- Do not read entire large files unless necessary.
+- Use search tools first (for example: Grep, SemanticSearch, symbol search).
+- When reading a file, restrict to the smallest relevant range.
+- Do not proactively inspect generated, vendor, or build outputs.
 
-## Оптимизация токенов контекста (Token Usage Optimization)
+Examples of low-value context to avoid unless strictly needed:
+- `build/`
+- `.gradle/`
+- generated bundles
+- minified scripts
+- large lockfiles
 
-- **Минимизация чтения файлов:** Используй `Grep` или `Glob` вместо `Read` всего файла, когда это возможно, чтобы не засорять контекст. Ограничивай количество строк при чтении объемных файлов.
-- **Избегай сгенерированных файлов:** Не открывай минифицированные файлы, бандлы, файлы из `.gradle/`, `build/`, `node_modules/`.
-- **Фокус на задаче:** Привлекай в контекст только те файлы, которые непосредственно нужно изменить.
-- **Краткость:** Ответы AI должны быть максимально лаконичными. Меньше рассуждений (за исключением `<thinking>` блоков), больше действий и утилит.
+### 2) Do not duplicate unchanged code
+- Do not print large code blocks that were not modified.
+- Do not restate full files when only a small part changed.
+- Prefer targeted edits over full-file rewrites when practical.
 
----
+### 3) Keep responses compact
+- Default to a short answer.
+- Do not add long introductions, summaries, or explanations unless the user asks for them or they are necessary.
+- After completing a task, prefer:
+  - 1 short confirmation line, or
+  - 2–4 short bullets with only the essential result
 
-## Новые правила
+Good default response shape:
+- what changed
+- what was checked
+- any blocker or risk
 
-- Провести сверку/скан контекстов (pantry и прочие) только по заданному промпту (заданию).
-- Вначале, изучить логи (в частности PM2), они обычно в ~/.pm2/logs.
-- Затем очистить уже старые и/или неактуальные PM2 логи.
-- Можно также сверить логи PM2 по SSH 
-  - (`U2RE@192.168.0.110` или `U2RE@192.168.0.111`) и/или 
-  - (`u2re-dev@192.168.0.200` или `u2re-dev@192.168.0.201`)
-- Также изучить shell/bash/terminal логи (и найти там самое ключевое, желательно в основном от концов лога).
-- Перед запусками, также их очистить (обычно, `clear`). 
-- Также изучить спецификации, как сгенерированные/редактированные, так и BASE для сверки...
-  - Редактировать и/или изменять можно те которых (обычно) разрешено изменять ИИ (если явно не указано, можно менять лишь незначительно, например семантику или синтаксис).
-  - Те спецификации, что не рекомендуются менять для ИИ, обычно лучше редактировать в крайних случаях.
-- После анализа кода, лучше сгенерировать патчи (diff) для кода заранее, после уже применить их.
-- При анализе и изменении кода, не забыть проверить или провести некоторые дополнительные тесты (например, ошибки при построении, при build).
-- Если где-то ошибка в применении патча, снова анализ этого кода, и уже после снова патч и применение.
-- При изменениях **CWSP** `endpoint` (что в `runtime`), при внесении патчей, и тестинге, лучше запустить наборы команд.
-  - `cd /home/u2re-dev/U2RE.space/runtime/cwsp/endpoint`
-  - `pm2 start ecosystem.server.config.cjs --only cwsp --update-env`
-  - `npm run distribute`
-  - А также по SSH в 192.168.0.110 или 192.168.0.111 (пользовательно U2RE)
-    - В директории `C:\Users\U2RE\` найти самый актуальный и провести тоже самое.
-    - `pm2 start ecosystem.server.config.cjs --only cwsp --update-env`
-- И сделать/провести summary в `pantry` (новый или обновлённый контекст). 
+### 4) Create only necessary files
+- Create only files required for implementation, tests, or directly requested deliverables.
+- Do not create auxiliary report files unless the user explicitly asks.
 
----
+Do not create files like:
+- `BUGFIX*.md`
+- `SUMMARY*.md`
+- `CHECKLIST*.md`
+- `REPORT*.md`
+- `FINAL*.md`
 
-## Some specifications
-
-Search and read in:
-- `/home/u2re-dev/U2RE.space/modules/projects/uniform.ts/src/newer/` (internal)
-- `/home/u2re-dev/U2RE.space/runtime/cwsp/endpoint/` (network)
+### 5) Batch edits efficiently
+- Group related changes into as few edits as reasonably possible.
+- Avoid noisy micro-edits when one coherent patch is clearer.
+- Do not touch unrelated files.
 
 ---
 
-## Доступы SSH
+## Operational guidance
 
-- (`U2RE@192.168.0.110` или `U2RE@192.168.0.111`) и/или 
-- (`u2re-dev@192.168.0.200` или `u2re-dev@192.168.0.201`)
-- Для внешки (`u2re-dev@45.147.121.152`) с VDS например
+### Investigate only what is relevant
+- Do not scan all contexts, logs, or external locations by default.
+- Check Pantry, logs, specs, or external paths only when they are relevant to the user’s task.
+
+### Logs-first, when debugging runtime issues
+If the task involves crashes, failed services, runtime regressions, or deployment/debugging:
+
+1. Check the most relevant logs first.
+2. Prioritize recent log tails and the most actionable errors.
+3. Preserve evidence before considering cleanup.
+
+Typical locations:
+- `~/.pm2/logs`
+- relevant shell / terminal history or session logs
+
+### Do not clear logs by default
+- Do not delete or truncate PM2, shell, or service logs unless this is explicitly needed and safe.
+- If cleanup is useful, inspect first, then clean only stale or irrelevant logs.
+
+### Use SSH only when needed
+If local evidence is insufficient and the task requires remote verification, SSH may be used for relevant hosts documented in project instructions.
+
+### Prefer patch-oriented changes
+- Analyze first, then prepare a focused patch.
+- Apply changes only after identifying the exact target.
+- If a patch fails, re-read the affected code narrowly and retry with a corrected patch.
+
+### Validate proportionally
+After code changes, run only the smallest relevant verification:
+- targeted build
+- targeted tests
+- lint, if relevant
+
+Do not run broad verification if a narrower check is sufficient.
+
+---
+
+## Project-specific notes
+
+### CWSP endpoint work
+If the task changes `runtime/cwsp/endpoint`, relevant validation may include the local workflow in that directory, such as build/distribution or PM2 restart steps, but only when necessary for the task.
+
+Path:
+- `/home/u2re-dev/U2RE.space/runtime/cwsp/endpoint`
+
+### Additional relevant code locations
+Consult these only when the task touches them:
+
+- `/home/u2re-dev/U2RE.space/modules/projects/uniform.ts/src/newer/`
+- `/home/u2re-dev/U2RE.space/runtime/cwsp/endpoint/`
+
+---
+
+## Pantry
+If the task results in durable changes, decisions, bug findings, or reusable context, record a concise summary in Pantry according to the project’s main agent instructions.
+
+---
+
+## Response style
+Unless the user requests detail, keep the final response minimal.
+
+Preferred format:
+- `✅ Done`
+- or:
+  - `✅ Done`
+  - `Tests: ...`
+  - `Note: ...`
+
+Avoid long narrative writeups by default.
