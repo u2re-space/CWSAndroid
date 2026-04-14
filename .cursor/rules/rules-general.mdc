@@ -1,6 +1,6 @@
 ---
 description: Canonical repo-wide engineering workflow rule
-globs: "*.ts,*.tsx,*.mjs,*.js,*.scss,*.css"
+globs: *.ts,*.tsx,*.mjs,*.js,*.scss,*.css
 alwaysApply: false
 ---
 

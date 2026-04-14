@@ -1,6 +1,6 @@
 ---
 description: Canonical CSS/SCSS refactor and architecture rule
-globs: "*.scss,*.css,*.sass"
+globs: *.scss,*.css,*.sass
 alwaysApply: false
 ---
 

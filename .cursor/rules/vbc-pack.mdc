@@ -1,7 +1,6 @@
 ---
 description: VBC pack workflow (Android + ADB + Termux + Windows) for this repo
-globs:
-  - "**/*"
+globs: **/*
 ---
 
 ## Repo context

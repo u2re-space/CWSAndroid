@@ -1,6 +1,6 @@
 ---
 description: Canonical TS/JS consolidation and safety rule
-globs: "*.ts,*.tsx,*.mjs,*.js"
+globs: *.ts,*.tsx,*.mjs,*.js
 alwaysApply: false
 ---
 
