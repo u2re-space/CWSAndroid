@@ -100,10 +100,10 @@ class DaemonTransportRuntime(
             state = lastState,
             stateDetail = lastDetail,
             endpoint = activeEndpoint,
-            candidateState = legacyDiagnostics?.candidateState ?: if (v2Diagnostics != null) "socketio" else null,
-            activeCandidate = legacyDiagnostics?.activeCandidate ?: v2Diagnostics?.activeTransport,
-            candidateList = legacyDiagnostics?.candidateListText ?: v2Diagnostics?.endpoint,
-            lastError = legacyDiagnostics?.lastFailureReason ?: v2Diagnostics?.lastDetail
+            candidateState = v2Diagnostics?.candidateState ?: legacyDiagnostics?.candidateState ?: if (v2Diagnostics != null) "1/1" else null,
+            activeCandidate = v2Diagnostics?.activeCandidate ?: legacyDiagnostics?.activeCandidate ?: v2Diagnostics?.activeTransport,
+            candidateList = v2Diagnostics?.candidateList ?: legacyDiagnostics?.candidateListText ?: v2Diagnostics?.endpoint,
+            lastError = v2Diagnostics?.lastDetail ?: legacyDiagnostics?.lastFailureReason
         )
     }
 

@@ -80,6 +80,7 @@ private const val PREF_NAME_LEGACY = "settings_v1_legacy"
 private const val DEFAULT_APP_CONFIG_ROOT = "/storage/emulated/0/AppConfig"
 private const val DEFAULT_APP_CONFIG_PATH = "fs:$DEFAULT_APP_CONFIG_ROOT/config"
 private const val DEFAULT_APP_STORAGE_PATH = DEFAULT_APP_CONFIG_ROOT
+private const val DEFAULT_APP_TRUSTED_CA_PATH = "fs:$DEFAULT_APP_CONFIG_ROOT/https/rootCA.crt"
 
 private fun randomId(): String = "ns-${UUID.randomUUID().toString().replace("-", "").take(8)}"
 private fun isGeneratedLegacyDeviceId(value: String): Boolean = value.trim().lowercase().startsWith("ns-")
@@ -88,7 +89,8 @@ private fun normalizePort(value: Int, fallback: Int): Int = if (value > 0) value
 private fun applyDefaultAppConfigPaths(settings: Settings): Settings {
     val nextConfigPath = settings.configPath.trim().ifBlank { DEFAULT_APP_CONFIG_PATH }
     val nextStoragePath = settings.storagePath.trim().ifBlank { DEFAULT_APP_STORAGE_PATH }
-    return settings.copy(configPath = nextConfigPath, storagePath = nextStoragePath)
+    val nextTrustedCa = settings.reverseTrustedCa.trim().ifBlank { DEFAULT_APP_TRUSTED_CA_PATH }
+    return settings.copy(configPath = nextConfigPath, storagePath = nextStoragePath, reverseTrustedCa = nextTrustedCa)
 }
 
 private fun defaultSettings(): Settings = Settings(
@@ -108,7 +110,7 @@ private fun defaultSettings(): Settings = Settings(
     apiEndpoint = "",
     apiKey = "",
     allowInsecureTls = false,
-    reverseTrustedCa = "",
+    reverseTrustedCa = DEFAULT_APP_TRUSTED_CA_PATH,
     clipboardSync = true,
     contactsSync = false,
     smsSync = false,

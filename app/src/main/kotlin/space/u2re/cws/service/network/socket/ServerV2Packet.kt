@@ -108,15 +108,24 @@ object ServerV2PacketCodec {
             "response" -> "result"
             "signal", "notify", "redirect" -> "act"
             "resolve" -> "result"
-            "error" -> "result"
+            "error" -> "error"
             "ack" -> "result"
             else -> raw.trim().ifBlank { "ask" }
         }
     }
 
+    private fun mapPacketOpToFrameOp(raw: String): String {
+        return when (raw.trim().lowercase()) {
+            "ask" -> "request"
+            "result", "resolve" -> "response"
+            "error" -> "error"
+            else -> raw.trim().ifBlank { "act" }
+        }
+    }
+
     fun toMap(packet: ServerV2Packet): Map<String, Any?> = linkedMapOf<String, Any?>().apply {
         val normalizedOp = normalizeCoordinatorOp(packet.op)
-        put("op", normalizedOp)
+        put("op", mapPacketOpToFrameOp(normalizedOp))
         if (packet.what.isNotBlank()) {
             put("what", packet.what)
             put("type", packet.what)

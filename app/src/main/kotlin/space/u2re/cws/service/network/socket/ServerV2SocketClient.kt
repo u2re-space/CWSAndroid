@@ -1,6 +1,11 @@
 package space.u2re.cws.network
 
 import java.net.URI
+import java.net.URLEncoder
+import java.io.FileInputStream
+import java.security.KeyStore
+import java.security.SecureRandom
+import java.security.cert.CertificateFactory
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -9,11 +14,23 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509TrustManager
 
 data class ServerV2SocketDiagnostics(
     val connected: Boolean,
     val activeTransport: String,
     val endpoint: String,
+    val candidateState: String,
+    val activeCandidate: String,
+    val candidateList: String,
     val lastState: String,
     val lastDetail: String?
 )
@@ -23,16 +40,13 @@ class ServerV2SocketClient(
     private val onPacket: (ServerV2Packet) -> Unit = {},
     private val onState: (String, String?) -> Unit = { _, _ -> }
 ) {
-    private companion object {
-        private val PREFERRED_TRANSPORTS = listOf("websocket", "polling")
-    }
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var reconnectMonitorJob: Job? = null
     private var lastReconnectAtMs: Long = 0L
-    private val reconnectEveryMs: Long = 1_000L
+    private val reconnectEveryMs: Long = 1_500L
 
-    private var socket: SocketIoTunnelClient? = null
+    private var client: OkHttpClient? = null
+    private var socket: WebSocket? = null
     private val endpointCandidates = ServerV2WireContract.resolveSocketEndpointCandidates(config)
     private var endpointIndex = 0
     private val tlsRejectedHosts = mutableSetOf<String>()
@@ -56,8 +70,8 @@ class ServerV2SocketClient(
         reconnectMonitorJob?.cancel()
         reconnectMonitorJob = scope.launch {
             while (isActive && started) {
-                val ok = socket?.isConnected() == true
-                if (!ok) {
+                val healthy = connected && socket != null
+                if (!healthy) {
                     val now = System.currentTimeMillis()
                     if (now - lastReconnectAtMs >= reconnectEveryMs) {
                         lastReconnectAtMs = now
@@ -79,8 +93,10 @@ class ServerV2SocketClient(
         connected = false
         reconnectMonitorJob?.cancel()
         reconnectMonitorJob = null
-        socket?.stop()
+        socket?.close(1001, "stop")
         socket = null
+        client?.dispatcher?.executorService?.shutdown()
+        client = null
         updateState("stopped", "server-v2 socket stopped")
     }
 
@@ -95,12 +111,15 @@ class ServerV2SocketClient(
         )
     }
 
-    fun isConnected(): Boolean = connected && socket?.isConnected() == true
+    fun isConnected(): Boolean = connected && socket != null
 
     fun getDiagnostics(): ServerV2SocketDiagnostics = ServerV2SocketDiagnostics(
         connected = isConnected(),
-        activeTransport = "socketio",
+        activeTransport = "ws",
         endpoint = currentEndpoint(),
+        candidateState = "${endpointIndex + 1}/${if (endpointCandidates.isEmpty()) 1 else endpointCandidates.size}",
+        activeCandidate = currentEndpoint(),
+        candidateList = if (endpointCandidates.isEmpty()) currentEndpoint() else endpointCandidates.joinToString(","),
         lastState = lastState,
         lastDetail = lastDetail
     )
@@ -116,8 +135,7 @@ class ServerV2SocketClient(
             timestamp = if (packet.timestamp > 0L) packet.timestamp else System.currentTimeMillis()
         )
         return try {
-            active.send("data", ServerV2PacketCodec.encode(normalized))
-            true
+            active.send(ServerV2PacketCodec.encode(normalized))
         } catch (_: Exception) {
             false
         }
@@ -172,44 +190,137 @@ class ServerV2SocketClient(
 
     private fun restartSocket(rotate: Boolean) {
         if (rotate) advanceEndpoint()
-        socket?.stop()
+        socket?.close(1001, "reconnect")
+        socket = null
         val identity = currentIdentity()
-        socket = SocketIoTunnelClient(
-            serverUrl = identity.endpointUrl,
-            namespace = null,
-            onMessage = { raw ->
-                val packet = ServerV2PacketCodec.decode(raw) ?: return@SocketIoTunnelClient
+        val endpoint = toCanonicalWsUrl(identity.endpointUrl, identity)
+        if (client == null) {
+            client = buildSocketClient()
+        }
+        updateState("connecting", endpoint)
+        val request = Request.Builder().url(endpoint).build()
+        socket = client?.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (webSocket != socket) return
+                connected = true
+                updateState("connected", endpoint)
+                hello()
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                if (webSocket != socket) return
+                val packet = ServerV2PacketCodec.decode(text) ?: return
                 onPacket(packet)
-            },
-            options = SocketIoTunnelOptions(
-                auth = ServerV2WireContract.buildAuth(identity),
-                query = ServerV2WireContract.buildQuery(identity),
-                // Prefer websocket while retaining polling fallback for strict/mobile TLS edges.
-                transports = PREFERRED_TRANSPORTS,
-                secure = identity.endpointUrl.startsWith("https://", ignoreCase = true),
-                allowInsecureTls = config.allowInsecureTls,
-                trustedCa = config.trustedCa
-            ),
-            onState = { event, detail ->
-                connected = event == "connected" || event == "reconnect"
-                updateState(event, detail)
-                if (event == "connected" || event == "reconnect") {
-                    hello()
+            }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                if (webSocket != socket) return
+                connected = false
+                updateState("closing", "$endpoint code=$code reason=$reason")
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (webSocket != socket) return
+                connected = false
+                updateState("closed", "$endpoint code=$code reason=$reason")
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (webSocket != socket) return
+                connected = false
+                val details = listOfNotNull(
+                    endpoint,
+                    t.message,
+                    response?.code?.let { "http=$it" }
+                ).joinToString(" | ")
+                updateState("failed", details)
+                if (isTlsHandshakeFailure(details) && started) {
+                    val fromEndpoint = currentEndpoint()
+                    restartSocket(rotate = true)
+                    updateState(
+                        "tls-fallback",
+                        "tls handshake failed; rotating endpoint $fromEndpoint -> ${currentEndpoint()}"
+                    )
                 }
             }
-        )
-        socket?.start()
+        })
     }
 
     private fun maybeMarkTlsRejectedEndpoint(detail: String?) {
         val normalized = detail?.lowercase()?.trim().orEmpty()
-        if (!normalized.contains("unexpected end of stream")) return
+        if (!isTlsHandshakeFailure(normalized) && !normalized.contains("unexpected end of stream")) return
         val endpoint = currentEndpoint()
         if (!isSecureSocketScheme(endpoint)) return
         val host = endpointHost(endpoint)
         if (host.isNotBlank()) {
             tlsRejectedHosts.add(host)
         }
+    }
+
+    private fun isTlsHandshakeFailure(detail: String?): Boolean {
+        val normalized = detail?.lowercase()?.trim().orEmpty()
+        if (normalized.isBlank()) return false
+        return normalized.contains("trust anchor for certification path not found") ||
+            normalized.contains("certpathvalidatorexception") ||
+            normalized.contains("unable to find valid certification path") ||
+            normalized.contains("pkix path building failed") ||
+            normalized.contains("certificate_unknown") ||
+            normalized.contains("handshake") ||
+            normalized.contains("ssl")
+    }
+
+    private fun buildSocketClient(): OkHttpClient {
+        val builder = OkHttpClient.Builder()
+            .retryOnConnectionFailure(true)
+
+        if (config.allowInsecureTls) {
+            val trustAllManager = object : X509TrustManager {
+                override fun checkClientTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) = Unit
+                override fun checkServerTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) = Unit
+                override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = emptyArray()
+            }
+            val sslContext = SSLContext.getInstance("TLS")
+            sslContext.init(null, arrayOf<TrustManager>(trustAllManager), SecureRandom())
+            builder.sslSocketFactory(sslContext.socketFactory, trustAllManager)
+            builder.hostnameVerifier { _, _ -> true }
+            return builder.build()
+        }
+
+        val trustedCaPath = resolveTrustedCaPath(config.trustedCa)
+        if (trustedCaPath.isNotBlank()) {
+            runCatching {
+                val trustManager = trustManagerFromCustomCa(trustedCaPath)
+                val sslContext = SSLContext.getInstance("TLS")
+                sslContext.init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
+                builder.sslSocketFactory(sslContext.socketFactory, trustManager)
+            }.onFailure { error ->
+                updateState("tls-ca-load-failed", "${trustedCaPath}: ${error.message}")
+            }
+        }
+        return builder.build()
+    }
+
+    private fun resolveTrustedCaPath(raw: String?): String {
+        val value = raw?.trim().orEmpty()
+        if (value.isBlank()) return ""
+        if (value.startsWith("fs:", ignoreCase = true)) return value.substring(3).trim()
+        if (value.startsWith("file:", ignoreCase = true)) return value.removePrefix("file:").trim()
+        return value
+    }
+
+    private fun trustManagerFromCustomCa(path: String): X509TrustManager {
+        val certFactory = CertificateFactory.getInstance("X.509")
+        val certificate = FileInputStream(path).use { stream ->
+            certFactory.generateCertificate(stream)
+        }
+        val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+            load(null, null)
+            setCertificateEntry("cws-custom-ca", certificate)
+        }
+        val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+        trustManagerFactory.init(keyStore)
+        val trustManager = trustManagerFactory.trustManagers.firstOrNull { it is X509TrustManager } as? X509TrustManager
+        return trustManager ?: throw IllegalStateException("No X509 trust manager for custom CA")
     }
 
     private fun shouldSkipEndpoint(endpoint: String): Boolean {
@@ -229,4 +340,51 @@ class ServerV2SocketClient(
             ""
         }
     }
+
+    private fun toCanonicalWsUrl(endpoint: String, identity: ServerV2WireIdentity): String {
+        val source = try {
+            URI(endpoint)
+        } catch (_: Exception) {
+            null
+        }
+        if (source == null) {
+            return "ws://127.0.0.1:8080/ws"
+        }
+        val scheme = when (source.scheme?.lowercase()) {
+            "https", "wss" -> "wss"
+            else -> "ws"
+        }
+        val host = source.host?.takeIf { it.isNotBlank() } ?: "127.0.0.1"
+        val port = if (source.port > 0) source.port else if (scheme == "wss") 8443 else 8080
+        val path = source.path?.takeIf { it.isNotBlank() && it != "/" } ?: "/ws"
+
+        val query = linkedMapOf<String, String>()
+        source.query?.split("&")?.forEach { part ->
+            val key = part.substringBefore("=").trim()
+            val value = part.substringAfter("=", "").trim()
+            if (key.isNotBlank()) query[key] = value
+        }
+        ServerV2WireContract.buildQuery(identity).forEach { (key, value) ->
+            if (key.isNotBlank() && value.isNotBlank()) query[key] = value
+        }
+        if (identity.userKey.isNotBlank()) {
+            query["token"] = identity.userKey
+            query["airpadToken"] = identity.userKey
+        }
+        val renderedQuery = query.entries
+            .filter { it.key.isNotBlank() && it.value.isNotBlank() }
+            .joinToString("&") { "${urlEncode(it.key)}=${urlEncode(it.value)}" }
+
+        return URI(
+            scheme,
+            null,
+            host,
+            port,
+            path,
+            renderedQuery.ifBlank { null },
+            null
+        ).toString()
+    }
+
+    private fun urlEncode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
 }

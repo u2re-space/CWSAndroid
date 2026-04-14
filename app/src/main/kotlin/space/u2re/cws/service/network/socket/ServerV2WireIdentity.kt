@@ -15,12 +15,19 @@ data class ServerV2WireIdentity(
 }
 
 object ServerV2WireContract {
+    private fun sanitizeWireIdentity(value: String): String {
+        return value
+            .trim()
+            .trim('|', ',', ';')
+            .replace(Regex("\\s+"), "")
+    }
+
     fun resolve(config: EndpointCoreConfig): ServerV2WireIdentity {
         val userId = normalizeNodeId(config.userId.ifBlank { config.deviceId }).ifBlank {
-            config.userId.ifBlank { config.deviceId }.trim()
+            sanitizeWireIdentity(config.userId.ifBlank { config.deviceId })
         }
         val deviceId = normalizeNodeId(config.deviceId.ifBlank { config.userId }).ifBlank {
-            config.deviceId.ifBlank { config.userId }.trim()
+            sanitizeWireIdentity(config.deviceId.ifBlank { config.userId })
         }
         val clientId = normalizeNodeId(userId.ifBlank { deviceId }).ifBlank { "android-client" }
         val socketEndpoint = resolveSocketEndpointBase(config)
@@ -74,11 +81,12 @@ object ServerV2WireContract {
                 rawPath.startsWith("/socket.io/", ignoreCase = true) -> "/"
                 else -> rawPath.ifBlank { "/" }
             }
+            val cleanedQuery = sanitizeSocketEndpointQuery(uri.rawQuery)
             URI(
                 uri.scheme,
                 uri.rawAuthority,
                 normalizedPath,
-                uri.rawQuery,
+                cleanedQuery,
                 uri.rawFragment
             ).toString()
         } catch (_: Exception) {
@@ -105,7 +113,12 @@ object ServerV2WireContract {
         val fragment = uri.rawFragment
 
         fun normalizedVariant(targetScheme: String, defaultPort: Int): String {
-            val resolvedPort = if (uri.port > 0) uri.port else defaultPort
+            val resolvedPort = resolveVariantPort(
+                sourceScheme = scheme,
+                sourcePort = uri.port,
+                targetScheme = targetScheme,
+                targetDefaultPort = defaultPort
+            )
             return normalizeSocketEndpoint(
                 URI(targetScheme, null, host, resolvedPort, path, query, fragment).toString()
             )
@@ -149,9 +162,45 @@ object ServerV2WireContract {
         return out.filter { it.isNotBlank() }
     }
 
+    private fun sanitizeSocketEndpointQuery(rawQuery: String?): String? {
+        if (rawQuery.isNullOrBlank()) return null
+        val blockedKeys = setOf("eio", "transport", "sid", "j", "t")
+        val sanitized = rawQuery
+            .split("&")
+            .mapNotNull { token ->
+                val key = token.substringBefore("=").trim()
+                if (key.isBlank()) return@mapNotNull null
+                if (blockedKeys.contains(key.lowercase())) return@mapNotNull null
+                token
+            }
+        return sanitized.joinToString("&").ifBlank { null }
+    }
+
+    private fun isSecureScheme(scheme: String): Boolean = scheme == "https" || scheme == "wss"
+
+    private fun resolveVariantPort(
+        sourceScheme: String,
+        sourcePort: Int,
+        targetScheme: String,
+        targetDefaultPort: Int
+    ): Int {
+        if (sourcePort <= 0) return targetDefaultPort
+        val sourceSecure = isSecureScheme(sourceScheme)
+        val targetSecure = isSecureScheme(targetScheme)
+        if (sourceSecure == targetSecure) return sourcePort
+        return when (sourcePort) {
+            8443 -> 8080
+            8080 -> 8443
+            443 -> 80
+            80 -> 443
+            else -> sourcePort
+        }
+    }
+
     fun normalizeNodeId(value: String?): String {
-        return EndpointIdentity.bestRouteTarget(value).ifBlank {
-            value?.trim().orEmpty()
+        val sanitized = sanitizeWireIdentity(value.orEmpty())
+        return EndpointIdentity.bestRouteTarget(sanitized).ifBlank {
+            sanitized
         }
     }
 

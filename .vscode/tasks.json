@@ -6,13 +6,14 @@
       "type": "shell",
       "command": "./gradlew",
       "args": [
-        ":app:attachDebug"
+        ":app:attachDebug",
+        "-PcwsAdbFlavor=cws"
       ],
       "windows": {
         "command": "gradlew.bat"
       },
       "group": "build",
-      "detail": "Assembles and installs debug APK, then launches on first connected ADB device; falls back to 192.168.0.196:5555."
+      "detail": "Assembles and installs native CWS debug APK, then launches on first connected ADB device; falls back to 192.168.0.196:5555."
     },
     {
       "label": "Android: Connect 192.168.0.196:5555",
@@ -47,13 +48,14 @@
       "command": "./gradlew",
       "args": [
         ":app:attachDebug",
-        "-PadbSerial=192.168.0.196:5555"
+        "-PadbSerial=192.168.0.196:5555",
+        "-PcwsAdbFlavor=cws"
       ],
       "windows": {
         "command": "gradlew.bat"
       },
       "group": "build",
-      "detail": "Build, install and launch debug APK on 192.168.0.196:5555."
+      "detail": "Build, install and launch native CWS debug APK on 192.168.0.196:5555."
     },
     {
       "label": "Android: Sync AppConfig (192.168.0.196:5555)",
@@ -61,19 +63,19 @@
       "command": "bash",
       "args": [
         "-lc",
-        "set -e; adb connect 192.168.0.196:5555 >/dev/null 2>&1 || true; adb -s 192.168.0.196:5555 shell \"mkdir -p /storage/emulated/0/AppConfig/config /storage/emulated/0/AppConfig/https\"; for f in clients.json gateways.json network.json portable-endpoint.json portable-core.json; do src=\"${workspaceFolder}/../cwsp/endpoint/config/$f\"; if [ -f \"$src\" ]; then adb -s 192.168.0.196:5555 push \"$src\" \"/storage/emulated/0/AppConfig/config/$f\" >/dev/null; fi; done"
+        "set -e; adb connect 192.168.0.196:5555 >/dev/null 2>&1 || true; adb -s 192.168.0.196:5555 shell \"mkdir -p /storage/emulated/0/AppConfig/config /storage/emulated/0/AppConfig/https\"; for f in clients.json gateways.json network.json portable-endpoint.json portable-core.json; do src=\"${workspaceFolder}/../cwsp/endpoint/config/$f\"; if [ -f \"$src\" ]; then adb -s 192.168.0.196:5555 push \"$src\" \"/storage/emulated/0/AppConfig/config/$f\" >/dev/null; fi; done; for f in rootCA.crt multi.crt multi.key server.cnf; do src=\"${workspaceFolder}/../cwsp/endpoint/https/local/$f\"; if [ -f \"$src\" ]; then adb -s 192.168.0.196:5555 push \"$src\" \"/storage/emulated/0/AppConfig/https/$f\" >/dev/null; fi; done"
       ],
       "windows": {
         "command": "powershell",
         "args": [
           "-NoProfile",
           "-Command",
-          "adb connect \"192.168.0.196:5555\" | Out-Null; adb -s \"192.168.0.196:5555\" shell \"mkdir -p /storage/emulated/0/AppConfig/config /storage/emulated/0/AppConfig/https\"; $files = @('clients.json','gateways.json','network.json','portable-endpoint.json','portable-core.json'); foreach ($f in $files) { $src = Join-Path \"${workspaceFolder}/../cwsp/endpoint/config\" $f; if (Test-Path $src) { adb -s \"192.168.0.196:5555\" push $src \"/storage/emulated/0/AppConfig/config/$f\" | Out-Null } }"
+          "adb connect \"192.168.0.196:5555\" | Out-Null; adb -s \"192.168.0.196:5555\" shell \"mkdir -p /storage/emulated/0/AppConfig/config /storage/emulated/0/AppConfig/https\"; $files = @('clients.json','gateways.json','network.json','portable-endpoint.json','portable-core.json'); foreach ($f in $files) { $src = Join-Path \"${workspaceFolder}/../cwsp/endpoint/config\" $f; if (Test-Path $src) { adb -s \"192.168.0.196:5555\" push $src \"/storage/emulated/0/AppConfig/config/$f\" | Out-Null } }; $tls = @('rootCA.crt','multi.crt','multi.key','server.cnf'); foreach ($f in $tls) { $src = Join-Path \"${workspaceFolder}/../cwsp/endpoint/https/local\" $f; if (Test-Path $src) { adb -s \"192.168.0.196:5555\" push $src \"/storage/emulated/0/AppConfig/https/$f\" | Out-Null } }"
         ]
       },
       "group": "build",
       "problemMatcher": [],
-      "detail": "Creates /storage/emulated/0/AppConfig/{config,https} and syncs endpoint config JSON files."
+      "detail": "Creates /storage/emulated/0/AppConfig/{config,https} and syncs stock config JSON + TLS files."
     },
     {
       "label": "Android: Attach or launch debug (192.168.0.208:5555)",
@@ -81,13 +83,14 @@
       "command": "./gradlew",
       "args": [
         ":app:attachDebug",
-        "-PadbSerial=192.168.0.208:5555"
+        "-PadbSerial=192.168.0.208:5555",
+        "-PcwsAdbFlavor=cws"
       ],
       "windows": {
         "command": "gradlew.bat"
       },
       "group": "build",
-      "detail": "Build, install and launch debug APK on 192.168.0.208:5555."
+      "detail": "Build, install and launch native CWS debug APK on 192.168.0.208:5555."
     },
     {
       "label": "Android: Attach or launch debug (forced target)",
@@ -95,18 +98,18 @@
       "command": "bash",
       "args": [
         "-lc",
-        "adb connect \"${input:androidTargetSerial}\" >/dev/null 2>&1 || true; ./gradlew :app:attachDebug -PadbSerial=\"${input:androidTargetSerial}\""
+        "adb connect \"${input:androidTargetSerial}\" >/dev/null 2>&1 || true; ./gradlew :app:attachDebug -PadbSerial=\"${input:androidTargetSerial}\" -PcwsAdbFlavor=cws"
       ],
       "windows": {
         "command": "powershell",
         "args": [
           "-NoProfile",
           "-Command",
-          "adb connect \"${input:androidTargetSerial}\" | Out-Null; .\\gradlew.bat :app:attachDebug \"-PadbSerial=${input:androidTargetSerial}\""
+          "adb connect \"${input:androidTargetSerial}\" | Out-Null; .\\gradlew.bat :app:attachDebug \"-PadbSerial=${input:androidTargetSerial}\" -PcwsAdbFlavor=cws"
         ]
       },
       "group": "build",
-      "detail": "Connects ADB if needed, then builds, installs and launches debug APK on the given serial/IP:port."
+      "detail": "Connects ADB if needed, then builds, installs and launches native CWS debug APK on the given serial/IP:port."
     },
     {
       "label": "Android: Logcat (192.168.0.196:5555)",
