@@ -39,6 +39,11 @@
     {
       "label": "Android: Attach or launch debug (192.168.0.196:5555)",
       "type": "shell",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Android: Connect 192.168.0.196:5555",
+        "Android: Sync AppConfig (192.168.0.196:5555)"
+      ],
       "command": "./gradlew",
       "args": [
         ":app:attachDebug",
@@ -49,6 +54,26 @@
       },
       "group": "build",
       "detail": "Build, install and launch debug APK on 192.168.0.196:5555."
+    },
+    {
+      "label": "Android: Sync AppConfig (192.168.0.196:5555)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "set -e; adb connect 192.168.0.196:5555 >/dev/null 2>&1 || true; adb -s 192.168.0.196:5555 shell \"mkdir -p /storage/emulated/0/AppConfig/config /storage/emulated/0/AppConfig/https\"; for f in clients.json gateways.json network.json portable-endpoint.json portable-core.json; do src=\"${workspaceFolder}/../cwsp/endpoint/config/$f\"; if [ -f \"$src\" ]; then adb -s 192.168.0.196:5555 push \"$src\" \"/storage/emulated/0/AppConfig/config/$f\" >/dev/null; fi; done"
+      ],
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-Command",
+          "adb connect \"192.168.0.196:5555\" | Out-Null; adb -s \"192.168.0.196:5555\" shell \"mkdir -p /storage/emulated/0/AppConfig/config /storage/emulated/0/AppConfig/https\"; $files = @('clients.json','gateways.json','network.json','portable-endpoint.json','portable-core.json'); foreach ($f in $files) { $src = Join-Path \"${workspaceFolder}/../cwsp/endpoint/config\" $f; if (Test-Path $src) { adb -s \"192.168.0.196:5555\" push $src \"/storage/emulated/0/AppConfig/config/$f\" | Out-Null } }"
+        ]
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Creates /storage/emulated/0/AppConfig/{config,https} and syncs endpoint config JSON files."
     },
     {
       "label": "Android: Attach or launch debug (192.168.0.208:5555)",

@@ -93,8 +93,10 @@ internal fun isAnyTargetMatch(targets: List<String>, localDeviceId: String, sett
 internal fun extractReplyTarget(payload: JsonObject): String? {
     return extractString(payload["byId"])
         ?: extractString(payload["from"])
+        ?: extractString(payload["sender"])
         ?: nestedPayloadObject(payload)?.let(::extractReplyTarget)
         ?: payload["nodes"]?.takeIf { it.isJsonArray }?.asJsonArray?.firstOrNull()?.let(::extractString)
+        ?: payload["destinations"]?.takeIf { it.isJsonArray }?.asJsonArray?.firstOrNull()?.let(::extractString)
 }
 
 internal fun sendResultPacket(
@@ -110,9 +112,14 @@ internal fun sendResultPacket(
         ServerV2Packet(
             op = "result",
             what = action,
+            type = action,
+            purpose = inferPurposeFromAction(action),
+            protocol = "socket",
             result = result,
             uuid = requestUuid,
-            nodes = listOf(replyTarget)
+            nodes = listOf(replyTarget),
+            destinations = listOf(replyTarget),
+            sender = extractString(requestPayload["sender"]) ?: extractString(requestPayload["byId"]) ?: extractString(requestPayload["from"])
         )
     )
 }
@@ -125,9 +132,12 @@ internal fun extractTarget(payload: JsonObject): String? {
         ?: extractString(payload["device"])
         ?: extractString(payload["to"])
         ?: payload["nodes"]?.takeIf { it.isJsonArray }?.asJsonArray?.firstOrNull()?.let(::extractString)
+        ?: payload["destinations"]?.takeIf { it.isJsonArray }?.asJsonArray?.firstOrNull()?.let(::extractString)
+        ?: payload["ids"]?.takeIf { it.isJsonArray }?.asJsonArray?.firstOrNull()?.let(::extractString)
         ?: nestedPayloadObject(payload)?.let(::extractTarget)
         ?: extractString(payload["byId"])
         ?: extractString(payload["from"])
+        ?: extractString(payload["sender"])
 }
 
 internal fun extractTargetCandidates(payload: JsonObject): List<String> {
@@ -144,19 +154,38 @@ internal fun extractTargetCandidates(payload: JsonObject): List<String> {
     payload["nodes"]?.takeIf { it.isJsonArray }?.asJsonArray?.forEach { element ->
         append(extractString(element))
     }
+    payload["destinations"]?.takeIf { it.isJsonArray }?.asJsonArray?.forEach { element ->
+        append(extractString(element))
+    }
+    payload["ids"]?.takeIf { it.isJsonArray }?.asJsonArray?.forEach { element ->
+        append(extractString(element))
+    }
     nestedPayloadObject(payload)?.let { nested ->
         extractTargetCandidates(nested).forEach(out::add)
     }
     append(extractString(payload["byId"]))
     append(extractString(payload["from"]))
+    append(extractString(payload["sender"]))
     return out.toList()
 }
 
 internal fun extractAction(payload: JsonObject, fallbackType: String): String {
-    return extractString(payload["what"])?.lowercase()
+    val nested = nestedPayloadObject(payload)
+    val candidate = extractString(payload["what"])?.lowercase()
         ?: extractString(payload["action"])?.lowercase()
         ?: extractString(payload["type"])?.lowercase()
+        ?: extractString(payload["op"])?.lowercase()
+        ?: extractString(nested?.get("what"))?.lowercase()
+        ?: extractString(nested?.get("action"))?.lowercase()
+        ?: extractString(nested?.get("type"))?.lowercase()
+        ?: extractString(nested?.get("op"))?.lowercase()
         ?: fallbackType.lowercase()
+    return when (candidate) {
+        "request", "ask" -> extractString(payload["what"])?.lowercase() ?: extractString(nested?.get("op"))?.lowercase() ?: candidate
+        "response", "result", "resolve", "error", "ack" -> extractString(payload["what"])?.lowercase() ?: fallbackType.lowercase()
+        "signal", "notify", "redirect", "act" -> extractString(payload["what"])?.lowercase() ?: extractString(nested?.get("op"))?.lowercase() ?: candidate
+        else -> candidate
+    }
 }
 
 internal fun nestedPayloadElement(payload: JsonObject): JsonElement? {
@@ -228,4 +257,17 @@ internal fun parseDispatchRequests(value: JsonElement?): Any? {
         return listOf(reverseBridgeGson.fromJson<Map<*, *>>(obj, Map::class.java) as Map<*, *>)
     }
     return null
+}
+
+private fun inferPurposeFromAction(action: String): String {
+    val normalized = action.trim().lowercase()
+    return when {
+        normalized.startsWith("airpad:") || normalized.startsWith("mouse:") || normalized.startsWith("keyboard:") -> "airpad"
+        normalized.startsWith("clipboard:") -> "clipboard"
+        normalized.startsWith("sms:") -> "sms"
+        normalized.startsWith("contact:") || normalized.startsWith("contacts:") -> "contact"
+        normalized.startsWith("notification:") || normalized.startsWith("notifications:") -> "generic"
+        normalized.startsWith("assets:") -> "storage"
+        else -> "generic"
+    }
 }

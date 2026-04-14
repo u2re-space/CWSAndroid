@@ -820,8 +820,18 @@ class Daemon(
             ServerV2Packet(
                 op = "ask",
                 what = what,
+                type = what,
+                purpose = when {
+                    what.startsWith("clipboard:") -> "clipboard"
+                    what.startsWith("sms:") -> "sms"
+                    what.startsWith("notifications:") || what.startsWith("notification:") -> "generic"
+                    what.startsWith("contacts:") || what.startsWith("contact:") -> "contact"
+                    else -> "generic"
+                },
+                protocol = "socket",
                 payload = payload,
                 nodes = listOf(normalizedTarget),
+                destinations = listOf(normalizedTarget),
                 uuid = uuid
             )
         )

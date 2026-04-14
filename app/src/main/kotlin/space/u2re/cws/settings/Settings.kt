@@ -77,11 +77,19 @@ data class SettingsPatch(
 
 private const val PREF_NAME = "settings_v1"
 private const val PREF_NAME_LEGACY = "settings_v1_legacy"
+private const val DEFAULT_APP_CONFIG_ROOT = "/storage/emulated/0/AppConfig"
+private const val DEFAULT_APP_CONFIG_PATH = "fs:$DEFAULT_APP_CONFIG_ROOT/config"
+private const val DEFAULT_APP_STORAGE_PATH = DEFAULT_APP_CONFIG_ROOT
 
 private fun randomId(): String = "ns-${UUID.randomUUID().toString().replace("-", "").take(8)}"
 private fun isGeneratedLegacyDeviceId(value: String): Boolean = value.trim().lowercase().startsWith("ns-")
 
 private fun normalizePort(value: Int, fallback: Int): Int = if (value > 0) value else fallback
+private fun applyDefaultAppConfigPaths(settings: Settings): Settings {
+    val nextConfigPath = settings.configPath.trim().ifBlank { DEFAULT_APP_CONFIG_PATH }
+    val nextStoragePath = settings.storagePath.trim().ifBlank { DEFAULT_APP_STORAGE_PATH }
+    return settings.copy(configPath = nextConfigPath, storagePath = nextStoragePath)
+}
 
 private fun defaultSettings(): Settings = Settings(
     listenPortHttps = 8443,
@@ -96,7 +104,7 @@ private fun defaultSettings(): Settings = Settings(
     tlsKeystoreType = "PKCS12",
     tlsKeystorePassword = "",
     hubDispatchUrl = "",
-    configPath = "",
+    configPath = DEFAULT_APP_CONFIG_PATH,
     apiEndpoint = "",
     apiKey = "",
     allowInsecureTls = false,
@@ -115,7 +123,7 @@ private fun defaultSettings(): Settings = Settings(
     quickActionCopyOnly = false,
     quickActionHandleImage = false,
     enableLocalServer = true,
-    storagePath = ""
+    storagePath = DEFAULT_APP_STORAGE_PATH
 )
 
 
@@ -160,6 +168,8 @@ object SettingsStore {
                 merged = merged.copy(authToken = merged.deviceId)
             }
             
+            merged = applyDefaultAppConfigPaths(merged)
+
             // Merge from config files if configPath is provided
             if (merged.configPath.isNotBlank()) {
                 val basePath = merged.configPath.trim().removePrefix("fs:").removePrefix("file:")

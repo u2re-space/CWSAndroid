@@ -318,7 +318,7 @@ fun GatewayTab(
     OutlinedTextField(
         value = configPath,
         onValueChange = onConfigPathChange,
-        label = { Text("Configuration Path (e.g. fs:clients.json)") },
+        label = { Text("Configuration Path (e.g. fs:/storage/emulated/0/AppConfig/config)") },
         trailingIcon = {
             androidx.compose.material3.IconButton(onClick = onPickConfigPath) {
                 Icon(
@@ -334,7 +334,7 @@ fun GatewayTab(
     OutlinedTextField(
         value = storagePath,
         onValueChange = onStoragePathChange,
-        label = { Text("Storage Base Path (e.g. ~/Android/data/space.u2re.cws/)") },
+        label = { Text("Storage Base Path (e.g. /storage/emulated/0/AppConfig)") },
         trailingIcon = {
             androidx.compose.material3.IconButton(onClick = onPickStoragePath) {
                 Icon(

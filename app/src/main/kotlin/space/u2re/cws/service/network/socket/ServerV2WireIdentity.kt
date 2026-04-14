@@ -33,10 +33,25 @@ object ServerV2WireContract {
         )
     }
 
-    private fun resolveSocketEndpointBase(config: EndpointCoreConfig): String {
-        val candidates = config.endpointCandidates
+    fun resolveSocketEndpointCandidates(config: EndpointCoreConfig): List<String> {
+        val out = linkedSetOf<String>()
+        val directCandidates = config.endpointCandidates
             .map { it.trim() }
             .filter { it.isNotBlank() }
+            .flatMap(::expandSocketEndpointCandidates)
+        out.addAll(directCandidates)
+        val splitFromRaw = config.endpointUrl
+            .ifBlank { config.dispatchUrl }
+            .split(Regex("[,;\n]"))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .flatMap(::expandSocketEndpointCandidates)
+        out.addAll(splitFromRaw)
+        return out.toList()
+    }
+
+    private fun resolveSocketEndpointBase(config: EndpointCoreConfig): String {
+        val candidates = resolveSocketEndpointCandidates(config)
         if (candidates.isNotEmpty()) return candidates.first()
         return config.endpointUrl
             .ifBlank { config.dispatchUrl }
@@ -69,6 +84,69 @@ object ServerV2WireContract {
         } catch (_: Exception) {
             trimmed
         }
+    }
+
+    private fun expandSocketEndpointCandidates(raw: String): List<String> {
+        val base = normalizeSocketEndpoint(raw)
+        if (base.isBlank()) return emptyList()
+        val out = linkedSetOf(base)
+        val uri = try {
+            URI(base)
+        } catch (_: Exception) {
+            null
+        }
+        if (uri == null) return out.toList()
+
+        val scheme = uri.scheme?.lowercase() ?: return out.toList()
+        val host = uri.host?.trim().orEmpty()
+        if (host.isBlank()) return out.toList()
+        val path = uri.rawPath ?: "/"
+        val query = uri.rawQuery
+        val fragment = uri.rawFragment
+
+        fun normalizedVariant(targetScheme: String, defaultPort: Int): String {
+            val resolvedPort = if (uri.port > 0) uri.port else defaultPort
+            return normalizeSocketEndpoint(
+                URI(targetScheme, null, host, resolvedPort, path, query, fragment).toString()
+            )
+        }
+
+        val wsAlt = normalizedVariant("ws", 8080)
+        val wssAlt = normalizedVariant("wss", 8443)
+        val httpAlt = normalizedVariant("http", 8080)
+        val httpsAlt = normalizedVariant("https", 8443)
+
+        when (scheme) {
+            "https" -> {
+                out.add(wssAlt)
+                if (uri.port == 8443 || uri.port == -1) {
+                    out.add(httpAlt)
+                    out.add(wsAlt)
+                }
+            }
+            "http" -> {
+                out.add(wsAlt)
+                if (uri.port == 8080 || uri.port == -1) {
+                    out.add(httpsAlt)
+                    out.add(wssAlt)
+                }
+            }
+            "wss" -> {
+                out.add(httpsAlt)
+                if (uri.port == 8443 || uri.port == -1) {
+                    out.add(wsAlt)
+                    out.add(httpAlt)
+                }
+            }
+            "ws" -> {
+                out.add(httpAlt)
+                if (uri.port == 8080 || uri.port == -1) {
+                    out.add(wssAlt)
+                    out.add(httpsAlt)
+                }
+            }
+        }
+        return out.filter { it.isNotBlank() }
     }
 
     fun normalizeNodeId(value: String?): String {

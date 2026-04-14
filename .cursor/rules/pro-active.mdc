@@ -1,6 +1,6 @@
 ---
 description: Always-on proactive dedupe and canonicalization policy
-globs: "*.scss,*.css,*.ts,*.tsx,*.js,*.mjs"
+globs: *.scss,*.css,*.ts,*.tsx,*.js,*.mjs
 alwaysApply: true
 ---
 

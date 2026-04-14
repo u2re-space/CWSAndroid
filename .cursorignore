@@ -25,7 +25,6 @@ logs/
 !.env.example
 
 # IDE
-.vscode/
 .idea/
 
 # Git history

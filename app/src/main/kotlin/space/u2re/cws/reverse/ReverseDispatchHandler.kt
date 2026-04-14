@@ -22,7 +22,9 @@ internal object ReverseDispatchHandler {
         val dispatchDataObj = nestedPayloadObject(payload)
         val dispatchDataAction = extractString(dispatchDataObj?.get("action"))?.lowercase()
             ?: extractString(dispatchDataObj?.get("type"))?.lowercase()
+            ?: extractString(dispatchDataObj?.get("op"))?.lowercase()
             ?: extractString(payload["what"])?.lowercase()
+            ?: extractString(payload["op"])?.lowercase()
         val dispatchText = extractPrimitiveString(payload["text"])
             ?: extractPrimitiveString(payload["body"])
             ?: extractPrimitiveString(payload["data"])
@@ -64,7 +66,10 @@ internal object ReverseDispatchHandler {
             }
         }
 
-        val requestsObj = payload["requests"] ?: payload["data"]?.let(::parseDispatchRequests) ?: parseDispatchRequests(payload)
+        val requestsObj = payload["requests"]
+            ?: payload["payload"]?.let(::parseDispatchRequests)
+            ?: payload["data"]?.let(::parseDispatchRequests)
+            ?: parseDispatchRequests(payload)
         if (requestsObj == null) return false
 
         val recoveredClipboard = recoverClipboardDispatches(context, payload, requestsObj, settings, callbacks)

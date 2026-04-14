@@ -21,5 +21,7 @@
         <domain includeSubdomains="true">10.0.2.2</domain>
         <!-- Typical wireless-ADB / LAN test device (override in fork if needed) -->
         <domain includeSubdomains="false">192.168.0.196</domain>
+        <domain includeSubdomains="false">192.168.0.200</domain>
+        <domain includeSubdomains="false">192.168.0.110</domain>
     </domain-config>
 </network-security-config>

@@ -3,11 +3,10 @@ package space.u2re.cws.daemon
 import space.u2re.cws.data.ClipboardEnvelope
 import space.u2re.cws.network.EndpointCoreConfig
 import space.u2re.cws.network.ReverseGatewayClient
+import space.u2re.cws.network.ServerV2NetworkModule
 import space.u2re.cws.network.ServerV2HttpClient
 import space.u2re.cws.network.ServerV2Packet
 import space.u2re.cws.network.ServerV2PacketCodec
-import space.u2re.cws.network.ServerV2SocketClient
-import space.u2re.cws.network.ServerV2WireContract
 import space.u2re.cws.reverse.ReverseGatewayConfig
 import java.util.concurrent.atomic.AtomicLong
 
@@ -18,8 +17,16 @@ class DaemonTransportRuntime(
     private val onLegacyMessage: (String, String) -> Unit,
     private val onState: (String, String?) -> Unit
 ) {
-    private val httpClient = ServerV2HttpClient(endpointConfig)
-    private var v2Socket: ServerV2SocketClient? = null
+    private val networkModule = ServerV2NetworkModule(
+        config = endpointConfig,
+        onPacket = onV2Packet,
+        onState = { event, detail ->
+            if (event == "connected" || event == "reconnect") {
+                reconnectSuccesses.incrementAndGet()
+            }
+            updateState("v2-$event", detail)
+        }
+    )
     private var legacyBridge: ReverseGatewayClient? = null
 
     private val relayAttempts = AtomicLong(0)
@@ -39,20 +46,10 @@ class DaemonTransportRuntime(
 
     fun start() {
         stop()
-        if (!endpointConfig.isRemoteReady()) {
+        if (!networkModule.start()) {
             updateState("disabled", "endpoint config incomplete")
             return
         }
-        v2Socket = ServerV2SocketClient(
-            config = endpointConfig,
-            onPacket = onV2Packet,
-            onState = { event, detail ->
-                if (event == "connected" || event == "reconnect") {
-                    reconnectSuccesses.incrementAndGet()
-                }
-                updateState("v2-$event", detail)
-            }
-        ).also { it.start() }
 
         if (reverseConfig.enabled && reverseConfig.endpointUrl.isNotBlank() && reverseConfig.userId.isNotBlank() && reverseConfig.userKey.isNotBlank()) {
             legacyBridge = ReverseGatewayClient(
@@ -64,7 +61,7 @@ class DaemonTransportRuntime(
                     if (event == "connected") {
                         reconnectSuccesses.incrementAndGet()
                     }
-                    if (v2Socket?.isConnected() != true) {
+                    if (!networkModule.isConnected()) {
                         updateState("bridge-$event", detail)
                     }
                 }
@@ -73,8 +70,7 @@ class DaemonTransportRuntime(
     }
 
     fun stop() {
-        v2Socket?.stop()
-        v2Socket = null
+        networkModule.stop()
         legacyBridge?.stop()
         legacyBridge = null
         updateState("stopped", "transport runtime stopped")
@@ -82,17 +78,17 @@ class DaemonTransportRuntime(
 
     fun requestReconnect() {
         reconnectRequests.incrementAndGet()
-        v2Socket?.requestReconnect()
+        networkModule.requestReconnect()
         legacyBridge?.requestReconnect()
         updateState("reconnect-requested", "transport reconnect requested")
     }
 
-    fun isConnected(): Boolean = v2Socket?.isConnected() == true || legacyBridge?.isConnected() == true
+    fun isConnected(): Boolean = networkModule.isConnected() || legacyBridge?.isConnected() == true
 
-    fun getHttpClient(): ServerV2HttpClient = httpClient
+    fun getHttpClient(): ServerV2HttpClient = networkModule.getHttpClient()
 
     fun getDiagnostics(): TransportRuntimeDiagnostics {
-        val v2Diagnostics = v2Socket?.getDiagnostics()
+        val v2Diagnostics = networkModule.getSocketDiagnostics()
         val legacyDiagnostics = legacyBridge?.getDiagnostics()
         val activeEndpoint = v2Diagnostics?.endpoint
             ?.ifBlank { null }
@@ -124,22 +120,22 @@ class DaemonTransportRuntime(
     )
 
     fun sendPacket(packet: ServerV2Packet): Boolean {
-        if (v2Socket?.sendPacket(packet) == true) return true
+        if (networkModule.sendPacket(packet)) return true
         return sendPacketViaBridge(packet)
     }
 
     private fun sendPacketViaBridge(packet: ServerV2Packet): Boolean {
         val bridge = legacyBridge ?: return false
         if (!bridge.isConnected()) return false
-        val senderId = ServerV2WireContract.normalizeNodeId(
+        val senderId = networkModule.normalizeNodeId(
             packet.byId ?: packet.from ?: endpointConfig.userId.ifBlank { endpointConfig.deviceId }
         ).ifBlank {
-            ServerV2WireContract.resolve(endpointConfig).senderId()
+            networkModule.resolveIdentity().senderId()
         }
         val payload = ServerV2PacketCodec.toMap(packet)
         val messageType = packet.what.ifBlank { ServerV2PacketCodec.inferLegacyRelayType(packet) }
         val targets = packet.nodes
-            .map { ServerV2WireContract.normalizeNodeId(it) }
+            .map { networkModule.normalizeNodeId(it) }
             .filter { it.isNotBlank() }
             .distinct()
         if (targets.isEmpty()) return false
@@ -164,14 +160,13 @@ class DaemonTransportRuntime(
         resolveTarget: (Map<String, Any>) -> String?,
         senderId: String
     ): List<HubDispatchPayloadItem> {
-        val v2 = v2Socket
         val bridge = legacyBridge
-        val identity = ServerV2WireContract.resolve(endpointConfig)
-        val wireSenderId = ServerV2WireContract.normalizeNodeId(senderId).ifBlank { identity.senderId() }
+        val identity = networkModule.resolveIdentity()
+        val wireSenderId = networkModule.normalizeNodeId(senderId).ifBlank { identity.senderId() }
         val pending = mutableListOf<HubDispatchPayloadItem>()
         for (item in items) {
             relayAttempts.incrementAndGet()
-            val target = ServerV2WireContract.normalizeNodeId(resolveTarget(item.request))
+            val target = networkModule.normalizeNodeId(resolveTarget(item.request))
             if (target.isNullOrBlank()) {
                 pending.add(item)
                 relayFallback.incrementAndGet()
@@ -181,12 +176,16 @@ class DaemonTransportRuntime(
             val packet = ServerV2Packet(
                 op = "act",
                 what = "clipboard:update",
+                type = "clipboard:update",
+                purpose = "clipboard",
+                protocol = "socket.io",
                 payload = envelope.toMap(),
                 nodes = listOf(target),
+                destinations = listOf(target),
                 byId = wireSenderId
             )
 
-            val v2Sent = v2?.sendPacket(packet) == true
+            val v2Sent = networkModule.sendPacket(packet)
             if (v2Sent) {
                 relaySuccess.incrementAndGet()
                 continue
@@ -225,7 +224,7 @@ class DaemonTransportRuntime(
         val requests = items.map { it.request }.filter { it.isNotEmpty() }
         if (requests.isEmpty()) return false
         httpAttempts.incrementAndGet()
-        val result = httpClient.broadcastDispatch(requests)
+        val result = networkModule.getHttpClient().broadcastDispatch(requests)
         return if (result.ok) {
             httpSuccesses.incrementAndGet()
             true

@@ -76,28 +76,39 @@ object AssistantNetworkBridge {
             "paste",
             "write_clipboard",
             "clipboard:update",
-            "clipboard:write" -> ReverseClipboardHandler.handleDelivery(context, inbound.payload, settings, callbacks)
+            "clipboard:write",
+            "clipboard:delivery",
+            "airpad:clipboard:write",
+            "airpad:clipboard:delivery" -> ReverseClipboardHandler.handleDelivery(context, inbound.payload, settings, callbacks)
             "clipboard:read",
             "clipboard:get",
-            "clipboard:isready" -> ReverseClipboardHandler.handleQuery(inbound.payload, inbound.action, callbacks)
+            "clipboard:isready",
+            "clipboard:ask",
+            "airpad:clipboard:read",
+            "airpad:clipboard:isready" -> ReverseClipboardHandler.handleQuery(inbound.payload, inbound.action, callbacks)
             "sms",
             "send_sms",
             "sms.send",
             "sms-send",
             "send.sms",
-            "sms:send" -> ReverseAuxiliaryHandler.handleSmsDelivery(inbound.payload, settings, callbacks)
+            "sms:send",
+            "sms:delivery" -> ReverseAuxiliaryHandler.handleSmsDelivery(inbound.payload, settings, callbacks)
             "sms:list",
-            "sms:get" -> ReverseAuxiliaryHandler.handleSmsQuery(inbound.payload, callbacks)
+            "sms:get",
+            "sms:ask" -> ReverseAuxiliaryHandler.handleSmsQuery(inbound.payload, callbacks)
             "speak",
             "notifications.speak",
             "notification.speak",
             "speak.notification",
             "notification:speak",
-            "notifications:speak" -> ReverseAuxiliaryHandler.handleNotificationsDelivery(inbound.payload, settings, callbacks)
+            "notifications:speak",
+            "notification:delivery" -> ReverseAuxiliaryHandler.handleNotificationsDelivery(inbound.payload, settings, callbacks)
             "notifications:list",
-            "notifications:get" -> ReverseAuxiliaryHandler.handleNotificationsQuery(inbound.payload, callbacks)
+            "notifications:get",
+            "notification:ask" -> ReverseAuxiliaryHandler.handleNotificationsQuery(inbound.payload, callbacks)
             "contacts:list",
-            "contacts:get" -> ReverseAuxiliaryHandler.handleContactsQuery(inbound.payload, callbacks)
+            "contacts:get",
+            "contact:ask" -> ReverseAuxiliaryHandler.handleContactsQuery(inbound.payload, callbacks)
             "dispatch",
             "forward",
             "http",
