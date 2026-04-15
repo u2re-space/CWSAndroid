@@ -33,6 +33,7 @@ public class CwsBridgePlugin extends Plugin {
 
     public static final String EVENT_NATIVE_MESSAGE = "nativeMessage";
 
+    /** Report shell metadata so the web layer knows whether native IPC/network affordances exist. */
     @PluginMethod
     public void getShellInfo(PluginCall call) {
         JSObject o = new JSObject();
@@ -44,8 +45,10 @@ public class CwsBridgePlugin extends Plugin {
     }
 
     /**
-     * Generic invoke: {@code channel} names the Kotlin/native route; {@code payload} is opaque JSON.
-     * Default implementation acknowledges; override or replace in CWSAndroid to reach Compose.
+     * Generic invoke entry for webview -> native calls.
+     *
+     * NOTE: settings channels are handled here directly because they affect the
+     * native preferences that later shape network/runtime configuration.
      */
     @PluginMethod
     public void invoke(PluginCall call) {
@@ -73,13 +76,12 @@ public class CwsBridgePlugin extends Plugin {
         call.resolve(result);
     }
 
-    /**
-     * Optional: call from Kotlin to deliver events to JS ({@code addListener('nativeMessage', ...)}).
-     */
+    /** Deliver native-originated events back to JS listeners on the `nativeMessage` channel. */
     public void emitToWeb(JSObject data) {
         notifyListeners(EVENT_NATIVE_MESSAGE, data, true);
     }
 
+    /** Read native settings and project them into the app/web settings shape used by the shell. */
     private JSObject handleSettingsGet(String channel, JSONObject requestEnvelope) {
         JSONObject nativeSettings = readNativeSettingsJson();
         JSObject result = new JSObject();
@@ -92,6 +94,7 @@ public class CwsBridgePlugin extends Plugin {
         return result;
     }
 
+    /** Apply a settings patch from the web layer back into native persisted settings. */
     private JSObject handleSettingsPatch(String channel, JSObject payload, JSONObject requestEnvelope) {
         JSONObject nativeSettings = readNativeSettingsJson();
         JSONObject patch = new JSONObject();
@@ -193,6 +196,12 @@ public class CwsBridgePlugin extends Plugin {
             .apply();
     }
 
+    /**
+     * Map native settings into the web-facing app settings shape.
+     *
+     * WHY: the Capacitor shell and the native daemon/network runtime do not use
+     * identical schemas, so this bridge keeps them aligned.
+     */
     private JSObject buildAppSettings(JSONObject nativeSettings) {
         JSObject root = new JSObject();
         JSObject core = new JSObject();

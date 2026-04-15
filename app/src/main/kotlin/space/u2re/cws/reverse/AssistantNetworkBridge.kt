@@ -13,6 +13,13 @@ import space.u2re.cws.settings.resolve
 
 private const val BRIDGE_LOGGER = "ReverseAssistantBridge"
 
+/**
+ * Inbound message bridge from transport packets into Android-side features.
+ *
+ * It accepts both v2 packets and older reverse messages, filters out packets
+ * not meant for this device, suppresses self-echo loops, and dispatches the
+ * surviving actions to clipboard, SMS, notifications, contacts, or HTTP relay.
+ */
 object AssistantNetworkBridge {
     private fun isSelfEchoSource(
         inbound: ReverseInboundMessage,
@@ -31,6 +38,7 @@ object AssistantNetworkBridge {
         return sourceAliases.any { aliases.contains(it) }
     }
 
+    /** Handle one canonical v2 packet arriving from the active transport runtime. */
     suspend fun handleServerV2Packet(
         context: Context,
         packet: ServerV2Packet,
@@ -48,6 +56,7 @@ object AssistantNetworkBridge {
         return handleInbound(context, parseInboundPacket(packet), config, callbacks)
     }
 
+    /** Handle one legacy reverse-bridge message and normalize it into the same inbound flow. */
     suspend fun handleReverseMessage(
         context: Context,
         messageType: String,
@@ -68,6 +77,12 @@ object AssistantNetworkBridge {
         return handleInbound(context, inbound, config, callbacks)
     }
 
+    /**
+     * Main inbound router after packet/message normalization.
+     *
+     * WHY: all target checks and self-echo suppression happen before feature
+     * handlers so clipboard/dispatch loops do not escape into app logic.
+     */
     private suspend fun handleInbound(
         context: Context,
         inbound: ReverseInboundMessage,
@@ -166,6 +181,7 @@ object AssistantNetworkBridge {
         }
     }
 
+    /** Handle the generic `feature` wrapper used by some legacy bridge payloads. */
     private suspend fun handleFeature(
         context: Context,
         payload: com.google.gson.JsonObject,

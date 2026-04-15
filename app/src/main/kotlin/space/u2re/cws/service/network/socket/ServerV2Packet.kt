@@ -5,6 +5,12 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 
+/**
+ * Canonical packet shape used by the Android v2 transport stack.
+ *
+ * AI-READ: this data class mirrors the mixed CWSP/coordinator envelope shape,
+ * so socket, HTTP, and reverse-bridge code should all speak through this type.
+ */
 data class ServerV2Packet(
     val op: String = "ask",
     val what: String = "",
@@ -35,14 +41,20 @@ data class ServerV2Packet(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+/**
+ * JSON codec that translates between Android packet objects and the wire format
+ * expected by CWSP peers.
+ */
 object ServerV2PacketCodec {
     private val gson = Gson()
     private val coordinatorVerbs = setOf("ask", "act", "result", "request", "response", "signal", "notify", "redirect", "resolve", "error")
 
+    /** Serialize one packet into the normalized JSON envelope sent over the wire. */
     fun encode(packet: ServerV2Packet): String {
         return gson.toJson(toMap(packet))
     }
 
+    /** Parse one raw JSON frame into the Android packet model, returning null for non-object payloads. */
     fun decode(raw: String): ServerV2Packet? {
         return try {
             val parsed = JsonParser.parseString(raw)
@@ -53,6 +65,10 @@ object ServerV2PacketCodec {
         }
     }
 
+    /**
+     * Decode one JSON object into the canonical packet shape, inferring the
+     * effective `op`, `what`, `type`, and list fields from legacy variants.
+     */
     fun fromJsonObject(obj: JsonObject): ServerV2Packet {
         val payloadElement = when {
             obj.has("payload") -> obj.get("payload")
@@ -123,6 +139,10 @@ object ServerV2PacketCodec {
         }
     }
 
+    /**
+     * Render one packet back into the mixed compatibility frame shape expected
+     * by existing peers (`request/response` wire ops, duplicated payload/data).
+     */
     fun toMap(packet: ServerV2Packet): Map<String, Any?> = linkedMapOf<String, Any?>().apply {
         val normalizedOp = normalizeCoordinatorOp(packet.op)
         put("op", mapPacketOpToFrameOp(normalizedOp))
@@ -159,6 +179,7 @@ object ServerV2PacketCodec {
         put("timestamp", if (packet.timestamp > 0L) packet.timestamp else System.currentTimeMillis())
     }
 
+    /** Infer a legacy relay type string for older bridge paths that still route by coarse message type. */
     fun inferLegacyRelayType(packet: ServerV2Packet): String {
         val what = packet.what.trim().lowercase()
         return when {

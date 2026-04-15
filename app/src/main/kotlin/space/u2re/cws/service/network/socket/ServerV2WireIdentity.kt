@@ -2,6 +2,12 @@ package space.u2re.cws.network
 
 import java.net.URI
 
+/**
+ * Wire-level identity attached to Android socket and HTTP requests.
+ *
+ * It keeps the normalized endpoint URL plus the user/device/client/node ids and
+ * alias/origin metadata that the CWSP coordinator uses for routing.
+ */
 data class ServerV2WireIdentity(
     val endpointUrl: String,
     val userId: String,
@@ -14,9 +20,17 @@ data class ServerV2WireIdentity(
     val connectionType: String = "exchanger-initiator",
     val archetype: String = "server-v2"
 ) {
+    /** Preferred sender id for outbound frames, falling back through node -> user -> device -> client. */
     fun senderId(): String = nodeId.ifBlank { userId.ifBlank { deviceId }.ifBlank { clientId } }
 }
 
+/**
+ * Shared wire-contract helpers for Android's CWSP v2 clients.
+ *
+ * WHY: socket and HTTP code must agree on endpoint candidate expansion,
+ * identity normalization, and auth/header/query rendering or transport bugs
+ * become hard to correlate across layers.
+ */
 object ServerV2WireContract {
     private fun sanitizeWireIdentity(value: String): String {
         return value
@@ -25,6 +39,7 @@ object ServerV2WireContract {
             .replace(Regex("\\s+"), "")
     }
 
+    /** Resolve the canonical wire identity from endpoint config and routing aliases. */
     fun resolve(config: EndpointCoreConfig): ServerV2WireIdentity {
         val userId = normalizeNodeId(config.userId.ifBlank { config.deviceId }).ifBlank {
             sanitizeWireIdentity(config.userId.ifBlank { config.deviceId })
@@ -60,6 +75,10 @@ object ServerV2WireContract {
         )
     }
 
+    /**
+     * Expand and normalize socket endpoint candidates from both the primary
+     * endpoint string and any destination-derived candidates.
+     */
     fun resolveSocketEndpointCandidates(config: EndpointCoreConfig): List<String> {
         val out = linkedSetOf<String>()
         val directCandidates = config.endpointCandidates
@@ -217,6 +236,7 @@ object ServerV2WireContract {
         }
     }
 
+    /** Normalize one routing id the same way peer selection and packet addressing expect. */
     fun normalizeNodeId(value: String?): String {
         val sanitized = sanitizeWireIdentity(value.orEmpty())
         return EndpointIdentity.bestRouteTarget(sanitized).ifBlank {
@@ -224,10 +244,12 @@ object ServerV2WireContract {
         }
     }
 
+    /** Normalize and deduplicate a list of target ids before they are written into a packet. */
     fun normalizeTargets(values: Iterable<String?>): List<String> {
         return values.mapNotNull { normalizeNodeId(it).ifBlank { null } }.distinct()
     }
 
+    /** Build the auth/query payload used by transport implementations that support structured auth objects. */
     fun buildAuth(identity: ServerV2WireIdentity): Map<String, String> {
         return buildMap {
             if (identity.userKey.isNotBlank()) {
@@ -240,6 +262,12 @@ object ServerV2WireContract {
         }
     }
 
+    /**
+     * Build compatibility headers for CWSP/native WS handshakes.
+     *
+     * NOTE: several server paths still inspect historical `X-CWS-*` and
+     * bearer-token headers, so the Android client sends both forms.
+     */
     fun buildHeaders(identity: ServerV2WireIdentity): Map<String, String> {
         return buildMap {
             if (identity.userKey.isNotBlank()) {
@@ -267,6 +295,13 @@ object ServerV2WireContract {
         }
     }
 
+    /**
+     * Build query params for the websocket handshake.
+     *
+     * WHY: some gateways still understand only legacy `connectionType` values,
+     * so this renderer intentionally adapts the wire value while keeping richer
+     * local semantics in the Android runtime.
+     */
     fun buildQuery(identity: ServerV2WireIdentity): Map<String, String> {
         // Dual-wire compatibility:
         // some nodes/gateways only understand `connectionType=first-order`.

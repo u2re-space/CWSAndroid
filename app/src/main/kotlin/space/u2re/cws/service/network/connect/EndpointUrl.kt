@@ -2,6 +2,13 @@ package space.u2re.cws.network
 
 import java.net.URI
 
+/**
+ * URL-normalization helpers shared by Android network config and transport code.
+ *
+ * WHY: CWSP settings may contain bare hosts, host:port pairs, dispatch routes,
+ * or destination-prefixed values; these helpers collapse them into consistent
+ * HTTP endpoint URLs before socket/http clients expand candidates.
+ */
 fun normalizeEndpointUrl(raw: String, defaultPath: String): String? {
     val trimmed = raw.trim().trimStart('/')
     if (trimmed.isBlank()) return null
@@ -78,19 +85,24 @@ private fun normalizeDestinationWithProtocol(raw: String, defaultPath: String): 
     }
 }
 
+/** Normalize a destination-style setting into a concrete URL with the requested default path. */
 fun normalizeDestinationUrl(raw: String, defaultPath: String): String? {
     return normalizeDestinationWithProtocol(stripKnownDestinationPrefix(raw), defaultPath)
 }
 
+/** Strip known routing prefixes and return the bare destination host/target text. */
 fun normalizeDestinationHost(raw: String): String {
     return stripKnownDestinationPrefix(raw)
 }
 
+/** Normalize a server endpoint base for API/socket candidate generation. */
 fun normalizeEndpointServerUrl(raw: String): String? =
     normalizeDestinationWithProtocol(stripKnownDestinationPrefix(raw), "/api")
 
+/** Normalize the hub/dispatch endpoint used by legacy HTTP broadcast flows. */
 fun normalizeHubDispatchUrl(raw: String): String? = normalizeDestinationWithProtocol(stripKnownDestinationPrefix(raw), "/api/broadcast")
 
+/** Normalize the OpenAI-style responses endpoint while preserving any explicit path already present. */
 fun normalizeResponsesEndpoint(raw: String): String? {
     val trimmed = raw.trim()
     if (trimmed.isBlank()) return null

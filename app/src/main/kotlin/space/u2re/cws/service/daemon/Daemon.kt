@@ -51,6 +51,13 @@ import java.net.URI
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * Main Android runtime coordinator for local services plus remote transport.
+ *
+ * The daemon resolves settings, starts local HTTP servers, builds endpoint
+ * config, owns `DaemonTransportRuntime`, reacts to connectivity changes, and
+ * exposes user-facing connection snapshots.
+ */
 class Daemon(
     private val application: Application,
     private val activityProvider: () -> Activity?
@@ -104,6 +111,12 @@ class Daemon(
         DaemonLog.setLogLevel(settings.logLevel)
     }
 
+    /**
+     * Start the daemon and all dependent runtime services.
+     *
+     * AI-READ: this is the main orchestration entrypoint for transport startup,
+     * so connection-debugging often begins here rather than in the socket client.
+     */
     fun start() {
         if (running) return
         running = true
@@ -132,6 +145,7 @@ class Daemon(
         }
     }
 
+    /** Stop transport, local servers, clipboard jobs, and connectivity monitoring. */
     fun stop() {
         running = false
         scope.launch {
@@ -182,6 +196,12 @@ class Daemon(
         startServers(createSyncCallbacks(activity))
     }
 
+    /**
+     * Resolve settings into active transport config and start the transport runtime.
+     *
+     * WHY: this is where persisted settings, reverse-gateway preferences, and
+     * endpoint candidate normalization collapse into one effective network setup.
+     */
     private fun startReverseGateway(syncCallbacks: SyncCallbacks) {
         val baseReverseConfig = ReverseGatewayConfigProvider.load(application)
         val endpointConfig = settings.toEndpointCoreConfig(baseReverseConfig)
@@ -301,6 +321,10 @@ class Daemon(
         DaemonLog.info("Daemon", "transport runtime started")
     }
 
+    /**
+     * Register Android connectivity callbacks that can trigger reconnects when
+     * transport is down but internet access has returned.
+     */
     private fun ensureReverseNetworkMonitoring() {
         stopReverseNetworkMonitoring()
         val manager = application.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
@@ -344,6 +368,10 @@ class Daemon(
         networkCallback = null
     }
 
+    /**
+     * Trigger a reconnect from Android network events, with simple throttling
+     * so transient network churn does not flood the runtime.
+     */
     private fun requestReverseGatewayReconnect(reason: String) {
         if (!running) return
         val runtime = transportRuntime ?: return

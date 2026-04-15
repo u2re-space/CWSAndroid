@@ -3,6 +3,12 @@ package space.u2re.cws.network
 private const val DEFAULT_ENDPOINT_NAMESPACE = "default"
 private const val DEFAULT_ENDPOINT_ROLES = "endpoint,peer,node,app"
 
+/**
+ * Resolved network configuration consumed by the Android v2 transport stack.
+ *
+ * It combines endpoint candidates, credentials, device identity, TLS options,
+ * storage/config roots, and the legacy-bridge toggle into one immutable view.
+ */
 data class EndpointCoreConfig(
     val endpointUrl: String,
     val endpointCandidates: List<String>,
@@ -19,10 +25,13 @@ data class EndpointCoreConfig(
     val storagePath: String,
     val legacyBridgeEnabled: Boolean
 ) {
+    /** True when at least one remote endpoint candidate exists. */
     fun hasRemoteEndpoint(): Boolean = endpointCandidates.isNotEmpty() || endpointUrl.isNotBlank()
 
+    /** True when user identity plus credential material is present. */
     fun hasCredentials(): Boolean = userId.isNotBlank() && userKey.isNotBlank()
 
+    /** Minimum readiness gate used before socket/http clients attempt to dial the backend. */
     fun isRemoteReady(): Boolean = hasRemoteEndpoint() && hasCredentials()
 }
 
@@ -64,8 +73,11 @@ private fun looksGeneratedDeviceId(value: String): Boolean {
 }
 
 /**
- * Keep these helpers in network core so endpoint candidate normalization and ordering
- * stay identical across native Android runtime and any future JVM clients.
+ * Build the canonical Android network config from settings/runtime inputs.
+ *
+ * WHY: candidate ordering, route-target normalization, TLS flags, and bridge
+ * enablement must be resolved once here so every transport layer behaves
+ * consistently during reconnect and fallback.
  */
 fun buildEndpointCoreConfig(
     endpointUrlRaw: String,

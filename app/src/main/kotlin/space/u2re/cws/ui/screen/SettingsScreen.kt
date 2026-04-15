@@ -121,6 +121,10 @@ fun SettingsScreen(
     var localIps by rememberSaveable { mutableStateOf(loadLocalIpAddresses()) }
     var selectedTab by rememberSaveable { mutableIntStateOf(SettingsTab.GENERAL.ordinal) }
 
+    /**
+     * Preview the effective endpoint config exactly the way the daemon/runtime
+     * would resolve it after a save, without mutating the live settings yet.
+     */
     fun previewEndpointConfig() = settings.copy(
         hubDispatchUrl = hubDispatchUrl.trim(),
         hubClientId = hubClientId.trim(),
@@ -241,6 +245,13 @@ fun SettingsScreen(
     val isRunning = DaemonController.current() != null
     var daemonSnapshot by remember { mutableStateOf(DaemonConnectionSnapshot.stopped()) }
 
+    /**
+     * Refresh the daemon/network snapshot shown in the UI.
+     *
+     * NOTE: when the daemon is not currently running, this falls back to a
+     * preview based on unresolved settings so the user still sees what would be
+     * configured if the runtime started now.
+     */
     fun refreshDaemonSnapshot() {
         val daemon = DaemonController.current()
         if (daemon != null) {

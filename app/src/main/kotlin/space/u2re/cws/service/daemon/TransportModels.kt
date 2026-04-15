@@ -1,10 +1,12 @@
 package space.u2re.cws.daemon
 
+/** One pending HTTP dispatch item plus an optional direct-fallback URL hint. */
 data class HubDispatchPayloadItem(
     val request: Map<String, Any>,
     val directFallbackUrl: String? = null
 )
 
+/** Compact runtime snapshot surfaced by daemon/UI code for transport diagnostics. */
 data class TransportRuntimeDiagnostics(
     val configured: Boolean,
     val enabled: Boolean,
@@ -18,6 +20,7 @@ data class TransportRuntimeDiagnostics(
     val lastError: String?
 )
 
+/** Counters used to understand relay usage, fallback frequency, and reconnect behavior. */
 data class TransportRuntimeMetrics(
     val relayAttempts: Long,
     val relaySuccess: Long,

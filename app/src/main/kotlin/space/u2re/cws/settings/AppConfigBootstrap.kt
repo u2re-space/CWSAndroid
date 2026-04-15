@@ -10,6 +10,12 @@ private const val FALLBACK_APP_CONFIG_DIR = "AppConfig"
 private const val STOCK_CONFIG_ASSET_DIR = "stock/config"
 private const val STOCK_HTTPS_ASSET_DIR = "stock/https"
 
+/**
+ * Bootstrapper for stock config and HTTPS assets used by the Android runtime.
+ *
+ * AI-READ: this file explains where the daemon's config/CA/certificate files
+ * come from before user overrides or resolved `fs:` paths take over.
+ */
 object AppConfigBootstrap {
     private val lock = Any()
     @Volatile
@@ -34,6 +40,7 @@ object AppConfigBootstrap {
         "server.cnf"
     )
 
+    /** Ensure the writable config root exists and contains the stock/fallback config payloads. */
     fun ensureStockConfig(context: Context): String {
         val cached = ensuredRootPath
         if (!cached.isNullOrBlank()) return cached
@@ -58,6 +65,12 @@ object AppConfigBootstrap {
         }
     }
 
+    /**
+     * Pick the writable config root.
+     *
+     * WHY: Android storage access differs across devices, so the runtime tries
+     * external AppConfig first, then app-scoped external storage, then filesDir.
+     */
     private fun resolveWritableRoot(context: Context): File {
         val preferred = File(DEFAULT_APP_CONFIG_ROOT)
         if (ensureWritable(preferred)) return preferred
@@ -75,6 +88,7 @@ object AppConfigBootstrap {
         }.getOrDefault(false)
     }
 
+    /** Copy stock asset files only when the destination file is still missing or empty. */
     private fun copyMissingAssets(
         context: Context,
         sourceAssetDir: String,
@@ -97,6 +111,12 @@ object AppConfigBootstrap {
         }
     }
 
+    /**
+     * Write minimal fallback config files when assets are absent.
+     *
+     * NOTE: these defaults define the same network/bootstrap assumptions the
+     * daemon relies on for local config, HTTPS, and unified coordinator mode.
+     */
     private fun ensureStockFallbackConfigFiles(configDir: File) {
         val fallbackPortableCore = """
             {

@@ -10,7 +10,14 @@ import space.u2re.cws.network.DispatchRequest
 import space.u2re.cws.network.postJson
 import space.u2re.cws.settings.Settings
 
+/**
+ * Reverse-bridge handler for dispatch-style payloads.
+ *
+ * This is the compatibility layer that decides whether a dispatch payload
+ * should become clipboard delivery, local callback dispatch, or an HTTP relay.
+ */
 internal object ReverseDispatchHandler {
+    /** Normalize and execute one reverse dispatch payload. */
     suspend fun handle(
         context: Context,
         payload: JsonObject,
@@ -98,6 +105,12 @@ internal object ReverseDispatchHandler {
         return postJson(url, routeBody, allowInsecureTls = true, headers = requestHeaders(settings)).ok
     }
 
+    /**
+     * Recover clipboard updates hidden inside generic dispatch request lists.
+     *
+     * WHY: older bridge senders sometimes tunnel clipboard writes as dispatch
+     * requests instead of direct `clipboard:*` actions.
+     */
     private suspend fun recoverClipboardDispatches(
         context: Context,
         payload: JsonObject,
@@ -181,8 +194,9 @@ internal object ReverseDispatchHandler {
 
     /**
      * Keep structured body payloads as valid JSON strings.
-     * Using `toString()` on Kotlin maps creates `{text=...}` format,
-     * which pollutes clipboard with non-JSON system strings.
+     *
+     * NOTE: using `toString()` on Kotlin maps produces `{text=...}` syntax,
+     * which later shows up as clipboard/system noise instead of valid JSON.
      */
     private fun normalizeDispatchBody(rawBody: Any?): String {
         return when (rawBody) {

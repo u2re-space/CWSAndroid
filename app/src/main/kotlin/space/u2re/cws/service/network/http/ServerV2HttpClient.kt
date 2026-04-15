@@ -4,13 +4,21 @@ import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
+/**
+ * HTTP compatibility/fallback client for Android's CWSP network stack.
+ *
+ * This client tries the same endpoint candidates as the socket layer, but uses
+ * HTTP routes for probe, auth, clipboard, dispatch, and storage operations.
+ */
 class ServerV2HttpClient(
     private val config: EndpointCoreConfig
 ) {
+    /** Probe the remote endpoint with the lightweight hello route. */
     suspend fun probe(): HttpResult {
         return getTextAcrossCandidates("/hello", timeoutMs = 8_000)
     }
 
+    /** Broadcast HTTP requests through the endpoint's relay/dispatch compatibility routes. */
     suspend fun broadcastDispatch(requests: List<Map<String, Any>>): HttpResult {
         val body = buildMap<String, Any> {
             put("broadcastForceHttps", !config.allowInsecureTls)
@@ -21,6 +29,7 @@ class ServerV2HttpClient(
         return postJsonAcrossCandidates(listOf("/api/broadcast", "/core/ops/http/dispatch"), body, timeoutMs = 10_000)
     }
 
+    /** Send one request batch through the network-dispatch API that expects user credentials. */
     suspend fun networkDispatch(requests: List<Map<String, Any>>): HttpResult {
         val body = mapOf(
             "userId" to config.userId,
@@ -30,6 +39,7 @@ class ServerV2HttpClient(
         return postJsonAcrossCandidates(listOf("/api/network/dispatch"), body, timeoutMs = 10_000)
     }
 
+    /** Push clipboard text to the remote endpoint, optionally targeting one specific device/node. */
     suspend fun sendClipboard(text: String, target: String? = null): HttpResult {
         val payload = buildMap<String, Any> {
             put("text", text)
@@ -43,6 +53,7 @@ class ServerV2HttpClient(
         return postJsonAcrossCandidates(listOf("/clipboard"), payload, timeoutMs = 10_000)
     }
 
+    /** Register a user on the remote endpoint using the auth compatibility API. */
     suspend fun registerUser(userId: String? = null, userKey: String? = null, encrypt: Boolean = false): HttpResult {
         return postJsonAcrossCandidates(
             listOf("/core/auth/register"),
@@ -55,6 +66,7 @@ class ServerV2HttpClient(
         )
     }
 
+    /** Rotate the current user's key through the endpoint auth API. */
     suspend fun rotateUserKey(encrypt: Boolean? = null): HttpResult {
         return postJsonAcrossCandidates(
             listOf("/core/auth/rotate"),
@@ -67,6 +79,7 @@ class ServerV2HttpClient(
         )
     }
 
+    /** List known users from the remote endpoint. */
     suspend fun listUsers(): HttpResult {
         return postJsonAcrossCandidates(
             paths = listOf("/core/auth/users"),
@@ -78,6 +91,7 @@ class ServerV2HttpClient(
         )
     }
 
+    /** Delete one user through the endpoint auth API. */
     suspend fun deleteUser(targetId: String? = null): HttpResult {
         return postJsonAcrossCandidates(
             listOf("/core/auth/delete"),
@@ -96,6 +110,7 @@ class ServerV2HttpClient(
     suspend fun storageDelete(path: String): HttpResult = storagePost("/core/storage/delete", mapOf("path" to path))
     suspend fun storageSync(body: Map<String, Any?>): HttpResult = storagePost("/core/storage/sync", body)
 
+    /** Shared storage helper that injects the current user credentials into storage requests. */
     private suspend fun storagePost(path: String, body: Map<String, Any?>): HttpResult {
         val request = linkedMapOf<String, Any?>(
             "userId" to config.userId,
@@ -105,6 +120,10 @@ class ServerV2HttpClient(
         return postJsonAcrossCandidates(listOf(path), request, timeoutMs = 12_000)
     }
 
+    /**
+     * Try one GET-like text route across the ordered endpoint candidates until
+     * one succeeds, keeping the last failure for diagnostics.
+     */
     private suspend fun getTextAcrossCandidates(
         path: String,
         query: Map<String, String> = emptyMap(),
@@ -121,6 +140,7 @@ class ServerV2HttpClient(
         return lastResult
     }
 
+    /** POST one JSON body across all path/candidate combinations until one succeeds. */
     private suspend fun postJsonAcrossCandidates(
         paths: List<String>,
         body: Map<String, Any?>,
@@ -137,6 +157,7 @@ class ServerV2HttpClient(
         return lastResult
     }
 
+    /** Build concrete URL candidates by combining normalized endpoint bases with one route path. */
     private fun buildUrlCandidates(path: String, query: Map<String, String> = emptyMap()): List<String> {
         val bases = config.endpointCandidates.ifEmpty {
             splitEndpointCandidates(config.endpointUrl.ifBlank { config.dispatchUrl })
@@ -153,6 +174,12 @@ class ServerV2HttpClient(
             .distinct()
     }
 
+    /**
+     * Normalize one endpoint base plus route/query into a final request URL.
+     *
+     * NOTE: URL normalization here should stay aligned with `EndpointUrl.kt`
+     * and the socket candidate logic so HTTP and WS fail over consistently.
+     */
     private fun buildUrl(base: String, path: String, query: Map<String, String> = emptyMap()): String? {
         if (base.isBlank()) return null
         return try {

@@ -4,6 +4,12 @@ import android.app.Application
 import android.content.Context
 import java.util.UUID
 
+/**
+ * Persisted configuration for the legacy/reverse gateway path.
+ *
+ * NOTE: this remains separate from `EndpointCoreConfig` because the daemon can
+ * merge these values with newer v2 settings rather than replacing them outright.
+ */
 data class ReverseGatewayConfig(
     val enabled: Boolean,
     val endpointUrl: String,
@@ -21,6 +27,7 @@ data class ReverseGatewayConfig(
     val trustedCa: String = ""
 )
 
+/** SharedPreferences-backed loader/saver for legacy bridge configuration. */
 object ReverseGatewayConfigProvider {
     private const val PREF_NAME = "ioClientGateway"
     private const val PREF_ENABLED = "reverse_enabled"
@@ -37,6 +44,7 @@ object ReverseGatewayConfigProvider {
     private const val PREF_RECONNECT_MS = "reverse_reconnect_ms"
     private const val PREF_TRUSTED_CA = "reverse_trusted_ca"
 
+    /** Load reverse-gateway preferences, generating a stable device id if needed. */
     fun load(application: Application): ReverseGatewayConfig {
         val prefs = application.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         val deviceId = prefs.getString(PREF_DEVICE_ID, null) ?: generateDeviceId().also { generated ->
@@ -62,6 +70,7 @@ object ReverseGatewayConfigProvider {
         )
     }
 
+    /** Persist only the generated/updated device id without rewriting the rest of the config. */
     fun saveDeviceId(application: Application, deviceId: String) {
         application.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -69,6 +78,7 @@ object ReverseGatewayConfigProvider {
             .apply()
     }
 
+    /** Persist the full reverse-gateway config back to SharedPreferences. */
     fun save(application: Application, config: ReverseGatewayConfig) {
         application.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .edit()

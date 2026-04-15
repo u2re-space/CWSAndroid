@@ -3,6 +3,12 @@ package space.u2re.cws.network
 import space.u2re.cws.reverse.ReverseGatewayConfig
 import space.u2re.cws.settings.Settings
 
+/**
+ * Bridge from persisted app settings into the canonical network-core config.
+ *
+ * WHY: this is where UI-facing settings and optional reverse-gateway overrides
+ * collapse into the exact endpoint/token/device/TLS inputs used by transport.
+ */
 fun Settings.toEndpointCoreConfig(reverseConfig: ReverseGatewayConfig? = null): EndpointCoreConfig {
     val endpointRaw = reverseConfig?.endpointUrl
         .orEmpty()

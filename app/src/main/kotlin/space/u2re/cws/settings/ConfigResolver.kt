@@ -4,6 +4,7 @@ import android.util.Base64
 import java.io.File
 import java.net.URLDecoder
 
+/** Resolution context for config indirections such as `id:`, `client:`, and relative file paths. */
 data class ResolveContext(
     val basePath: String = "",
     val deviceId: String = "",
@@ -11,7 +12,17 @@ data class ResolveContext(
     val localIp: String = ""
 )
 
+/**
+ * Resolver for indirection-heavy settings values.
+ *
+ * AI-READ: this file explains why a stored setting may not be the literal value
+ * the network/runtime code finally sees.
+ */
 object ConfigResolver {
+    /**
+     * Resolve one setting string from prefixes like `inline:`, `env:`, `fs:`,
+     * `data:`, and identity shortcuts.
+     */
     fun resolve(value: String, context: ResolveContext): String {
         val trimmed = value.trim()
         if (trimmed.isEmpty()) return trimmed
@@ -67,6 +78,12 @@ object ConfigResolver {
         return trimmed
     }
 
+    /**
+     * Resolve a settings file path relative to the current config root.
+     *
+     * NOTE: `~/` intentionally maps to Android external storage first, not a
+     * traditional desktop home directory.
+     */
     fun resolveFile(path: String, basePath: String = ""): File {
         if (path.startsWith("~/")) {
             val userHome = try {

@@ -19,6 +19,12 @@ import space.u2re.cws.settings.Settings
 import space.u2re.cws.settings.SettingsStore
 import space.u2re.cws.settings.resolve
 
+/**
+ * Foreground-service host for the daemon/runtime.
+ *
+ * WHY: Android may kill background work aggressively; this service is the
+ * explicit "keep the transport/runtime alive" ownership path.
+ */
 class DaemonForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
@@ -62,6 +68,7 @@ class DaemonForegroundService : Service() {
         DaemonLog.info(TAG, "task removed")
     }
 
+    /** Build the persistent notification that explains why the daemon is being kept alive. */
     private fun buildNotification(settings: Settings): Notification {
         val openAppIntent = Intent(this, MainActivity::class.java)
         val openAppPendingIntent = PendingIntent.getActivity(
@@ -80,6 +87,7 @@ class DaemonForegroundService : Service() {
             .build()
     }
 
+    /** Create the notification channel once so foreground startup can succeed on Android O+. */
     private fun ensureNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -101,11 +109,13 @@ class DaemonForegroundService : Service() {
         private const val NOTIFICATION_ID = 8801
         private const val TAG = "DaemonForegroundService"
 
+        /** Start the foreground-service-hosted runtime. */
         fun start(context: Context) {
             val intent = Intent(context, DaemonForegroundService::class.java)
             ContextCompat.startForegroundService(context, intent)
         }
 
+        /** Stop the foreground-service-hosted runtime. */
         fun stop(context: Context) {
             context.stopService(Intent(context, DaemonForegroundService::class.java))
         }

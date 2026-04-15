@@ -12,9 +12,17 @@ import space.u2re.cws.settings.Settings
 import space.u2re.cws.settings.SettingsStore
 import space.u2re.cws.settings.resolve
 
+/**
+ * Small coordinator for deciding who owns the daemon runtime.
+ *
+ * NOTE: this file is the policy boundary between app-entry, boot, foreground
+ * service hosting, and UI-owned daemon startup/shutdown.
+ */
 object AppRuntimeCoordinator {
+    /** Load the current settings snapshot with resolver indirections already applied. */
     fun loadSettings(context: Context): Settings = SettingsStore.load(context).resolve()
 
+    /** Start the runtime from the main app entry, choosing foreground-service or in-process ownership. */
     fun startFromMainEntry(application: Application, activity: Activity? = null) {
         val settings = loadSettings(application)
         if (settings.runDaemonForeground) {
@@ -25,6 +33,7 @@ object AppRuntimeCoordinator {
         applyOverlayPolicy(application, settings)
     }
 
+    /** Start the runtime from boot when the user's boot setting allows it. */
     fun startFromBoot(application: Application) {
         val settings = loadSettings(application)
         if (!settings.runDaemonOnBoot) return
@@ -36,10 +45,17 @@ object AppRuntimeCoordinator {
         applyOverlayPolicy(application, settings)
     }
 
+    /** Start only the core daemon without deciding boot/UI policy again. */
     fun startDaemonCore(application: Application, activity: Activity? = null): Daemon {
         return DaemonController.start(application, activity)
     }
 
+    /**
+     * Stop only the UI-owned runtime.
+     *
+     * WHY: when the daemon is hosted by a foreground service, the UI should not
+     * accidentally stop the service-owned transport stack.
+     */
     fun stopUiOwnedRuntime(context: Context) {
         val settings = loadSettings(context)
         if (!settings.runDaemonForeground) {
@@ -48,11 +64,13 @@ object AppRuntimeCoordinator {
         FloatingButtonService.stop(context)
     }
 
+    /** Stop the service-hosted runtime and shared overlay state. */
     fun stopServiceHostedRuntime(context: Context) {
         DaemonController.current()?.stop()
         FloatingButtonService.stop(context)
     }
 
+    /** Ensure the daemon exists for share-entry flows without requiring the full main UI path. */
     fun ensureShareRuntime(application: Application, activity: Activity? = null) {
         val settings = loadSettings(application)
         if (settings.runDaemonForeground) {
@@ -89,6 +107,7 @@ object AppRuntimeCoordinator {
         return daemon
     }
 
+    /** Apply the floating-overlay policy derived from the current settings snapshot. */
     fun applyOverlayPolicy(context: Context, settings: Settings = loadSettings(context)) {
         if (settings.showFloatingButton) {
             FloatingButtonService.start(context)
