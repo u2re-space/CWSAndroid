@@ -86,7 +86,16 @@ internal fun isTargetMatch(target: String?, localDeviceId: String, settings: Set
 }
 
 internal fun isAnyTargetMatch(targets: List<String>, localDeviceId: String, settings: Settings, userId: String? = null): Boolean {
-    if (targets.isEmpty()) return true
+    if (targets.isEmpty()) {
+        val allowUntargetedInbound = listOf(
+            System.getenv("CWS_ANDROID_ACCEPT_UNTARGETED"),
+            System.getProperty("cws.android.acceptUntargeted")
+        ).any { value ->
+            val normalized = value?.trim()?.lowercase()
+            normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
+        }
+        return allowUntargetedInbound
+    }
     return targets.any { target -> isTargetMatch(target, localDeviceId, settings, userId) }
 }
 
@@ -135,9 +144,6 @@ internal fun extractTarget(payload: JsonObject): String? {
         ?: payload["destinations"]?.takeIf { it.isJsonArray }?.asJsonArray?.firstOrNull()?.let(::extractString)
         ?: payload["ids"]?.takeIf { it.isJsonArray }?.asJsonArray?.firstOrNull()?.let(::extractString)
         ?: nestedPayloadObject(payload)?.let(::extractTarget)
-        ?: extractString(payload["byId"])
-        ?: extractString(payload["from"])
-        ?: extractString(payload["sender"])
 }
 
 internal fun extractTargetCandidates(payload: JsonObject): List<String> {
@@ -163,9 +169,6 @@ internal fun extractTargetCandidates(payload: JsonObject): List<String> {
     nestedPayloadObject(payload)?.let { nested ->
         extractTargetCandidates(nested).forEach(out::add)
     }
-    append(extractString(payload["byId"]))
-    append(extractString(payload["from"]))
-    append(extractString(payload["sender"]))
     return out.toList()
 }
 

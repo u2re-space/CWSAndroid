@@ -8,6 +8,7 @@ import space.u2re.cws.network.ServerV2HttpClient
 import space.u2re.cws.network.ServerV2Packet
 import space.u2re.cws.network.ServerV2PacketCodec
 import space.u2re.cws.reverse.ReverseGatewayConfig
+import java.net.URI
 import java.util.concurrent.atomic.AtomicLong
 
 class DaemonTransportRuntime(
@@ -17,6 +18,46 @@ class DaemonTransportRuntime(
     private val onLegacyMessage: (String, String) -> Unit,
     private val onState: (String, String?) -> Unit
 ) {
+    private val clipboardDualPathEnabled = listOf(
+        System.getenv("CWS_ANDROID_CLIPBOARD_DUAL_PATH"),
+        System.getProperty("cws.android.clipboardDualPath")
+    ).firstNotNullOfOrNull { value ->
+        val normalized = value?.trim()?.lowercase()
+        when (normalized) {
+            "1", "true", "yes", "on" -> true
+            "0", "false", "no", "off" -> false
+            else -> null
+        }
+    } ?: true
+    private val hardCutoverMode = listOf(
+        System.getenv("CWS_ANDROID_HARD_CUTOVER"),
+        System.getProperty("cws.android.hardCutover")
+    ).any { value ->
+        val normalized = value?.trim()?.lowercase()
+        normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
+    }
+    private val forceLegacyBridge = listOf(
+        System.getenv("CWS_ANDROID_FORCE_LEGACY_BRIDGE"),
+        System.getProperty("cws.android.forceLegacyBridge")
+    ).any { value ->
+        val normalized = value?.trim()?.lowercase()
+        normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
+    }
+    private val allowLegacyInboundWhenWsConnected = listOf(
+        System.getenv("CWS_ANDROID_ALLOW_LEGACY_INBOUND_WITH_WS"),
+        System.getProperty("cws.android.allowLegacyInboundWithWs")
+    ).any { value ->
+        val normalized = value?.trim()?.lowercase()
+        normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
+    }
+    private val allowLegacySendFallback = listOf(
+        System.getenv("CWS_ANDROID_ALLOW_LEGACY_SEND_FALLBACK"),
+        System.getProperty("cws.android.allowLegacySendFallback")
+    ).any { value ->
+        val normalized = value?.trim()?.lowercase()
+        normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
+    }
+
     private val networkModule = ServerV2NetworkModule(
         config = endpointConfig,
         onPacket = onV2Packet,
@@ -51,10 +92,20 @@ class DaemonTransportRuntime(
             return
         }
 
-        if (reverseConfig.enabled && reverseConfig.endpointUrl.isNotBlank() && reverseConfig.userId.isNotBlank() && reverseConfig.userKey.isNotBlank()) {
+        if (
+            reverseConfig.enabled &&
+            reverseConfig.endpointUrl.isNotBlank() &&
+            reverseConfig.userId.isNotBlank() &&
+            reverseConfig.userKey.isNotBlank() &&
+            shouldEnableLegacyBridge(reverseConfig.endpointUrl)
+        ) {
             legacyBridge = ReverseGatewayClient(
                 reverseConfig,
                 onMessage = { messageType, text, _ ->
+                    if (networkModule.isConnected() && !allowLegacyInboundWhenWsConnected) {
+                        // Avoid dual-ingest loops (WS + legacy bridge) for clipboard/dispatch packets.
+                        return@ReverseGatewayClient
+                    }
                     onLegacyMessage(messageType, text)
                 },
                 onState = { event, detail ->
@@ -66,6 +117,32 @@ class DaemonTransportRuntime(
                     }
                 }
             ).also { it.start() }
+        }
+    }
+
+    private fun shouldEnableLegacyBridge(endpointUrl: String): Boolean {
+        if (forceLegacyBridge) return true
+        val endpoint = endpointUrl.trim()
+        if (endpoint.isBlank()) return true
+        return try {
+            val uri = URI(endpoint)
+            val host = uri.host?.trim().orEmpty().lowercase()
+            val port = when {
+                uri.port > 0 -> uri.port
+                uri.scheme.equals("https", ignoreCase = true) || uri.scheme.equals("wss", ignoreCase = true) -> 443
+                else -> 80
+            }
+            val path = (uri.path ?: "").trim().lowercase()
+            val isRootLike = path.isBlank() || path == "/" || path == "/api"
+            val isKnownLoopGateway = host == "192.168.0.200" && (port == 8443 || port == 443) && isRootLike
+            if (isKnownLoopGateway) {
+                updateState("bridge-disabled", "legacy bridge disabled for gateway root endpoint")
+                false
+            } else {
+                true
+            }
+        } catch (_: Exception) {
+            true
         }
     }
 
@@ -121,7 +198,15 @@ class DaemonTransportRuntime(
 
     fun sendPacket(packet: ServerV2Packet): Boolean {
         if (networkModule.sendPacket(packet)) return true
+        if (!shouldUseLegacyFallback()) return false
         return sendPacketViaBridge(packet)
+    }
+
+    private fun shouldUseLegacyFallback(): Boolean {
+        if (forceLegacyBridge) return true
+        if (hardCutoverMode && !allowLegacySendFallback) return false
+        if (networkModule.isConnected() && !allowLegacySendFallback) return false
+        return true
     }
 
     private fun sendPacketViaBridge(packet: ServerV2Packet): Boolean {
@@ -160,7 +245,6 @@ class DaemonTransportRuntime(
         resolveTarget: (Map<String, Any>) -> String?,
         senderId: String
     ): List<HubDispatchPayloadItem> {
-        val bridge = legacyBridge
         val identity = networkModule.resolveIdentity()
         val wireSenderId = networkModule.normalizeNodeId(senderId).ifBlank { identity.senderId() }
         val pending = mutableListOf<HubDispatchPayloadItem>()
@@ -169,7 +253,7 @@ class DaemonTransportRuntime(
             val target = networkModule.normalizeNodeId(resolveTarget(item.request))
             if (target.isNullOrBlank()) {
                 pending.add(item)
-                relayFallback.incrementAndGet()
+                relayFailures.incrementAndGet()
                 continue
             }
 
@@ -188,6 +272,24 @@ class DaemonTransportRuntime(
             val v2Sent = networkModule.sendPacket(packet)
             if (v2Sent) {
                 relaySuccess.incrementAndGet()
+                // `send()` means frame is queued, not that target applied it.
+                // Keep HTTP dispatch as reliability path for cross-host clipboard delivery.
+                if (clipboardDualPathEnabled) {
+                    pending.add(item)
+                }
+                continue
+            }
+
+            if (!shouldUseLegacyFallback()) {
+                relayFailures.incrementAndGet()
+                pending.add(item)
+                continue
+            }
+
+            val bridge = legacyBridge
+            if (bridge == null || !bridge.isConnected()) {
+                relayFailures.incrementAndGet()
+                pending.add(item)
                 continue
             }
 

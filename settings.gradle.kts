@@ -87,6 +87,7 @@ dependencyResolutionManagement {
 rootProject.name = "space.u2re.cws"
 
 include(":app")
+include(":network")
 include(":audioswitch-stub")
 include(":capacitor-cordova-android-plugins")
 project(":capacitor-cordova-android-plugins").projectDir = file("capacitor-cordova-android-plugins")

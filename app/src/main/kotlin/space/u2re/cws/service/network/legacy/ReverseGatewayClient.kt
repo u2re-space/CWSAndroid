@@ -42,6 +42,7 @@ class ReverseGatewayClient(
         private const val STATE_LOG_COOLDOWN_MS = 3_000L
         private const val FAILURE_LOG_COOLDOWN_MS = 12_000L
         private const val PARSE_FAIL_LOG_COOLDOWN_MS = 10_000L
+        private val IPV4_HOST_RE = Regex("^\\d{1,3}(?:\\.\\d{1,3}){3}(?::\\d{1,5})?$")
 
     private val RESPONSER_INITIATOR_ROLE_TOKENS = setOf(
         "responser-initiator",
@@ -643,23 +644,55 @@ class ReverseGatewayClient(
         }
 
         for (entry in entries) {
+            val normalizedEntry = run {
+                var candidate = entry.trim()
+                val parsedUri = runCatching { URI(candidate) }.getOrNull()
+                val parsedHost = parsedUri?.host?.trim().orEmpty().ifBlank {
+                    parsedUri?.rawAuthority
+                        ?.substringAfterLast("@")
+                        ?.substringBefore(":")
+                        ?.trim()
+                        .orEmpty()
+                }
+                if (parsedHost.isNotBlank() && EndpointIdentity.isLikelyNodeTarget(parsedHost)) {
+                    val canonicalHost = EndpointIdentity.canonical(parsedHost)
+                    if (IPV4_HOST_RE.matches(canonicalHost)) {
+                        val normalizedScheme = "https"
+                        val parsedPath = parsedUri?.rawPath?.trim().orEmpty().ifBlank { "/api" }
+                        val parsedPort = if ((parsedUri?.port ?: -1) > 0) parsedUri!!.port else 8443
+                        candidate = "$normalizedScheme://$canonicalHost:$parsedPort$parsedPath"
+                    }
+                }
+
+                if (EndpointIdentity.isLikelyNodeTarget(candidate) && !EndpointIdentity.isExplicitHttpUrl(candidate)) {
+                    val canonical = EndpointIdentity.canonical(candidate)
+                    if (IPV4_HOST_RE.matches(canonical)) {
+                        "https://${canonical.substringBefore(":")}:8443/api"
+                    } else {
+                        ""
+                    }
+                } else {
+                    candidate
+                }
+            }.trim()
+            if (normalizedEntry.isBlank()) continue
             when {
-                entry.startsWith("ws://") || entry.startsWith("wss://") -> {
-                    val explicitScheme = entry.substringBefore("://").lowercase()
-                    addCandidate(entry, explicitScheme)
+                normalizedEntry.startsWith("ws://") || normalizedEntry.startsWith("wss://") -> {
+                    val explicitScheme = normalizedEntry.substringBefore("://").lowercase()
+                    addCandidate(normalizedEntry, explicitScheme)
                 }
 
-                entry.startsWith("http://") -> {
-                    addCandidate(entry, "ws")
+                normalizedEntry.startsWith("http://") -> {
+                    addCandidate(normalizedEntry, "ws")
                 }
 
-                entry.startsWith("https://") -> {
-                    addCandidate(entry, "wss")
+                normalizedEntry.startsWith("https://") -> {
+                    addCandidate(normalizedEntry, "wss")
                 }
 
                 else -> {
-                    addCandidate(entry, "wss")
-                    addCandidate(entry, "ws")
+                    addCandidate(normalizedEntry, "wss")
+                    addCandidate(normalizedEntry, "ws")
                 }
             }
         }

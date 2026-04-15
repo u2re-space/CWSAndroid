@@ -57,8 +57,6 @@ data class ClipboardEnvelope(
     fun bestText(): String? {
         val directText = text?.trim()?.takeIf { it.isNotBlank() }
         if (directText != null) return directText
-        val directJson = json?.trim()?.takeIf { it.isNotBlank() }
-        if (directJson != null) return directJson
         return assets.firstNotNullOfOrNull { asset ->
             asset.text?.trim()?.takeIf { it.isNotBlank() }
                 ?: asset.data?.trim()?.takeIf { it.isNotBlank() }
@@ -126,7 +124,7 @@ object ClipboardEnvelopeCodec {
                 source = raw.source ?: source,
                 uuid = raw.uuid ?: defaultUuid
             )
-            is String -> ClipboardEnvelope(text = raw.trim().ifBlank { null }, source = source, uuid = defaultUuid)
+            is String -> parseStringEnvelope(raw, source = source, defaultUuid = defaultUuid)
             is Number, is Boolean -> ClipboardEnvelope(text = raw.toString(), source = source, uuid = defaultUuid)
             is List<*> -> ClipboardEnvelope(
                 json = canonicalJson(raw),
@@ -137,6 +135,47 @@ object ClipboardEnvelopeCodec {
             is Map<*, *> -> fromMap(raw, source = source, defaultUuid = defaultUuid)
             else -> ClipboardEnvelope(text = raw.toString().trim().ifBlank { null }, source = source, uuid = defaultUuid)
         }
+    }
+
+    private fun parseStringEnvelope(raw: String, source: String?, defaultUuid: String?): ClipboardEnvelope {
+        val trimmed = raw.trim()
+        if (trimmed.isBlank()) {
+            return ClipboardEnvelope(source = source, uuid = defaultUuid)
+        }
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            val parsed = runCatching { JsonParser.parseString(trimmed) }.getOrNull()
+            if (parsed != null && !parsed.isJsonNull) {
+                val parsedAny = runCatching { gson.fromJson(parsed, Any::class.java) }.getOrNull()
+                if (parsedAny is Map<*, *>) {
+                    val looksEnvelopeLike = listOf("text", "content", "payload", "data", "assets", "clipboard")
+                        .any { parsedAny.containsKey(it) }
+                    if (looksEnvelopeLike) {
+                        return fromMap(parsedAny, source = source, defaultUuid = defaultUuid)
+                    }
+                }
+            }
+        }
+        return ClipboardEnvelope(text = sanitizeTextCandidate(trimmed), source = source, uuid = defaultUuid)
+    }
+
+    private fun sanitizeTextCandidate(value: String?): String? {
+        val trimmed = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val lower = trimmed.lowercase(Locale.ROOT)
+        if (lower.startsWith("{text=") && trimmed.endsWith("}")) {
+            val extracted = trimmed
+                .removePrefix("{")
+                .removeSuffix("}")
+                .substringAfter("=", "")
+                .trim()
+            if (extracted.isBlank()) return null
+            val unquoted = if (extracted.length >= 2 && extracted.startsWith("\"") && extracted.endsWith("\"")) {
+                extracted.substring(1, extracted.length - 1)
+            } else {
+                extracted
+            }
+            return unquoted.trim().ifBlank { null }
+        }
+        return trimmed
     }
 
     fun fromIntent(context: Context, intent: Intent, source: String = "intent"): ClipboardEnvelope {
@@ -198,24 +237,37 @@ object ClipboardEnvelopeCodec {
         )
     }
 
+    private fun extractTextDeep(value: Any?): String? {
+        return when (value) {
+            null -> null
+            is String -> sanitizeTextCandidate(value)
+            is Number, is Boolean -> value.toString()
+            is Map<*, *> -> {
+                val direct = listOf("text", "content", "body", "clipboard", "value")
+                    .firstNotNullOfOrNull { key -> extractTextDeep(value[key]) }
+                if (direct != null) return direct
+                val nested = value["data"] ?: value["payload"] ?: value["body"]
+                extractTextDeep(nested)
+            }
+            is List<*> -> value.firstNotNullOfOrNull { extractTextDeep(it) }
+            else -> null
+        }
+    }
+
     private fun findBestText(root: Map<*, *>, nested: Map<*, *>?): String? {
         val direct = listOf(root, nested).filterNotNull().firstNotNullOfOrNull { map ->
             listOf("text", "body", "content", "clipboard", "value").firstNotNullOfOrNull { key ->
                 when (val value = map[key]) {
                     null -> null
-                    is String -> value.trim().ifBlank { null }
+                    is String -> sanitizeTextCandidate(value)
                     is Number, is Boolean -> value.toString()
-                    else -> null
+                    else -> extractTextDeep(value)
                 }
             }
         }
         if (direct != null) return direct
-        val rawData = root["data"] ?: root["payload"] ?: nested?.get("data") ?: nested?.get("payload")
-        return when (rawData) {
-            is String -> rawData.trim().ifBlank { null }
-            is Number, is Boolean -> rawData.toString()
-            else -> null
-        }
+        val rawData = root["data"] ?: root["payload"] ?: nested?.get("data") ?: nested?.get("payload") ?: root
+        return extractTextDeep(rawData)
     }
 
     private fun findBestJson(root: Map<*, *>, nested: Map<*, *>?): String? {

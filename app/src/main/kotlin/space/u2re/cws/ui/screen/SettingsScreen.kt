@@ -671,8 +671,14 @@ fun SettingsScreen(
                     logLevel = settings.logLevel
                 )
                 saving = true
-                message = if (fromAutoSave) "Auto-saving..." else "Saving settings..."
+                message = if (fromAutoSave) "Auto-saving: validate -> apply..." else "Saving: validate -> apply..."
                 try {
+                    val endpointPreview = previewEndpointConfig()
+                    if (!endpointPreview.hasRemoteEndpoint()) {
+                        message = "Saving: endpoint validation warning (endpoint URL is empty)"
+                    } else {
+                        message = "Saving: endpoint validation ok, applying..."
+                    }
                     SettingsStore.update(app, patch)
                     if (nextRunDaemonForeground) {
                         DaemonForegroundService.start(app)
@@ -688,7 +694,24 @@ fun SettingsScreen(
                     if (current != null) {
                         current.restart()
                     }
-                    message = if (fromAutoSave) "Auto-saved" else "Settings saved"
+                    if (endpointPreview.hasRemoteEndpoint()) {
+                        message = "Saving: probing endpoint..."
+                        val probeStatus = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val client = ServerV2HttpClient(endpointPreview)
+                                val response = client.probe().takeIf { it.ok } ?: client.broadcastDispatch(emptyList())
+                                response.status
+                            }.getOrDefault("unreachable")
+                        }
+                        message = if (fromAutoSave) {
+                            "Auto-saved. Probe: $probeStatus"
+                        } else {
+                            "Saved. Probe: $probeStatus"
+                        }
+                    } else {
+                        message = if (fromAutoSave) "Auto-saved (no endpoint probe)" else "Settings saved (no endpoint probe)"
+                    }
+                    refreshDaemonSnapshot()
                 } catch (e: Exception) {
                     message = "Save failed: ${e.message ?: "error"}"
                 } finally {
@@ -730,7 +753,7 @@ fun SettingsScreen(
                     contentColor = MaterialTheme.colorScheme.onSecondary
                 )
             ) {
-                Text(if (saving) "Saving..." else "Save Settings")
+                Text(if (saving) "Saving..." else "Save + Validate + Probe")
             }
             TextButton(onClick = navigateBack) {
                 Text("Close")

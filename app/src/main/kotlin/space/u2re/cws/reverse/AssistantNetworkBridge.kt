@@ -14,6 +14,23 @@ import space.u2re.cws.settings.resolve
 private const val BRIDGE_LOGGER = "ReverseAssistantBridge"
 
 object AssistantNetworkBridge {
+    private fun isSelfEchoSource(
+        inbound: ReverseInboundMessage,
+        localDeviceId: String,
+        settings: space.u2re.cws.settings.Settings,
+        userId: String?
+    ): Boolean {
+        val aliases = buildTargetAliases(localDeviceId, settings, userId)
+        val source = listOf(
+            extractString(inbound.payload["byId"]),
+            extractString(inbound.payload["from"]),
+            extractString(inbound.payload["sender"])
+        ).firstOrNull { !it.isNullOrBlank() }?.trim().orEmpty()
+        if (source.isBlank()) return false
+        val sourceAliases = space.u2re.cws.network.EndpointIdentity.aliases(source)
+        return sourceAliases.any { aliases.contains(it) }
+    }
+
     suspend fun handleServerV2Packet(
         context: Context,
         packet: ServerV2Packet,
@@ -62,6 +79,13 @@ object AssistantNetworkBridge {
             Log.d(
                 BRIDGE_LOGGER,
                 "Skip reverse message: targets=${inbound.targets.joinToString(",")} deviceId=${config.deviceId} userId=${config.userId} aliases=${buildTargetAliases(config.deviceId, settings, config.userId).joinToString(",")}"
+            )
+            return@withContext false
+        }
+        if (isSelfEchoSource(inbound, config.deviceId, settings, config.userId)) {
+            Log.d(
+                BRIDGE_LOGGER,
+                "Skip reverse self-echo action=${inbound.action} source=${extractString(inbound.payload["byId"]) ?: extractString(inbound.payload["from"]) ?: "-"}"
             )
             return@withContext false
         }

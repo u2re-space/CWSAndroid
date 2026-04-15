@@ -2,11 +2,13 @@ package space.u2re.cws.network
 
 import java.net.URI
 import java.net.URLEncoder
+import java.io.File
 import java.io.FileInputStream
 import java.security.KeyStore
 import java.security.SecureRandom
 import java.security.cert.CertificateFactory
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,6 +22,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import javax.net.ssl.SSLContext
+import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.TrustManager
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
@@ -40,10 +43,21 @@ class ServerV2SocketClient(
     private val onPacket: (ServerV2Packet) -> Unit = {},
     private val onState: (String, String?) -> Unit = { _, _ -> }
 ) {
+    private val hiddenQueryKeys = setOf("token", "airpadtoken", "userkey")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var reconnectMonitorJob: Job? = null
+    private var keepaliveMonitorJob: Job? = null
     private var lastReconnectAtMs: Long = 0L
     private val reconnectEveryMs: Long = 1_500L
+    private val keepaliveEveryMs: Long = listOf(
+        System.getenv("CWS_ANDROID_WS_KEEPALIVE_MS"),
+        System.getProperty("cws.android.wsKeepaliveMs")
+    ).firstNotNullOfOrNull { it?.trim()?.toLongOrNull() }?.coerceAtLeast(4_000L) ?: 15_000L
+    private val staleSocketAfterMs: Long = listOf(
+        System.getenv("CWS_ANDROID_WS_STALE_MS"),
+        System.getProperty("cws.android.wsStaleMs")
+    ).firstNotNullOfOrNull { it?.trim()?.toLongOrNull() }?.coerceAtLeast(keepaliveEveryMs + 2_000L) ?: 45_000L
+    private var lastInboundAtMs: Long = 0L
 
     private var client: OkHttpClient? = null
     private var socket: WebSocket? = null
@@ -54,6 +68,13 @@ class ServerV2SocketClient(
     private var connected = false
     private var lastState = "stopped"
     private var lastDetail: String? = "not-started"
+    private val relaxIpHostnameMismatch: Boolean = listOf(
+        System.getenv("CWS_ANDROID_TLS_RELAX_IP_HOSTNAME"),
+        System.getProperty("cws.android.tlsRelaxIpHostname")
+    ).firstNotNullOfOrNull { it?.trim() }
+        ?.lowercase()
+        ?.let { it == "1" || it == "true" || it == "yes" || it == "on" }
+        ?: true
 
     fun start() {
         if (started) return
@@ -86,6 +107,27 @@ class ServerV2SocketClient(
                 delay(reconnectEveryMs)
             }
         }
+        keepaliveMonitorJob?.cancel()
+        keepaliveMonitorJob = scope.launch {
+            while (isActive && started) {
+                if (connected && socket != null) {
+                    val now = System.currentTimeMillis()
+                    val idleForMs = now - lastInboundAtMs
+                    if (idleForMs >= keepaliveEveryMs) {
+                        val sent = sendKeepaliveProbe()
+                        if (!sent) {
+                            updateState("keepalive-failed", "keepalive probe failed; forcing reconnect")
+                            restartSocket(rotate = true)
+                        }
+                    }
+                    if (idleForMs >= staleSocketAfterMs) {
+                        updateState("stale", "no inbound packets for ${idleForMs}ms; reconnecting")
+                        restartSocket(rotate = true)
+                    }
+                }
+                delay(keepaliveEveryMs)
+            }
+        }
     }
 
     fun stop() {
@@ -93,6 +135,8 @@ class ServerV2SocketClient(
         connected = false
         reconnectMonitorJob?.cancel()
         reconnectMonitorJob = null
+        keepaliveMonitorJob?.cancel()
+        keepaliveMonitorJob = null
         socket?.close(1001, "stop")
         socket = null
         client?.dispatcher?.executorService?.shutdown()
@@ -154,6 +198,19 @@ class ServerV2SocketClient(
         )
     }
 
+    private fun sendKeepaliveProbe(): Boolean {
+        val identity = currentIdentity()
+        return sendPacket(
+            ServerV2Packet(
+                op = "ask",
+                what = "token",
+                payload = mapOf("keepalive" to true, "at" to System.currentTimeMillis()),
+                nodes = listOf("*"),
+                byId = identity.senderId()
+            )
+        )
+    }
+
     private fun updateState(event: String, detail: String?) {
         maybeMarkTlsRejectedEndpoint(detail)
         lastState = event
@@ -194,21 +251,30 @@ class ServerV2SocketClient(
         socket = null
         val identity = currentIdentity()
         val endpoint = toCanonicalWsUrl(identity.endpointUrl, identity)
+        val endpointLog = endpointForDiagnostics(endpoint)
         if (client == null) {
             client = buildSocketClient()
         }
-        updateState("connecting", endpoint)
-        val request = Request.Builder().url(endpoint).build()
+        updateState("connecting", endpointLog)
+        val requestBuilder = Request.Builder().url(endpoint)
+        ServerV2WireContract.buildHeaders(identity).forEach { (key, value) ->
+            if (key.isNotBlank() && value.isNotBlank()) {
+                requestBuilder.header(key, value)
+            }
+        }
+        val request = requestBuilder.build()
         socket = client?.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (webSocket != socket) return
                 connected = true
-                updateState("connected", endpoint)
+                lastInboundAtMs = System.currentTimeMillis()
+                updateState("connected", endpointLog)
                 hello()
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 if (webSocket != socket) return
+                lastInboundAtMs = System.currentTimeMillis()
                 val packet = ServerV2PacketCodec.decode(text) ?: return
                 onPacket(packet)
             }
@@ -216,20 +282,20 @@ class ServerV2SocketClient(
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 if (webSocket != socket) return
                 connected = false
-                updateState("closing", "$endpoint code=$code reason=$reason")
+                updateState("closing", "$endpointLog code=$code reason=$reason")
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 if (webSocket != socket) return
                 connected = false
-                updateState("closed", "$endpoint code=$code reason=$reason")
+                updateState("closed", "$endpointLog code=$code reason=$reason")
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (webSocket != socket) return
                 connected = false
                 val details = listOfNotNull(
-                    endpoint,
+                    endpointLog,
                     t.message,
                     response?.code?.let { "http=$it" }
                 ).joinToString(" | ")
@@ -272,6 +338,8 @@ class ServerV2SocketClient(
     private fun buildSocketClient(): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .retryOnConnectionFailure(true)
+            .pingInterval(20, TimeUnit.SECONDS)
+            .pingInterval(keepaliveEveryMs, java.util.concurrent.TimeUnit.MILLISECONDS)
 
         if (config.allowInsecureTls) {
             val trustAllManager = object : X509TrustManager {
@@ -293,6 +361,15 @@ class ServerV2SocketClient(
                 val sslContext = SSLContext.getInstance("TLS")
                 sslContext.init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
                 builder.sslSocketFactory(sslContext.socketFactory, trustManager)
+                builder.hostnameVerifier { hostname, session ->
+                    val defaultVerifier = HttpsURLConnection.getDefaultHostnameVerifier()
+                    if (defaultVerifier.verify(hostname, session)) {
+                        true
+                    } else {
+                        val isIpHost = hostname.matches(Regex("^\\d{1,3}(?:\\.\\d{1,3}){3}$"))
+                        relaxIpHostnameMismatch && isIpHost
+                    }
+                }
             }.onFailure { error ->
                 updateState("tls-ca-load-failed", "${trustedCaPath}: ${error.message}")
             }
@@ -302,10 +379,46 @@ class ServerV2SocketClient(
 
     private fun resolveTrustedCaPath(raw: String?): String {
         val value = raw?.trim().orEmpty()
-        if (value.isBlank()) return ""
-        if (value.startsWith("fs:", ignoreCase = true)) return value.substring(3).trim()
-        if (value.startsWith("file:", ignoreCase = true)) return value.removePrefix("file:").trim()
-        return value
+        val configDir = resolveConfigDirPath()
+        val storageDir = config.storagePath.trim().removePrefix("fs:").removePrefix("file:").trim()
+
+        val candidates = linkedSetOf<String>()
+        if (value.isNotBlank()) {
+            val normalized = value.removePrefix("fs:").removePrefix("file:").trim()
+            if (normalized.isNotBlank()) candidates.add(normalized)
+            if (normalized.isNotBlank() && !File(normalized).isAbsolute) {
+                if (configDir.isNotBlank()) candidates.add(File(configDir, normalized).absolutePath)
+                if (storageDir.isNotBlank()) candidates.add(File(storageDir, normalized).absolutePath)
+            }
+        }
+
+        if (configDir.isNotBlank()) {
+            val root = File(configDir).parentFile?.absolutePath.orEmpty()
+            if (root.isNotBlank()) {
+                candidates.add(File(root, "https/private/rootCA.crt").absolutePath)
+                candidates.add(File(root, "https/local/rootCA.crt").absolutePath)
+                candidates.add(File(root, "https/rootCA.crt").absolutePath)
+            }
+            candidates.add(File(configDir, "rootCA.crt").absolutePath)
+        }
+
+        if (storageDir.isNotBlank()) {
+            candidates.add(File(storageDir, "https/private/rootCA.crt").absolutePath)
+            candidates.add(File(storageDir, "https/local/rootCA.crt").absolutePath)
+            candidates.add(File(storageDir, "https/rootCA.crt").absolutePath)
+        }
+
+        return candidates.firstOrNull { candidate ->
+            runCatching { File(candidate).exists() && File(candidate).isFile }.getOrDefault(false)
+        } ?: candidates.firstOrNull().orEmpty()
+    }
+
+    private fun resolveConfigDirPath(): String {
+        val raw = config.configPath.trim()
+        if (raw.isBlank()) return ""
+        val normalized = raw.removePrefix("fs:").removePrefix("file:").trim()
+        if (normalized.isBlank()) return ""
+        return normalized
     }
 
     private fun trustManagerFromCustomCa(path: String): X509TrustManager {
@@ -350,12 +463,34 @@ class ServerV2SocketClient(
         if (source == null) {
             return "ws://127.0.0.1:8080/ws"
         }
-        val scheme = when (source.scheme?.lowercase()) {
-            "https", "wss" -> "wss"
-            else -> "ws"
+        val sourceScheme = source.scheme?.lowercase().orEmpty()
+        val authorityHost = source.rawAuthority
+            ?.substringAfterLast("@")
+            ?.substringBefore(":")
+            ?.trim()
+            .orEmpty()
+        val hostCandidate = source.host?.takeIf { it.isNotBlank() } ?: authorityHost
+        val normalizedHost = when {
+            hostCandidate.isBlank() -> ""
+            EndpointIdentity.isLikelyNodeTarget(hostCandidate) -> {
+                val canonical = EndpointIdentity.canonical(hostCandidate).substringBefore(":")
+                if (canonical.matches(Regex("^\\d{1,3}(?:\\.\\d{1,3}){3}$"))) canonical else hostCandidate
+            }
+            else -> hostCandidate
         }
-        val host = source.host?.takeIf { it.isNotBlank() } ?: "127.0.0.1"
-        val port = if (source.port > 0) source.port else if (scheme == "wss") 8443 else 8080
+        val host = normalizedHost.ifBlank { "127.0.0.1" }
+        val isLocalLoopback = host == "127.0.0.1" || host.equals("localhost", ignoreCase = true)
+        val scheme = when (sourceScheme) {
+            "https", "wss" -> "wss"
+            "http", "ws" -> if (isLocalLoopback) "ws" else "wss"
+            else -> "wss"
+        }
+        val port = when {
+            source.port > 0 && scheme == "wss" && source.port == 8080 -> 8443
+            source.port > 0 -> source.port
+            scheme == "wss" -> 8443
+            else -> 8080
+        }
         val path = source.path?.takeIf { it.isNotBlank() && it != "/" } ?: "/ws"
 
         val query = linkedMapOf<String, String>()
@@ -366,10 +501,6 @@ class ServerV2SocketClient(
         }
         ServerV2WireContract.buildQuery(identity).forEach { (key, value) ->
             if (key.isNotBlank() && value.isNotBlank()) query[key] = value
-        }
-        if (identity.userKey.isNotBlank()) {
-            query["token"] = identity.userKey
-            query["airpadToken"] = identity.userKey
         }
         val renderedQuery = query.entries
             .filter { it.key.isNotBlank() && it.value.isNotBlank() }
@@ -384,6 +515,35 @@ class ServerV2SocketClient(
             renderedQuery.ifBlank { null },
             null
         ).toString()
+    }
+
+    private fun endpointForDiagnostics(rawEndpoint: String): String {
+        return try {
+            val uri = URI(rawEndpoint)
+            val safeQuery = uri.rawQuery
+                ?.split("&")
+                ?.mapNotNull { token ->
+                    val key = token.substringBefore("=").trim()
+                    if (key.isBlank()) return@mapNotNull null
+                    val value = token.substringAfter("=", "")
+                    if (hiddenQueryKeys.contains(key.lowercase())) {
+                        "$key=***"
+                    } else {
+                        "$key=$value"
+                    }
+                }
+                ?.joinToString("&")
+                ?.ifBlank { null }
+            URI(
+                uri.scheme,
+                uri.rawAuthority,
+                uri.rawPath,
+                safeQuery,
+                uri.rawFragment
+            ).toString()
+        } catch (_: Exception) {
+            rawEndpoint
+        }
     }
 
     private fun urlEncode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())

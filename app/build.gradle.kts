@@ -89,6 +89,7 @@ configurations.all {
 }
 
 dependencies {
+    implementation(project(":network"))
 
     // For local development with the LiveKit Compose SDK only.
     // implementation("io.livekit:livekit-compose-components")
@@ -132,21 +133,49 @@ dependencies {
 }
 
 /** Stage the same merged web tree as CWSP Capacitor (`npm run build:capacitor:web` in runtime/cwsp). */
-fun findCwspDistCapacitor(start: File): File? {
+fun findWorkspaceDir(start: File, relativeCandidates: List<String>): File? {
     var dir: File? = start.canonicalFile
-    val rel = "runtime/cwsp/dist/capacitor"
     while (dir != null) {
-        val candidate = File(dir, rel)
-        if (candidate.isDirectory) return candidate
-        dir = dir.parentFile
+        val current = requireNotNull(dir)
+        for (relative in relativeCandidates) {
+            val candidate = File(current, relative)
+            if (candidate.isDirectory) return candidate
+        }
+        dir = current.parentFile
     }
     return null
+}
+
+fun findCwspDistCapacitor(start: File): File? {
+    return findWorkspaceDir(
+        start,
+        listOf(
+            "runtime/cwsp/dist/capacitor",
+            "U2RE.space/runtime/cwsp/dist/capacitor",
+            "../U2RE.space/runtime/cwsp/dist/capacitor"
+        )
+    )
+}
+
+fun findCwspEndpointDir(start: File): File? {
+    return findWorkspaceDir(
+        start,
+        listOf(
+            "runtime/cwsp/endpoint",
+            "U2RE.space/runtime/cwsp/endpoint",
+            "../U2RE.space/runtime/cwsp/endpoint"
+        )
+    )
 }
 
 val cwspCapacitorWebDir =
     findCwspDistCapacitor(rootProject.rootDir)
         ?: rootProject.file("../../runtime/cwsp/dist/capacitor")
+val cwspEndpointDir =
+    findCwspEndpointDir(rootProject.rootDir)
+        ?: rootProject.file("../cwsp/endpoint")
 val capacitorPublicAssets = layout.projectDirectory.dir("src/main/assets/public")
+val generatedStockAssetsDir = layout.buildDirectory.dir("generated/cwspStockAssets")
 
 tasks.register<Sync>("syncCwspCapacitorWeb") {
     group = "build"
@@ -156,8 +185,45 @@ tasks.register<Sync>("syncCwspCapacitorWeb") {
     into(capacitorPublicAssets)
 }
 
+tasks.register<Sync>("syncCwspStockAssets") {
+    group = "build"
+    description = "Copy CWSP endpoint config+https into app assets/stock for first-run Android bootstrap"
+    val sourceConfig = File(cwspEndpointDir, "config")
+    val sourceHttps = File(cwspEndpointDir, "https/local")
+    onlyIf { sourceConfig.isDirectory || sourceHttps.isDirectory }
+
+    from(sourceConfig) {
+        include("clients.json", "gateways.json", "network.json", "portable-endpoint.json", "portable-core.json")
+        into("stock/config")
+    }
+    from(sourceHttps) {
+        include("rootCA.crt", "multi.crt", "multi.key", "server.cnf")
+        into("stock/https")
+    }
+    into(generatedStockAssetsDir)
+}
+
+android.sourceSets.getByName("main").assets.srcDir(generatedStockAssetsDir)
+// Network stack is compiled in :network module.
+android.sourceSets.getByName("main").java.apply {
+    exclude("space/u2re/cws/service/network/ServerV2NetworkModule.kt")
+    exclude("space/u2re/cws/service/network/connect/EndpointConfig.kt")
+    exclude("space/u2re/cws/service/network/connect/EndpointIdentity.kt")
+    exclude("space/u2re/cws/service/network/connect/EndpointUrl.kt")
+    exclude("space/u2re/cws/service/network/http/Codec.kt")
+    exclude("space/u2re/cws/service/network/http/ServerV2HttpClient.kt")
+    exclude("space/u2re/cws/service/network/http/TokenExt.kt")
+    exclude("space/u2re/cws/service/network/http/legacy/HttpClient.kt")
+    exclude("space/u2re/cws/service/network/http/routers/ResponsesApi.kt")
+    exclude("space/u2re/cws/service/network/socket/ServerV2Packet.kt")
+    exclude("space/u2re/cws/service/network/socket/ServerV2SocketClient.kt")
+    exclude("space/u2re/cws/service/network/socket/ServerV2WireIdentity.kt")
+    exclude("space/u2re/cws/service/network/utils/PeerAssociationStore.kt")
+}
+
 tasks.named("preBuild").configure {
     dependsOn(tasks.named("syncCwspCapacitorWeb"))
+    dependsOn(tasks.named("syncCwspStockAssets"))
 }
 
 /** Which flavor `attachDebug` installs/launches: `cws` (Kotlin-only, default) or `cwsp` (hybrid CWSP + WebView). */

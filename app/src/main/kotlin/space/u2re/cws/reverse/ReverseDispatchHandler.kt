@@ -170,12 +170,26 @@ internal object ReverseDispatchHandler {
                     headers = (map["headers"] as? Map<*, *>)?.map { entry ->
                         entry.key.toString() to entry.value.toString()
                     }?.toMap() ?: emptyMap(),
-                    body = map["body"]?.toString() ?: "",
+                    body = normalizeDispatchBody(map["body"]),
                     unencrypted = map["unencrypted"] as? Boolean ?: false
                 )
             }
         } catch (_: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * Keep structured body payloads as valid JSON strings.
+     * Using `toString()` on Kotlin maps creates `{text=...}` format,
+     * which pollutes clipboard with non-JSON system strings.
+     */
+    private fun normalizeDispatchBody(rawBody: Any?): String {
+        return when (rawBody) {
+            null -> ""
+            is String -> rawBody
+            is Map<*, *>, is List<*> -> reverseBridgeGson.toJson(rawBody)
+            else -> rawBody.toString()
         }
     }
 }

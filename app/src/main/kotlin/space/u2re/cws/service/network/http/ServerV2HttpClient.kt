@@ -68,9 +68,12 @@ class ServerV2HttpClient(
     }
 
     suspend fun listUsers(): HttpResult {
-        return getTextAcrossCandidates(
-            path = "/core/auth/users",
-            query = mapOf("userId" to config.userId, "userKey" to config.userKey),
+        return postJsonAcrossCandidates(
+            paths = listOf("/core/auth/users"),
+            body = mapOf(
+                "userId" to config.userId,
+                "userKey" to config.userKey
+            ),
             timeoutMs = 10_000
         )
     }

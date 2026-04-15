@@ -78,18 +78,20 @@ data class SettingsPatch(
 private const val PREF_NAME = "settings_v1"
 private const val PREF_NAME_LEGACY = "settings_v1_legacy"
 private const val DEFAULT_APP_CONFIG_ROOT = "/storage/emulated/0/AppConfig"
-private const val DEFAULT_APP_CONFIG_PATH = "fs:$DEFAULT_APP_CONFIG_ROOT/config"
-private const val DEFAULT_APP_STORAGE_PATH = DEFAULT_APP_CONFIG_ROOT
-private const val DEFAULT_APP_TRUSTED_CA_PATH = "fs:$DEFAULT_APP_CONFIG_ROOT/https/rootCA.crt"
 
 private fun randomId(): String = "ns-${UUID.randomUUID().toString().replace("-", "").take(8)}"
 private fun isGeneratedLegacyDeviceId(value: String): Boolean = value.trim().lowercase().startsWith("ns-")
 
 private fun normalizePort(value: Int, fallback: Int): Int = if (value > 0) value else fallback
-private fun applyDefaultAppConfigPaths(settings: Settings): Settings {
-    val nextConfigPath = settings.configPath.trim().ifBlank { DEFAULT_APP_CONFIG_PATH }
-    val nextStoragePath = settings.storagePath.trim().ifBlank { DEFAULT_APP_STORAGE_PATH }
-    val nextTrustedCa = settings.reverseTrustedCa.trim().ifBlank { DEFAULT_APP_TRUSTED_CA_PATH }
+private fun appConfigPath(root: String): String = "fs:${root.trimEnd('/')}/config"
+private fun appStoragePath(root: String): String = root.trimEnd('/')
+private fun appTrustedCaPath(root: String): String = "fs:${root.trimEnd('/')}/https/rootCA.crt"
+
+private fun applyDefaultAppConfigPaths(settings: Settings, rootPath: String = DEFAULT_APP_CONFIG_ROOT): Settings {
+    val normalizedRoot = rootPath.trim().ifBlank { DEFAULT_APP_CONFIG_ROOT }
+    val nextConfigPath = settings.configPath.trim().ifBlank { appConfigPath(normalizedRoot) }
+    val nextStoragePath = settings.storagePath.trim().ifBlank { appStoragePath(normalizedRoot) }
+    val nextTrustedCa = settings.reverseTrustedCa.trim().ifBlank { appTrustedCaPath(normalizedRoot) }
     return settings.copy(configPath = nextConfigPath, storagePath = nextStoragePath, reverseTrustedCa = nextTrustedCa)
 }
 
@@ -105,12 +107,12 @@ private fun defaultSettings(): Settings = Settings(
     tlsKeystoreAssetPath = "",
     tlsKeystoreType = "PKCS12",
     tlsKeystorePassword = "",
-    hubDispatchUrl = "",
-    configPath = DEFAULT_APP_CONFIG_PATH,
+    hubDispatchUrl = "https://192.168.0.200:8443/",
+    configPath = appConfigPath(DEFAULT_APP_CONFIG_ROOT),
     apiEndpoint = "",
     apiKey = "",
-    allowInsecureTls = false,
-    reverseTrustedCa = DEFAULT_APP_TRUSTED_CA_PATH,
+    allowInsecureTls = true,
+    reverseTrustedCa = appTrustedCaPath(DEFAULT_APP_CONFIG_ROOT),
     clipboardSync = true,
     contactsSync = false,
     smsSync = false,
@@ -125,7 +127,7 @@ private fun defaultSettings(): Settings = Settings(
     quickActionCopyOnly = false,
     quickActionHandleImage = false,
     enableLocalServer = true,
-    storagePath = DEFAULT_APP_STORAGE_PATH
+    storagePath = appStoragePath(DEFAULT_APP_CONFIG_ROOT)
 )
 
 
@@ -153,14 +155,16 @@ object SettingsStore {
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
     fun load(context: Context): Settings {
+        val bootstrapRoot = AppConfigBootstrap.ensureStockConfig(context)
+        val defaults = applyDefaultAppConfigPaths(defaultSettings(), bootstrapRoot)
         return try {
             val raw = prefs(context).getString(PREF_NAME, null)
                 ?: prefs(context).getString(PREF_NAME_LEGACY, null)
-                ?: return defaultSettings().let { defaults ->
-                    if (defaults.authToken.isBlank()) defaults.copy(authToken = defaults.deviceId) else defaults
+                ?: return defaults.let { fresh ->
+                    if (fresh.authToken.isBlank()) fresh.copy(authToken = fresh.deviceId) else fresh
                 }
             val parsed = gson.fromJson(raw, Map::class.java) as? Map<*, *> ?: emptyMap<String, Any>()
-            var merged = defaultSettings().mergeFromMap(parsed)
+            var merged = defaults.mergeFromMap(parsed)
             
             // Migration: carry legacy userKey into authToken if needed.
             if (merged.authToken.isBlank() && parsed["userKey"] is String) {
@@ -170,7 +174,7 @@ object SettingsStore {
                 merged = merged.copy(authToken = merged.deviceId)
             }
             
-            merged = applyDefaultAppConfigPaths(merged)
+            merged = applyDefaultAppConfigPaths(merged, bootstrapRoot)
 
             // Merge from config files if configPath is provided
             if (merged.configPath.isNotBlank()) {
@@ -180,7 +184,25 @@ object SettingsStore {
                         val baseFile = ConfigResolver.resolveFile(basePath)
                         
                         val fileCandidates = if (baseFile.isDirectory) {
-                            listOf("clients.json", "portable.config.json", "config.json", "package.json").map { java.io.File(baseFile, it) }
+                            val names = listOf(
+                                "clients.json",
+                                "gateways.json",
+                                "network.json",
+                                "portable-core.json",
+                                "portable-endpoint.json",
+                                "portable.config.json",
+                                "portable.config.110.json",
+                                "portable.config.vds.json",
+                                "config.json",
+                                "package.json"
+                            )
+                            buildList {
+                                addAll(names.map { java.io.File(baseFile, it) })
+                                val nestedConfig = java.io.File(baseFile, "config")
+                                if (nestedConfig.exists() && nestedConfig.isDirectory) {
+                                    addAll(names.map { java.io.File(nestedConfig, it) })
+                                }
+                            }
                         } else {
                             listOf(baseFile)
                         }
@@ -189,7 +211,7 @@ object SettingsStore {
                             if (fileCandidate.exists() && fileCandidate.isFile) {
                                 val raw = fileCandidate.readText()
                                 val parsed = gson.fromJson(raw, Map::class.java) as? Map<*, *> ?: emptyMap<String, Any>()
-                                val fromClients = defaultSettings().mergeFromMap(parsed)
+                                val fromClients = defaults.mergeFromMap(parsed)
                                 
                                 merged = merged.copy(
                                     hubDispatchUrl = merged.hubDispatchUrl.ifBlank { fromClients.hubDispatchUrl },
@@ -224,7 +246,7 @@ object SettingsStore {
             save(context, merged)
             merged
         } catch (_: Exception) {
-            defaultSettings()
+            defaults
         }
     }
 
@@ -441,7 +463,17 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
         ) ?: defaults.authToken,
         hubClientId = pickString(
             mergedSource,
-            listOf("hubClientId", "CWS_ASSOCIATED_ID", "clientId", "associatedId", "userId", "CWS_BRIDGE_USER_ID", "user-id")
+            listOf(
+                "hubClientId",
+                "CWS_ASSOCIATED_ID",
+                "clientId",
+                "associatedId",
+                "userId",
+                "nodeId",
+                "deviceName",
+                "CWS_BRIDGE_USER_ID",
+                "user-id"
+            )
         ) ?: defaults.hubClientId,
         hubToken = pickString(
             mergedSource,
@@ -453,7 +485,15 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
         tlsKeystorePassword = (mergedSource["tlsKeystorePassword"] as? String) ?: defaults.tlsKeystorePassword,
         hubDispatchUrl = pickString(
             mergedSource,
-            listOf("hubDispatchUrl", "gatewayUrl", "dispatchUrl", "endpointUrl", "CWS_HUB_URL", "CWS_ENDPOINT_URL")
+            listOf(
+                "hubDispatchUrl",
+                "gatewayUrl",
+                "dispatchUrl",
+                "endpointUrl",
+                "CWS_HUB_URL",
+                "CWS_ENDPOINT_URL",
+                "CWS_BRIDGE_ENDPOINT_URL"
+            )
         ) ?: endpointCandidatesText.ifBlank { defaults.hubDispatchUrl },
         apiEndpoint = pickString(mergedSource, listOf("apiEndpoint", "apiUrl", "llmEndpoint")) ?: defaults.apiEndpoint,
         apiKey = pickString(mergedSource, listOf("apiKey", "api_token", "apiToken")) ?: defaults.apiKey,

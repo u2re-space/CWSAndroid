@@ -15,6 +15,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import space.u2re.cws.data.ClipboardEnvelopeCodec
 import java.io.Closeable
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -87,7 +88,8 @@ class ClipboardSyncWatcher(
         val clip = clipboardManager?.primaryClip
         if (clip == null || clip.itemCount == 0) return ""
         val item = clip.getItemAt(0)
-        return item?.coerceToText(context)?.toString() ?: ""
+        val raw = item?.coerceToText(context)?.toString() ?: ""
+        return normalizeClipboardText(raw)
     }
 
     override fun readCurrentText(): String = try {
@@ -101,7 +103,7 @@ class ClipboardSyncWatcher(
     override fun lastSeenText(): String = lastText
 
     private suspend fun handleText(raw: String) {
-        val text = raw.trim()
+        val text = normalizeClipboardText(raw)
         if (suppressNext) {
             suppressNext = false
             lastText = text
@@ -112,7 +114,7 @@ class ClipboardSyncWatcher(
     }
 
     override suspend fun setTextSilently(text: String) {
-        val safeText = text.trim()
+        val safeText = normalizeClipboardText(text)
         suppressNext = true
         if (!setTextNowAwait(safeText)) {
             suppressNext = false
@@ -122,7 +124,7 @@ class ClipboardSyncWatcher(
     }
 
     override fun setTextSilentlySync(text: String) {
-        val safeText = text.trim()
+        val safeText = normalizeClipboardText(text)
         suppressNext = true
         if (!setTextNowBlocking(safeText)) {
             suppressNext = false
@@ -200,6 +202,15 @@ class ClipboardSyncWatcher(
             return
         }
         manager.setPrimaryClip(ClipData.newPlainText("clipboard", text))
+    }
+
+    /**
+     * Guard against protocol/system wrappers leaking into user clipboard.
+     * Example dropped artifacts: "{text=}", "{\"text\":\"\"}".
+     */
+    private fun normalizeClipboardText(raw: String?): String {
+        val envelope = ClipboardEnvelopeCodec.fromAny(raw ?: "", source = "watcher-normalize")
+        return envelope.bestText()?.trim().orEmpty()
     }
 
     override fun close() {

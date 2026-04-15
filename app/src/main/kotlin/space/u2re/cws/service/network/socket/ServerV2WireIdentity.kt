@@ -8,10 +8,13 @@ data class ServerV2WireIdentity(
     val deviceId: String,
     val clientId: String,
     val userKey: String,
+    val nodeId: String,
+    val aliases: List<String> = emptyList(),
+    val origins: List<String> = emptyList(),
     val connectionType: String = "exchanger-initiator",
     val archetype: String = "server-v2"
 ) {
-    fun senderId(): String = userId.ifBlank { deviceId }.ifBlank { clientId }
+    fun senderId(): String = nodeId.ifBlank { userId.ifBlank { deviceId }.ifBlank { clientId } }
 }
 
 object ServerV2WireContract {
@@ -31,12 +34,29 @@ object ServerV2WireContract {
         }
         val clientId = normalizeNodeId(userId.ifBlank { deviceId }).ifBlank { "android-client" }
         val socketEndpoint = resolveSocketEndpointBase(config)
+        val nodeId = normalizeNodeId(userId.ifBlank { deviceId }.ifBlank { clientId })
+        val endpointHost = runCatching { URI(normalizeSocketEndpoint(socketEndpoint)).host?.trim().orEmpty() }
+            .getOrDefault("")
+        val aliases = linkedSetOf<String>().apply {
+            addAll(EndpointIdentity.aliases(nodeId))
+            addAll(EndpointIdentity.aliases(userId))
+            addAll(EndpointIdentity.aliases(deviceId))
+            addAll(EndpointIdentity.aliases(clientId))
+            if (endpointHost.isNotBlank()) addAll(EndpointIdentity.aliases(endpointHost))
+        }.filter { it.isNotBlank() }.distinct()
         return ServerV2WireIdentity(
             endpointUrl = normalizeSocketEndpoint(socketEndpoint),
             userId = userId.ifBlank { clientId },
             deviceId = deviceId.ifBlank { clientId },
             clientId = clientId,
-            userKey = config.userKey.trim()
+            userKey = config.userKey.trim(),
+            nodeId = nodeId.ifBlank { clientId },
+            aliases = aliases,
+            origins = listOfNotNull(
+                endpointHost.ifBlank { null },
+                config.endpointUrl.split(Regex("[,;\n]")).firstOrNull()?.trim()?.ifBlank { null },
+                config.dispatchUrl.trim().ifBlank { null }
+            ).distinct()
         )
     }
 
@@ -212,12 +232,38 @@ object ServerV2WireContract {
         return buildMap {
             if (identity.userKey.isNotBlank()) {
                 put("token", identity.userKey)
-                put("airpadToken", identity.userKey)
             }
             if (identity.clientId.isNotBlank()) {
                 put("clientId", identity.clientId)
                 put("userId", identity.userId)
             }
+        }
+    }
+
+    fun buildHeaders(identity: ServerV2WireIdentity): Map<String, String> {
+        return buildMap {
+            if (identity.userKey.isNotBlank()) {
+                put("Authorization", "Bearer ${identity.userKey}")
+                put("X-CWS-Token", identity.userKey)
+                put("X-Auth-Token", identity.userKey)
+            }
+            if (identity.clientId.isNotBlank()) {
+                put("X-CWS-Client-Id", identity.clientId)
+            }
+            if (identity.userId.isNotBlank()) {
+                put("X-CWS-User-Id", identity.userId)
+            }
+            if (identity.nodeId.isNotBlank()) {
+                put("X-CWS-Node-Id", identity.nodeId)
+            }
+            if (identity.aliases.isNotEmpty()) {
+                put("X-CWS-Node-Aliases", identity.aliases.joinToString(","))
+            }
+            if (identity.origins.isNotEmpty()) {
+                put("X-CWS-Origin-Aliases", identity.origins.joinToString(","))
+            }
+            put("X-CWS-Connection-Type", identity.connectionType)
+            put("X-CWS-Archetype", identity.archetype)
         }
     }
 
@@ -232,15 +278,16 @@ object ServerV2WireContract {
             identity.connectionType
         }
         return buildMap {
-            if (identity.userKey.isNotBlank()) {
-                put("token", identity.userKey)
-                put("airpadToken", identity.userKey)
-                put("userKey", identity.userKey)
-            }
             if (identity.clientId.isNotBlank()) {
                 put("clientId", identity.clientId)
-                put("__airpad_client", identity.clientId)
                 put("userId", identity.userId)
+            }
+            if (identity.nodeId.isNotBlank()) {
+                put("byId", identity.nodeId)
+                put("nodeId", identity.nodeId)
+            }
+            if (identity.aliases.isNotEmpty()) {
+                put("aliases", identity.aliases.joinToString(","))
             }
             put("connectionType", wireConnectionType)
             put("archetype", identity.archetype)

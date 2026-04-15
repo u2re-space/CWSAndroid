@@ -280,6 +280,9 @@ fun GatewayTab(
 ) {
     val switchColors = settingsSwitchColors()
     var showPeers by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var showAdvancedStatus by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val userStatus = daemonSnapshot.userStatusSummary()
+    val userHints = daemonSnapshot.userStatusHints()
     val daemonLines = daemonSnapshot.asStatusLines()
 
     Text(
@@ -446,9 +449,32 @@ fun GatewayTab(
     }
 
     Spacer(Modifier.size(16.dp))
-    Text("Daemon / protocol status", color = MaterialTheme.colorScheme.onSurface)
-    daemonLines.forEach { line ->
-        Text(line, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 2.dp))
+    Text("Connection health", color = MaterialTheme.colorScheme.onSurface)
+    Text(userStatus, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 2.dp))
+    userHints.forEach { hint ->
+        Text("- $hint", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 2.dp))
+    }
+    Spacer(Modifier.size(6.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showAdvancedStatus = !showAdvancedStatus }
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text("Advanced protocol diagnostics", color = MaterialTheme.colorScheme.onSurface)
+        Icon(
+            imageVector = if (showAdvancedStatus) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            contentDescription = "Expand advanced diagnostics",
+            tint = MaterialTheme.colorScheme.onSurface
+        )
+    }
+    AnimatedVisibility(visible = showAdvancedStatus) {
+        Column {
+            daemonLines.forEach { line ->
+                Text(line, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 2.dp))
+            }
+        }
     }
     Button(
         onClick = onRefreshDaemonStatus,
@@ -682,3 +708,72 @@ private fun settingsSwitchColors() = SwitchDefaults.colors(
     uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
     uncheckedBorderColor = MaterialTheme.colorScheme.outline
 )
+
+private fun DaemonConnectionSnapshot.userStatusSummary(): String {
+    if (!daemonRunning) return "Daemon is stopped. Start daemon to enable clipboard sync."
+    if (!reverseGatewayConfigured) return "Gateway is not configured yet. Set endpoint URL, user ID and user key."
+    if (reverseGatewayConnected) {
+        val endpoint = compactEndpointForUi(reverseGatewayActiveCandidate).ifBlank { "ws candidate" }
+        return "Connected via $endpoint; relay success ${reverseRelaySuccess}/${reverseRelayAttempts}."
+    }
+    return "Gateway is configured but not connected (${reverseGatewayState})."
+}
+
+private fun DaemonConnectionSnapshot.userStatusHints(): List<String> {
+    val hints = mutableListOf<String>()
+    if (reverseGatewayLastError?.isNotBlank() == true) {
+        hints += "Last error: ${compactErrorForUi(reverseGatewayLastError)}"
+    }
+    if (!reverseGatewayConnected && reverseGatewayStateDetail?.isNotBlank() == true) {
+        hints += "State: ${compactErrorForUi(reverseGatewayStateDetail)}"
+    }
+    if (reverseRelayFailures > 0) {
+        hints += "Relay failures: $reverseRelayFailures (check peer targets or auth headers)."
+    }
+    if (hints.isNotEmpty()) {
+        hints += "More details are available in Advanced protocol diagnostics."
+    }
+    if (hints.isEmpty()) {
+        hints += "No critical errors detected in current snapshot."
+    }
+    return hints
+}
+
+private fun compactEndpointForUi(raw: String?): String {
+    val value = raw?.trim().orEmpty()
+    if (value.isBlank()) return ""
+    return runCatching {
+        val uri = java.net.URI(value)
+        val scheme = uri.scheme?.ifBlank { "wss" } ?: "wss"
+        val host = uri.host?.trim().orEmpty().ifBlank { value }
+        val port = if (uri.port > 0) ":${uri.port}" else ""
+        "$scheme://$host$port"
+    }.getOrElse {
+        value.substringBefore("?").trim()
+    }
+}
+
+private fun compactErrorForUi(raw: String?): String {
+    val text = raw?.trim().orEmpty()
+    if (text.isBlank()) return "-"
+    val lower = text.lowercase()
+    val friendly = when {
+        lower.contains("trust anchor") || lower.contains("certpath") || lower.contains("pkix") ->
+            "TLS certificate is not trusted on this device."
+        lower.contains("hostname") && lower.contains("verify") ->
+            "TLS certificate hostname mismatch."
+        lower.contains("handshake") && lower.contains("failed") ->
+            "TLS handshake failed."
+        lower.contains("timed out") || lower.contains("timeout") ->
+            "Connection timeout."
+        lower.contains("connection refused") ->
+            "Connection refused by endpoint."
+        lower.contains("unexpected end of stream") || lower.contains("eof") ->
+            "Connection closed unexpectedly."
+        else -> null
+    }
+    if (!friendly.isNullOrBlank()) return friendly
+    val withoutQuery = text.replace(Regex("(wss?://[^\\s?]+)\\?[^\\s]+"), "$1?...")
+    val compactWhitespace = withoutQuery.replace(Regex("\\s+"), " ").trim()
+    return if (compactWhitespace.length <= 220) compactWhitespace else compactWhitespace.take(220) + "..."
+}

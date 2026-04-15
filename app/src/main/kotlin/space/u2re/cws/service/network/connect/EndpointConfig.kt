@@ -1,8 +1,5 @@
 package space.u2re.cws.network
 
-import space.u2re.cws.settings.Settings
-import space.u2re.cws.reverse.ReverseGatewayConfig
-
 private const val DEFAULT_ENDPOINT_NAMESPACE = "default"
 private const val DEFAULT_ENDPOINT_ROLES = "endpoint,peer,node,app"
 
@@ -29,42 +26,81 @@ data class EndpointCoreConfig(
     fun isRemoteReady(): Boolean = hasRemoteEndpoint() && hasCredentials()
 }
 
-private fun splitEndpointCandidates(raw: String): List<String> {
-    return raw
-        .split(Regex("[,;\n]"))
-        .mapNotNull { normalizeEndpointServerUrl(it)?.ifBlank { null } ?: it.trim().ifBlank { null } }
+private fun normalizeAndSortEndpointCandidates(rawCandidates: List<String>): List<String> {
+    fun candidatePriority(url: String): Int {
+        val host = runCatching { java.net.URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
+        return when (host) {
+            "192.168.0.200", "192.168.0.201" -> 0
+            "192.168.0.110", "192.168.0.111" -> 1
+            "192.168.0.196", "45.150.9.153", "100.99.178.6" -> 2
+            "45.147.121.152" -> 3
+            else -> 9
+        }
+    }
+    fun candidateHost(url: String): String = runCatching { java.net.URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
+    return rawCandidates
+        .mapNotNull { candidate ->
+            val trimmed = candidate.trim()
+            if (trimmed.isBlank()) return@mapNotNull null
+            if (EndpointIdentity.isLikelyNodeTarget(trimmed) && !EndpointIdentity.isExplicitHttpUrl(trimmed)) {
+                return@mapNotNull null
+            }
+            normalizeEndpointServerUrl(trimmed)?.ifBlank { null } ?: trimmed.ifBlank { null }
+        }
+        .sortedWith(compareBy<String> { candidatePriority(it) }.thenBy { candidateHost(it) }.thenBy { it.lowercase() })
         .distinct()
 }
+
+private fun splitEndpointCandidates(raw: String): List<String> = normalizeAndSortEndpointCandidates(
+    raw
+        .split(Regex("[,;\n]"))
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+)
 
 private fun looksGeneratedDeviceId(value: String): Boolean {
     val trimmed = value.trim().lowercase()
     return trimmed.startsWith("android-") || trimmed.startsWith("ns-")
 }
 
-fun Settings.toEndpointCoreConfig(reverseConfig: ReverseGatewayConfig? = null): EndpointCoreConfig {
+/**
+ * Keep these helpers in network core so endpoint candidate normalization and ordering
+ * stay identical across native Android runtime and any future JVM clients.
+ */
+fun buildEndpointCoreConfig(
+    endpointUrlRaw: String,
+    hubClientId: String,
+    authToken: String,
+    deviceId: String,
+    userIdOverride: String,
+    userKeyOverride: String,
+    namespaceOverride: String,
+    rolesOverride: String,
+    allowInsecureTls: Boolean,
+    trustedCa: String,
+    destinations: List<String>,
+    configPath: String,
+    storagePath: String,
+    legacyBridgeEnabled: Boolean
+): EndpointCoreConfig {
     val preferredHubRouteId = EndpointIdentity.bestRouteTarget(hubClientId).ifBlank {
         hubClientId.trim()
     }
     val derivedUserId = EndpointIdentity.bestRouteTarget(
-        reverseConfig?.userId
-            .orEmpty()
-            .ifBlank {
-                hubClientId.ifBlank {
-                    authToken.ifBlank { deviceId }
-                }
+        userIdOverride.ifBlank {
+            hubClientId.ifBlank {
+                authToken.ifBlank { deviceId }
             }
+        }
     ).ifBlank {
-        reverseConfig?.userId
-            .orEmpty()
-            .ifBlank {
-                hubClientId.ifBlank {
-                    authToken.ifBlank { deviceId }
-                }
+        userIdOverride.ifBlank {
+            hubClientId.ifBlank {
+                authToken.ifBlank { deviceId }
             }
+        }
     }
 
-    val effectiveDeviceSource = reverseConfig?.deviceId
-        .orEmpty()
+    val effectiveDeviceSource = deviceId
         .trim()
         .takeUnless { it.isBlank() || (looksGeneratedDeviceId(it) && preferredHubRouteId.isNotBlank()) }
         ?: preferredHubRouteId.ifBlank { deviceId }
@@ -75,30 +111,34 @@ fun Settings.toEndpointCoreConfig(reverseConfig: ReverseGatewayConfig? = null): 
         effectiveDeviceSource
     }
 
-    val endpointRaw = reverseConfig?.endpointUrl
-        .orEmpty()
-        .ifBlank { hubDispatchUrl }
-    val endpointCandidates = splitEndpointCandidates(endpointRaw)
+    val destinationEndpointCandidates = destinations.mapNotNull { normalizeEndpointServerUrl(it) }
+    val endpointCandidates = normalizeAndSortEndpointCandidates(
+        splitEndpointCandidates(endpointUrlRaw) + destinationEndpointCandidates
+    )
     val normalizedEndpointUrl = endpointCandidates.joinToString(",").ifBlank {
-        normalizeEndpointServerUrl(endpointRaw).orEmpty()
+        normalizeEndpointServerUrl(endpointUrlRaw).orEmpty()
     }
-    val normalizedDispatchUrl = normalizeHubDispatchUrl(endpointCandidates.firstOrNull().orEmpty().ifBlank { endpointRaw }).orEmpty()
-    val normalizedDestinations = destinations.mapNotNull { normalizeDestinationUrl(it, "/clipboard") ?: it.trim().ifBlank { null } }
+    val normalizedDispatchUrl = normalizeHubDispatchUrl(
+        endpointCandidates.firstOrNull().orEmpty().ifBlank { endpointUrlRaw }
+    ).orEmpty()
+    val normalizedDestinations = destinations.mapNotNull {
+        normalizeDestinationUrl(it, "/clipboard") ?: it.trim().ifBlank { null }
+    }
 
     return EndpointCoreConfig(
         endpointUrl = normalizedEndpointUrl,
         endpointCandidates = endpointCandidates,
         dispatchUrl = normalizedDispatchUrl,
         userId = derivedUserId,
-        userKey = reverseConfig?.userKey.orEmpty().ifBlank { hubToken.ifBlank { authToken } },
+        userKey = userKeyOverride.ifBlank { authToken },
         deviceId = derivedDeviceId,
-        namespace = reverseConfig?.namespace.orEmpty().ifBlank { DEFAULT_ENDPOINT_NAMESPACE },
-        roles = reverseConfig?.roles.orEmpty().ifBlank { DEFAULT_ENDPOINT_ROLES },
-        allowInsecureTls = allowInsecureTls || (reverseConfig?.allowInsecureTls == true),
-        trustedCa = reverseConfig?.trustedCa.orEmpty().ifBlank { reverseTrustedCa },
+        namespace = namespaceOverride.ifBlank { DEFAULT_ENDPOINT_NAMESPACE },
+        roles = rolesOverride.ifBlank { DEFAULT_ENDPOINT_ROLES },
+        allowInsecureTls = allowInsecureTls,
+        trustedCa = trustedCa,
         destinations = normalizedDestinations,
         configPath = configPath,
         storagePath = storagePath,
-        legacyBridgeEnabled = (reverseConfig?.enabled == true) || normalizedDispatchUrl.isNotBlank()
+        legacyBridgeEnabled = legacyBridgeEnabled || normalizedDispatchUrl.isNotBlank()
     )
 }

@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -97,6 +98,7 @@ class Daemon(
     private val reverseHttpAttempts = AtomicLong(0)
     private val reverseHttpSuccesses = AtomicLong(0)
     private val reverseHttpFailures = AtomicLong(0)
+    private val clipboardNoiseGson = Gson()
 
     init {
         DaemonLog.setLogLevel(settings.logLevel)
@@ -184,10 +186,16 @@ class Daemon(
         val baseReverseConfig = ReverseGatewayConfigProvider.load(application)
         val endpointConfig = settings.toEndpointCoreConfig(baseReverseConfig)
         val shouldEnableReverse = endpointConfig.isRemoteReady()
+        val reverseCandidates = endpointConfig.endpointCandidates
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+        val reverseEndpoint = reverseCandidates.take(6).joinToString(",").ifBlank {
+            endpointConfig.endpointUrl.ifBlank { endpointConfig.dispatchUrl }
+        }
         val reverseConfig = baseReverseConfig.copy(
             deviceId = endpointConfig.deviceId,
-            endpointUrl = endpointConfig.endpointCandidates.firstOrNull()
-                ?: endpointConfig.endpointUrl.ifBlank { endpointConfig.dispatchUrl },
+            endpointUrl = reverseEndpoint,
             userId = endpointConfig.userId,
             userKey = endpointConfig.userKey,
             namespace = endpointConfig.namespace,
@@ -712,9 +720,61 @@ class Daemon(
         }
     }
 
+    private fun isProtocolClipboardNoise(text: String): Boolean {
+        val raw = text.trim()
+        if (raw.isBlank()) return false
+        if (raw.startsWith("{text=") && raw.endsWith("}")) return true
+        val parsed = runCatching {
+            clipboardNoiseGson.fromJson(raw, Map::class.java) as? Map<*, *>
+        }.getOrNull() ?: return false
+        val keys = parsed.keys.mapNotNull { it?.toString()?.trim()?.lowercase() }.toSet()
+        if (keys.isEmpty()) return false
+        val protocolKeys = setOf("op", "what", "nodes", "byid", "from", "uuid", "event", "payload", "result", "error")
+        val directText = (parsed["text"] as? String)?.trim().orEmpty()
+        val directContent = (parsed["content"] as? String)?.trim().orEmpty()
+        val directBody = (parsed["body"] as? String)?.trim().orEmpty()
+        val hasReadableText = directText.isNotBlank() || directContent.isNotBlank() || directBody.isNotBlank()
+        val clipboardOnlyKeys = setOf("text", "content", "body", "mime", "mimetype", "type", "source", "uuid", "id")
+        val onlyClipboardEnvelopeKeys = keys.all { clipboardOnlyKeys.contains(it) }
+        if (onlyClipboardEnvelopeKeys && !hasReadableText) return true
+        return keys.any { protocolKeys.contains(it) } && !hasReadableText
+    }
+
+    private fun localIdentityAliases(): Set<String> {
+        val config = currentEndpointConfig()
+        val candidates = listOf(
+            currentLocalHistorySourceId(),
+            config.userId,
+            config.deviceId,
+            settings.hubClientId,
+            settings.deviceId
+        )
+        return candidates
+            .flatMap { EndpointIdentity.aliases(it).toList() }
+            .map { it.trim().lowercase() }
+            .filter { it.isNotBlank() }
+            .toSet()
+    }
+
+    private fun isSelfSourceClipboard(sourceId: String?): Boolean {
+        val normalized = sourceId?.trim().orEmpty()
+        if (normalized.isBlank()) return false
+        val sourceAliases = EndpointIdentity.aliases(normalized)
+            .map { it.trim().lowercase() }
+            .filter { it.isNotBlank() }
+            .toSet()
+        if (sourceAliases.isEmpty()) return false
+        val localAliases = localIdentityAliases()
+        return sourceAliases.any { localAliases.contains(it) }
+    }
+
     private suspend fun handleLocalClipboardObservation(text: String) {
         val trimmed = text.trim()
         if (trimmed.isBlank()) return
+        if (isProtocolClipboardNoise(trimmed)) {
+            DaemonLog.debug("Daemon", "skip local clipboard reason=protocol-noise")
+            return
+        }
         val envelope = ClipboardEnvelope(text = trimmed, source = "local-clipboard")
         val decision = clipboardRuntime.recordLocalRead(envelope)
         if (!decision.accepted) {
@@ -737,6 +797,10 @@ class Daemon(
     ): Boolean {
         if (!envelope.hasContent()) {
             DaemonLog.debug("Daemon", "skip inbound clipboard reason=empty-envelope")
+            return false
+        }
+        if (isSelfSourceClipboard(sourceId)) {
+            DaemonLog.debug("Daemon", "skip inbound clipboard reason=self-source-loop")
             return false
         }
         val inbound = clipboardRuntime.evaluateInbound(envelope, uuid, sourceId, targetId)
@@ -885,8 +949,14 @@ class Daemon(
 
         val headers = buildMap {
             put("Content-Type", "application/json; charset=utf-8")
-            if (settings.authToken.isNotBlank()) {
-                put("x-auth-token", settings.authToken)
+            val endpointConfig = currentEndpointConfig()
+            val authToken = listOf(
+                settings.authToken,
+                settings.hubToken,
+                endpointConfig.userKey
+            ).firstOrNull { !it.isNullOrBlank() }?.trim().orEmpty()
+            if (authToken.isNotBlank()) {
+                put("x-auth-token", authToken)
             }
         }
 
