@@ -10,6 +10,72 @@ private const val FALLBACK_APP_CONFIG_DIR = "AppConfig"
 private const val STOCK_CONFIG_ASSET_DIR = "stock/config"
 private const val STOCK_HTTPS_ASSET_DIR = "stock/https"
 
+private val fallbackPortableCore = """
+    {
+      "version": 2,
+      "core": {
+        "endpointIDs": "fs:./clients.json",
+        "gateways": "fs:./gateways.json",
+        "network": "fs:./network.json"
+      }
+    }
+""".trimIndent()
+
+private val fallbackPortableEndpoint = """
+    {
+      "version": 2,
+      "endpoint": {
+        "routing": {
+          "byId": true,
+          "aliases": true,
+          "reverseTunnel": true
+        },
+        "websocket": {
+          "keepalive": true,
+          "keepaliveIntervalMs": 15000,
+          "staleAfterMs": 45000
+        }
+      }
+    }
+""".trimIndent()
+
+private val fallbackPortableConfig = """
+    {
+      "version": 2,
+      "portableModules": {
+        "clients": "fs:./clients.json",
+        "gateways": "fs:./gateways.json",
+        "endpointIDs": "fs:./clients.json",
+        "network": "fs:./network.json",
+        "core": "fs:./portable-core.json",
+        "endpoint": "fs:./portable-endpoint.json"
+      },
+      "launcherEnv": {
+        "CWS_PORTABLE_CONFIG_PATH": "fs:./portable.config.json",
+        "CWS_HTTPS_KEY": "fs:../https/local/multi.key",
+        "CWS_HTTPS_CERT": "fs:../https/local/multi.crt",
+        "CWS_HTTPS_CA": "fs:../https/local/rootCA.crt",
+        "CWS_HTTPS_CERT_MODULE": "fs:./certificate.mjs",
+        "CWS_NETWORK_SCHEMA_VERSION": 2,
+        "CWS_COORDINATOR_MODE": "unified"
+      }
+    }
+""".trimIndent()
+
+private val fallbackCertificateModule = """
+    import fs from "node:fs";
+    import path from "node:path";
+    import { fileURLToPath } from "node:url";
+    
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const httpsDir = path.resolve(__dirname, "../https/local");
+    
+    export const key = fs.readFileSync(path.join(httpsDir, "multi.key"), "utf8");
+    export const cert = fs.readFileSync(path.join(httpsDir, "multi.crt"), "utf8");
+    export const ca = fs.readFileSync(path.join(httpsDir, "rootCA.crt"), "utf8");
+    export default { key, cert, ca };
+""".trimIndent()
+
 /**
  * Bootstrapper for stock config and HTTPS assets used by the Android runtime.
  *
@@ -97,7 +163,7 @@ object AppConfigBootstrap {
     ) {
         for (name in fileNames) {
             val target = File(destinationDir, name)
-            if (target.exists() && target.length() > 0L) continue
+            if (target.exists() && target.length() > 0L && !isGeneratedFallbackStockFile(target, name)) continue
             val assetPath = "$sourceAssetDir/$name"
             runCatching {
                 context.assets.open(assetPath).use { input ->
@@ -112,75 +178,33 @@ object AppConfigBootstrap {
     }
 
     /**
+     * Refresh only the files that still contain the app-generated fallback
+     * placeholder, so newer bundled stock assets can replace stale bootstrap
+     * config after reinstall without clobbering user-edited files.
+     */
+    private fun isGeneratedFallbackStockFile(target: File, fileName: String): Boolean {
+        val normalized = runCatching {
+            target.readText().replace("\r\n", "\n").trim()
+        }.getOrDefault("")
+        if (normalized.isBlank()) return true
+        return when (fileName) {
+            "portable-core.json" -> normalized == fallbackPortableCore
+            "portable-endpoint.json" -> normalized == fallbackPortableEndpoint
+            "portable.config.json",
+            "portable.config.110.json",
+            "portable.config.vds.json" -> normalized == fallbackPortableConfig
+            "certificate.mjs" -> normalized == fallbackCertificateModule
+            else -> false
+        }
+    }
+
+    /**
      * Write minimal fallback config files when assets are absent.
      *
      * NOTE: these defaults define the same network/bootstrap assumptions the
      * daemon relies on for local config, HTTPS, and unified coordinator mode.
      */
     private fun ensureStockFallbackConfigFiles(configDir: File) {
-        val fallbackPortableCore = """
-            {
-              "version": 2,
-              "core": {
-                "endpointIDs": "fs:./clients.json",
-                "gateways": "fs:./gateways.json",
-                "network": "fs:./network.json"
-              }
-            }
-        """.trimIndent()
-        val fallbackPortableEndpoint = """
-            {
-              "version": 2,
-              "endpoint": {
-                "routing": {
-                  "byId": true,
-                  "aliases": true,
-                  "reverseTunnel": true
-                },
-                "websocket": {
-                  "keepalive": true,
-                  "keepaliveIntervalMs": 15000,
-                  "staleAfterMs": 45000
-                }
-              }
-            }
-        """.trimIndent()
-        val fallbackPortableConfig = """
-            {
-              "version": 2,
-              "portableModules": {
-                "clients": "fs:./clients.json",
-                "gateways": "fs:./gateways.json",
-                "endpointIDs": "fs:./clients.json",
-                "network": "fs:./network.json",
-                "core": "fs:./portable-core.json",
-                "endpoint": "fs:./portable-endpoint.json"
-              },
-              "launcherEnv": {
-                "CWS_PORTABLE_CONFIG_PATH": "fs:./portable.config.json",
-                "CWS_HTTPS_KEY": "fs:../https/local/multi.key",
-                "CWS_HTTPS_CERT": "fs:../https/local/multi.crt",
-                "CWS_HTTPS_CA": "fs:../https/local/rootCA.crt",
-                "CWS_HTTPS_CERT_MODULE": "fs:./certificate.mjs",
-                "CWS_NETWORK_SCHEMA_VERSION": 2,
-                "CWS_COORDINATOR_MODE": "unified"
-              }
-            }
-        """.trimIndent()
-        val fallbackCertificateModule = """
-            import fs from "node:fs";
-            import path from "node:path";
-            import { fileURLToPath } from "node:url";
-            
-            const __dirname = path.dirname(fileURLToPath(import.meta.url));
-            const httpsDir = path.resolve(__dirname, "../https/local");
-            
-            export const key = fs.readFileSync(path.join(httpsDir, "multi.key"), "utf8");
-            export const cert = fs.readFileSync(path.join(httpsDir, "multi.crt"), "utf8");
-            export const ca = fs.readFileSync(path.join(httpsDir, "rootCA.crt"), "utf8");
-            export default { key, cert, ca };
-        """.trimIndent()
-
         writeIfMissing(File(configDir, "clients.json"), "{}\n")
         writeIfMissing(File(configDir, "gateways.json"), "{}\n")
         writeIfMissing(File(configDir, "network.json"), "{}\n")

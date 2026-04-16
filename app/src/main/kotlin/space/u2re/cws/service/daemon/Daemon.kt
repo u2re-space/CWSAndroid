@@ -210,7 +210,7 @@ class Daemon(
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
-        val reverseEndpoint = reverseCandidates.take(6).joinToString(",").ifBlank {
+        val reverseEndpoint = reverseCandidates.firstOrNull().orEmpty().ifBlank {
             endpointConfig.endpointUrl.ifBlank { endpointConfig.dispatchUrl }
         }
         val reverseConfig = baseReverseConfig.copy(

@@ -28,17 +28,6 @@ data class EndpointCoreConfig(
 }
 
 private fun normalizeAndSortEndpointCandidates(rawCandidates: List<String>): List<String> {
-    fun candidatePriority(url: String): Int {
-        val host = runCatching { java.net.URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
-        return when (host) {
-            "192.168.0.200", "192.168.0.201" -> 0
-            "192.168.0.110", "192.168.0.111" -> 1
-            "192.168.0.196", "45.150.9.153", "100.99.178.6" -> 2
-            "45.147.121.152" -> 3
-            else -> 9
-        }
-    }
-    fun candidateHost(url: String): String = runCatching { java.net.URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
     return rawCandidates
         .mapNotNull { candidate ->
             val trimmed = candidate.trim()
@@ -48,7 +37,6 @@ private fun normalizeAndSortEndpointCandidates(rawCandidates: List<String>): Lis
             }
             normalizeEndpointServerUrl(trimmed)?.ifBlank { null } ?: trimmed.ifBlank { null }
         }
-        .sortedWith(compareBy<String> { candidatePriority(it) }.thenBy { candidateHost(it) }.thenBy { it.lowercase() })
         .distinct()
 }
 

@@ -193,7 +193,17 @@ tasks.register<Sync>("syncCwspStockAssets") {
     onlyIf { sourceConfig.isDirectory || sourceHttps.isDirectory }
 
     from(sourceConfig) {
-        include("clients.json", "gateways.json", "network.json", "portable-endpoint.json", "portable-core.json")
+        include(
+            "clients.json",
+            "gateways.json",
+            "network.json",
+            "portable-endpoint.json",
+            "portable-core.json",
+            "portable.config.json",
+            "portable.config.110.json",
+            "portable.config.vds.json",
+            "certificate.mjs"
+        )
         into("stock/config")
     }
     from(sourceHttps) {

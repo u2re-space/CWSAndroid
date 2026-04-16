@@ -124,6 +124,10 @@ class DaemonTransportRuntime(
         if (forceLegacyBridge) return true
         val endpoint = endpointUrl.trim()
         if (endpoint.isBlank()) return true
+        if (endpointConfig.endpointCandidates.isNotEmpty()) {
+            updateState("bridge-disabled", "legacy bridge disabled for server-v2 endpoint candidates")
+            return false
+        }
         return try {
             val uri = URI(endpoint)
             val host = uri.host?.trim().orEmpty().lowercase()
@@ -134,9 +138,8 @@ class DaemonTransportRuntime(
             }
             val path = (uri.path ?: "").trim().lowercase()
             val isRootLike = path.isBlank() || path == "/" || path == "/api"
-            val hasModernEndpointCandidates = endpointConfig.endpointCandidates.isNotEmpty()
             val isKnownLoopGateway = host == "192.168.0.200" && (port == 8443 || port == 443) && isRootLike
-            val disableForModernRootEndpoint = hasModernEndpointCandidates && isRootLike
+            val disableForModernRootEndpoint = isRootLike
             if (isKnownLoopGateway || disableForModernRootEndpoint) {
                 val reason = if (isKnownLoopGateway) {
                     "legacy bridge disabled for gateway root endpoint"

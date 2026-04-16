@@ -161,6 +161,21 @@ object ClipboardEnvelopeCodec {
     private fun sanitizeTextCandidate(value: String?): String? {
         val trimmed = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
         val lower = trimmed.lowercase(Locale.ROOT)
+        val looksLikeProtocolEnvelope =
+            trimmed.startsWith("{") && (
+                (lower.contains("op=") || lower.contains("\"op\"")) &&
+                (
+                    lower.contains("what=") ||
+                    lower.contains("\"what\"") ||
+                    lower.contains("nodes=") ||
+                    lower.contains("\"nodes\"") ||
+                    lower.contains("destinations=") ||
+                    lower.contains("\"destinations\"") ||
+                    lower.contains("byid=") ||
+                    lower.contains("\"byid\"")
+                )
+            )
+        if (looksLikeProtocolEnvelope) return null
         if (lower.startsWith("{text=") && trimmed.endsWith("}")) {
             val extracted = trimmed
                 .removePrefix("{")

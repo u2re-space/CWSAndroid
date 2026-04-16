@@ -172,10 +172,9 @@ object SettingsStore {
         return try {
             val raw = prefs(context).getString(PREF_NAME, null)
                 ?: prefs(context).getString(PREF_NAME_LEGACY, null)
-                ?: return defaults.let { fresh ->
-                    if (fresh.authToken.isBlank()) fresh.copy(authToken = fresh.deviceId) else fresh
-                }
-            val parsed = gson.fromJson(raw, Map::class.java) as? Map<*, *> ?: emptyMap<String, Any>()
+            val parsed = raw
+                ?.let { gson.fromJson(it, Map::class.java) as? Map<*, *> }
+                ?: emptyMap<String, Any>()
             var merged = defaults.mergeFromMap(parsed)
             
             // Migration: carry legacy userKey into authToken if needed.
