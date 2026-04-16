@@ -148,8 +148,8 @@ fun AccessTab(
     onSmsSyncChange: (Boolean) -> Unit,
     hubClientId: String,
     onHubClientIdChange: (String) -> Unit,
-    authToken: String,
-    onAuthTokenChange: (String) -> Unit,
+    hubTokens: String,
+    onHubTokensChange: (String) -> Unit,
     listenPortHttp: String,
     localIps: List<String>,
     onCopyBaseUrl: (String) -> Unit
@@ -164,17 +164,27 @@ fun AccessTab(
     OutlinedTextField(
         value = hubClientId,
         onValueChange = onHubClientIdChange,
-        label = { Text("Endpoint User ID") },
+        label = { Text("Associated Client ID") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
     Spacer(Modifier.size(8.dp))
+    Text(
+        "How this Android device identifies itself when it initiates a connection to CWSP. Usually this is a stable peer/node id such as L-192.168.0.208.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.size(8.dp))
     OutlinedTextField(
-        value = authToken,
-        onValueChange = onAuthTokenChange,
-        label = { Text("Local Auth Token") },
+        value = hubTokens,
+        onValueChange = onHubTokensChange,
+        label = { Text("Associated Client Token(s)") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    Text(
+        "Optional. If the endpoint requires auth, Android will try these tokens as fallbacks when it connects as initiator. Use one token per line or comma-separated, especially for NAT/gateway routes.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant
     )
 
     Spacer(Modifier.size(16.dp))
@@ -270,8 +280,8 @@ fun GatewayTab(
     localIps: List<String>,
     onScanLocal: () -> Unit,
     onAppendLocalAsDestinations: () -> Unit,
-    hubToken: String,
-    onHubTokenChange: (String) -> Unit,
+    authToken: String,
+    onAuthTokenChange: (String) -> Unit,
     endpointSummary: String,
     endpointWarning: String?,
     onSelectHubFromDestination: (String) -> Unit,
@@ -286,7 +296,7 @@ fun GatewayTab(
     val daemonLines = daemonSnapshot.asStatusLines()
 
     Text(
-        "Endpoint & Configuration",
+        "Endpoint & Remote Access",
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurface
     )
@@ -305,17 +315,27 @@ fun GatewayTab(
     OutlinedTextField(
         value = gatewayUrls,
         onValueChange = onGatewayUrlsChange,
-        label = { Text("Endpoint URL(s)") },
+        label = { Text("Endpoint URL(s) / gateway URL(s)") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
     Spacer(Modifier.size(8.dp))
+    Text(
+        "One or more CWSP endpoints to dial. You can enter direct LAN URLs, WAN/NAT relay URLs, or several fallback URLs separated by commas/new lines.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.size(8.dp))
     OutlinedTextField(
-        value = hubToken,
-        onValueChange = onHubTokenChange,
-        label = { Text("Endpoint User Key") },
+        value = authToken,
+        onValueChange = onAuthTokenChange,
+        label = { Text("Local Auth Token") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    Text(
+        "Used by the Android app's own local HTTP/legacy routes. This is not the same thing as the associated client token(s) above and can stay empty if you only use outbound endpoint auth.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Spacer(Modifier.size(8.dp))
     OutlinedTextField(

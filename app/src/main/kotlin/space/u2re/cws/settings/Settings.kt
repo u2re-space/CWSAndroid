@@ -13,6 +13,7 @@ data class Settings(
     val authToken: String,
     val hubClientId: String,
     val hubToken: String,
+    val hubTokens: String,
     val tlsEnabled: Boolean,
     val tlsKeystoreAssetPath: String,
     val tlsKeystoreType: String,
@@ -48,6 +49,7 @@ data class SettingsPatch(
     val authToken: String? = null,
     val hubClientId: String? = null,
     val hubToken: String? = null,
+    val hubTokens: String? = null,
     val tlsEnabled: Boolean? = null,
     val tlsKeystoreAssetPath: String? = null,
     val tlsKeystoreType: String? = null,
@@ -86,6 +88,14 @@ private fun normalizePort(value: Int, fallback: Int): Int = if (value > 0) value
 private fun appConfigPath(root: String): String = "fs:${root.trimEnd('/')}/config"
 private fun appStoragePath(root: String): String = root.trimEnd('/')
 private fun appTrustedCaPath(root: String): String = "fs:${root.trimEnd('/')}/https/rootCA.crt"
+private fun splitMultiValueText(raw: String): List<String> =
+    raw
+        .split(Regex("[,;\n]"))
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+
+private fun normalizeMultiValueText(raw: String): String = splitMultiValueText(raw).joinToString("\n")
 
 private fun applyDefaultAppConfigPaths(settings: Settings, rootPath: String = DEFAULT_APP_CONFIG_ROOT): Settings {
     val normalizedRoot = rootPath.trim().ifBlank { DEFAULT_APP_CONFIG_ROOT }
@@ -103,6 +113,7 @@ private fun defaultSettings(): Settings = Settings(
     authToken = "",
     hubClientId = "",
     hubToken = "",
+    hubTokens = "",
     tlsEnabled = false,
     tlsKeystoreAssetPath = "",
     tlsKeystoreType = "PKCS12",
@@ -137,6 +148,7 @@ fun Settings.resolve(): Settings {
     return this.copy(
         authToken = ConfigResolver.resolve(this.authToken, context),
         hubToken = ConfigResolver.resolve(this.hubToken, context),
+        hubTokens = ConfigResolver.resolve(this.hubTokens, context),
         hubClientId = ConfigResolver.resolve(this.hubClientId, context),
         tlsKeystoreAssetPath = ConfigResolver.resolve(this.tlsKeystoreAssetPath, context),
         tlsKeystorePassword = ConfigResolver.resolve(this.tlsKeystorePassword, context),
@@ -172,6 +184,9 @@ object SettingsStore {
             }
             if (merged.authToken.isBlank() && isGeneratedLegacyDeviceId(merged.deviceId)) {
                 merged = merged.copy(authToken = merged.deviceId)
+            }
+            if (merged.hubTokens.isBlank() && merged.hubToken.isNotBlank()) {
+                merged = merged.copy(hubTokens = merged.hubToken)
             }
             
             merged = applyDefaultAppConfigPaths(merged, bootstrapRoot)
@@ -217,6 +232,7 @@ object SettingsStore {
                                     hubDispatchUrl = merged.hubDispatchUrl.ifBlank { fromClients.hubDispatchUrl },
                                     authToken = merged.authToken.ifBlank { fromClients.authToken },
                                     hubToken = merged.hubToken.ifBlank { fromClients.hubToken },
+                                    hubTokens = merged.hubTokens.ifBlank { fromClients.hubTokens.ifBlank { fromClients.hubToken } },
                                     hubClientId = merged.hubClientId.ifBlank { fromClients.hubClientId },
                                     apiEndpoint = merged.apiEndpoint.ifBlank { fromClients.apiEndpoint },
                                     apiKey = merged.apiKey.ifBlank { fromClients.apiKey },
@@ -269,6 +285,8 @@ object SettingsStore {
             tlsKeystoreAssetPath = next.tlsKeystoreAssetPath.ifBlank { defaultSettings().tlsKeystoreAssetPath },
             tlsKeystoreType = next.tlsKeystoreType.ifBlank { defaultSettings().tlsKeystoreType },
             tlsKeystorePassword = next.tlsKeystorePassword,
+            hubToken = splitMultiValueText(next.hubTokens).firstOrNull().orEmpty().ifBlank { next.hubToken.trim() },
+            hubTokens = normalizeMultiValueText(next.hubTokens.ifBlank { next.hubToken }),
             destinations = next.destinations.filter { it.isNotBlank() },
             configPath = next.configPath,
             logLevel = when (next.logLevel.lowercase()) {
@@ -290,6 +308,7 @@ object SettingsStore {
             authToken = patch.authToken ?: current.authToken,
             hubClientId = patch.hubClientId ?: current.hubClientId,
             hubToken = patch.hubToken ?: current.hubToken,
+            hubTokens = patch.hubTokens ?: current.hubTokens,
             tlsEnabled = patch.tlsEnabled ?: current.tlsEnabled,
             tlsKeystoreAssetPath = patch.tlsKeystoreAssetPath ?: current.tlsKeystoreAssetPath,
             tlsKeystoreType = patch.tlsKeystoreType ?: current.tlsKeystoreType,
@@ -479,6 +498,17 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
             mergedSource,
             listOf("hubToken", "CWS_ASSOCIATED_TOKEN", "userKey", "CWS_BRIDGE_USER_KEY", "token", "clientToken")
         ) ?: defaults.hubToken,
+        hubTokens = normalizeMultiValueText(
+            pickString(
+                mergedSource,
+                listOf("hubTokens", "associatedClientTokens", "CWS_ASSOCIATED_TOKENS", "CWS_BRIDGE_USER_KEYS")
+            )
+                ?: ((mergedSource["tokens"] as? List<*>)?.joinToString("\n") { it?.toString()?.trim().orEmpty() })
+                ?: pickString(
+                    mergedSource,
+                    listOf("hubToken", "CWS_ASSOCIATED_TOKEN", "userKey", "CWS_BRIDGE_USER_KEY", "token", "clientToken")
+                ).orEmpty()
+        ),
         tlsEnabled = mergedSource["tlsEnabled"] as? Boolean ?: defaults.tlsEnabled,
         tlsKeystoreAssetPath = (mergedSource["tlsKeystoreAssetPath"] as? String) ?: defaults.tlsKeystoreAssetPath,
         tlsKeystoreType = (mergedSource["tlsKeystoreType"] as? String) ?: defaults.tlsKeystoreType,

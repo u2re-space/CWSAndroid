@@ -68,6 +68,13 @@ import space.u2re.cws.network.postJson
 import space.u2re.cws.network.toEndpointCoreConfig
 import space.u2re.cws.CapacitorWebActivity
 
+private fun splitAssociatedClientTokens(raw: String): List<String> =
+    raw
+        .split(Regex("[,;\n]"))
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+
 @Composable
 fun SettingsScreen(
     navigateBack: () -> Unit
@@ -106,7 +113,13 @@ fun SettingsScreen(
     var listenPortHttps by rememberSaveable { mutableStateOf(settings.listenPortHttps.toString()) }
     var enableLocalServer by rememberSaveable { mutableStateOf(settings.enableLocalServer) }
     var authToken by rememberSaveable { mutableStateOf(settings.authToken) }
-    var hubToken by rememberSaveable { mutableStateOf(endpointConfig.userKey.ifBlank { settings.hubToken }) }
+    var hubTokens by rememberSaveable {
+        mutableStateOf(
+            settings.hubTokens.ifBlank {
+                endpointConfig.userKeys.joinToString("\n").ifBlank { settings.hubToken }
+            }
+        )
+    }
     var tlsEnabled by rememberSaveable { mutableStateOf(settings.tlsEnabled) }
     var tlsKeystorePath by rememberSaveable { mutableStateOf(settings.tlsKeystoreAssetPath) }
     var tlsKeystorePassword by rememberSaveable { mutableStateOf(settings.tlsKeystorePassword) }
@@ -121,14 +134,11 @@ fun SettingsScreen(
     var localIps by rememberSaveable { mutableStateOf(loadLocalIpAddresses()) }
     var selectedTab by rememberSaveable { mutableIntStateOf(SettingsTab.GENERAL.ordinal) }
 
-    /**
-     * Preview the effective endpoint config exactly the way the daemon/runtime
-     * would resolve it after a save, without mutating the live settings yet.
-     */
     fun previewEndpointConfig() = settings.copy(
         hubDispatchUrl = hubDispatchUrl.trim(),
         hubClientId = hubClientId.trim(),
-        hubToken = hubToken.trim(),
+        hubToken = splitAssociatedClientTokens(hubTokens).firstOrNull().orEmpty(),
+        hubTokens = hubTokens,
         authToken = authToken.trim(),
         allowInsecureTls = allowInsecure,
         destinations = destinationText.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toList(),
@@ -245,13 +255,6 @@ fun SettingsScreen(
     val isRunning = DaemonController.current() != null
     var daemonSnapshot by remember { mutableStateOf(DaemonConnectionSnapshot.stopped()) }
 
-    /**
-     * Refresh the daemon/network snapshot shown in the UI.
-     *
-     * NOTE: when the daemon is not currently running, this falls back to a
-     * preview based on unresolved settings so the user still sees what would be
-     * configured if the runtime started now.
-     */
     fun refreshDaemonSnapshot() {
         val daemon = DaemonController.current()
         if (daemon != null) {
@@ -451,8 +454,8 @@ fun SettingsScreen(
                 },
                 hubClientId = hubClientId,
                 onHubClientIdChange = { hubClientId = it },
-                authToken = authToken,
-                onAuthTokenChange = { authToken = it },
+                hubTokens = hubTokens,
+                onHubTokensChange = { hubTokens = it },
                 listenPortHttp = listenPortHttp,
                 localIps = localIps,
                 onCopyBaseUrl = { ip ->
@@ -497,16 +500,16 @@ fun SettingsScreen(
                         }
                     }
                 },
-                hubToken = hubToken,
-                onHubTokenChange = { hubToken = it },
+                authToken = authToken,
+                onAuthTokenChange = { authToken = it },
                 endpointSummary = previewEndpointConfig().let { preview ->
-                    "Resolved endpoint: ${preview.endpointUrl.ifBlank { preview.dispatchUrl.ifBlank { "not set" } }} | userId=${preview.userId.ifBlank { "-" }} | userKey=${if (preview.userKey.isBlank()) "-" else "set"}"
+                    "Resolved endpoint: ${preview.endpointUrl.ifBlank { preview.dispatchUrl.ifBlank { "not set" } }} | clientId=${preview.userId.ifBlank { "-" }} | tokens=${preview.userKeys.size}"
                 },
                 endpointWarning = previewEndpointConfig().let { preview ->
                     when {
                         !preview.hasRemoteEndpoint() -> "Endpoint URL is missing."
-                        preview.userId.isBlank() -> "Endpoint User ID is missing."
-                        preview.userKey.isBlank() -> "Endpoint User Key is missing."
+                        preview.userId.isBlank() -> "Associated Client ID is missing."
+                        preview.userKeys.isEmpty() -> "Associated Client Token is optional. Leave it empty only if this endpoint accepts the client id without token auth."
                         preview.dispatchUrl.isBlank() -> "Legacy /api/broadcast fallback is unavailable for this endpoint."
                         else -> null
                     }
@@ -643,6 +646,7 @@ fun SettingsScreen(
                 val nextHttps = listenPortHttps.toIntOrNull() ?: settings.listenPortHttps
                 val nextSyncInterval = syncInterval.toIntOrNull() ?: settings.syncIntervalSec
                 val nextClipboardSyncInterval = clipboardSyncInterval.toIntOrNull() ?: settings.clipboardSyncIntervalSec
+                val nextHubTokens = splitAssociatedClientTokens(hubTokens)
                 val nextRunDaemonForeground = runDaemonForeground
                 val nextDestinations = destinationText
                     .lineSequence()
@@ -676,7 +680,8 @@ fun SettingsScreen(
                     tlsKeystoreType = tlsKeystoreType.ifBlank { settings.tlsKeystoreType },
                     tlsKeystorePassword = tlsKeystorePassword,
                     hubClientId = hubClientId.ifBlank { settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } } },
-                    hubToken = hubToken.trim(),
+                    hubToken = nextHubTokens.firstOrNull().orEmpty(),
+                    hubTokens = nextHubTokens.joinToString("\n"),
                     configPath = configPath.trim(),
                     storagePath = storagePath.trim(),
                     logLevel = settings.logLevel
@@ -742,7 +747,7 @@ fun SettingsScreen(
             contactsSync, smsSync, syncInterval, clipboardSyncInterval,
             runDaemonForeground, runDaemonOnBoot, useAccessibilityService,
             showFloatingButton, quickActionCopyOnly, quickActionHandleImage,
-            listenPortHttp, listenPortHttps, enableLocalServer, authToken, hubToken,
+            listenPortHttp, listenPortHttps, enableLocalServer, authToken, hubTokens,
             tlsEnabled, tlsKeystorePath, tlsKeystorePassword, tlsKeystoreType
         ) {
             if (isInitialLoad) {

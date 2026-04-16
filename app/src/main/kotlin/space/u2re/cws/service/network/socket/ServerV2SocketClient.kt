@@ -27,12 +27,6 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
-/**
- * Compact socket diagnostics snapshot surfaced to daemon/UI layers.
- *
- * AI-READ: this is the main bridge between the internal reconnect/candidate
- * state machine and the human-readable status shown elsewhere in the app.
- */
 data class ServerV2SocketDiagnostics(
     val connected: Boolean,
     val activeTransport: String,
@@ -44,12 +38,6 @@ data class ServerV2SocketDiagnostics(
     val lastDetail: String?
 )
 
-/**
- * Android WebSocket client for the CWSP v2 realtime transport.
- *
- * It owns endpoint candidate rotation, TLS/custom-CA handling, reconnect and
- * keepalive loops, handshake identity rendering, and packet encode/decode.
- */
 class ServerV2SocketClient(
     private val config: EndpointCoreConfig,
     private val onPacket: (ServerV2Packet) -> Unit = {},
@@ -74,7 +62,11 @@ class ServerV2SocketClient(
     private var client: OkHttpClient? = null
     private var socket: WebSocket? = null
     private val endpointCandidates = ServerV2WireContract.resolveSocketEndpointCandidates(config)
+    private val tokenCandidates = config.userKeys.ifEmpty {
+        listOf(config.userKey).map { it.trim() }.filter { it.isNotBlank() }.ifEmpty { listOf("") }
+    }
     private var endpointIndex = 0
+    private var tokenIndex = 0
     private val tlsRejectedHosts = mutableSetOf<String>()
     private var started = false
     private var connected = false
@@ -88,12 +80,6 @@ class ServerV2SocketClient(
         ?.let { it == "1" || it == "true" || it == "yes" || it == "on" }
         ?: true
 
-    /**
-     * Start the socket client plus the background reconnect/keepalive monitors.
-     *
-     * WHY: Android connectivity callbacks are not always reliable enough on
-     * their own, so the client maintains its own recovery loop as well.
-     */
     fun start() {
         if (started) return
         if (!config.isRemoteReady()) {
@@ -148,7 +134,6 @@ class ServerV2SocketClient(
         }
     }
 
-    /** Stop monitors, close the live websocket, and release the OkHttp client. */
     fun stop() {
         started = false
         connected = false
@@ -163,7 +148,6 @@ class ServerV2SocketClient(
         updateState("stopped", "server-v2 socket stopped")
     }
 
-    /** Force an immediate reconnect attempt, usually after connectivity or config changes. */
     fun requestReconnect() {
         if (!started) return
         lastReconnectAtMs = System.currentTimeMillis()
@@ -177,7 +161,6 @@ class ServerV2SocketClient(
 
     fun isConnected(): Boolean = connected && socket != null
 
-    /** Snapshot the current candidate/transport state for daemon diagnostics and UI. */
     fun getDiagnostics(): ServerV2SocketDiagnostics = ServerV2SocketDiagnostics(
         connected = isConnected(),
         activeTransport = "ws",
@@ -189,13 +172,27 @@ class ServerV2SocketClient(
         lastDetail = lastDetail
     )
 
-    /** Encode and send one packet over the active websocket if the socket is healthy. */
+    fun sendClipboardUpdate(envelope: Map<String, Any?>, targets: List<String>): Boolean {
+        val packet = ServerV2Packet(
+            op = "act",
+            what = "clipboard:update",
+            type = "clipboard:update",
+            purpose = "clipboard",
+            protocol = "ws",
+            payload = envelope,
+            nodes = targets,
+            destinations = targets
+        )
+        return sendPacket(packet)
+    }
+
     fun sendPacket(packet: ServerV2Packet): Boolean {
         val active = socket ?: return false
         if (!isConnected()) return false
         val identity = ServerV2WireContract.resolve(config)
         val normalized = packet.copy(
             op = packet.op.ifBlank { "ask" },
+            protocol = packet.protocol ?: "ws",
             uuid = packet.uuid ?: UUID.randomUUID().toString(),
             byId = packet.byId ?: identity.senderId(),
             timestamp = if (packet.timestamp > 0L) packet.timestamp else System.currentTimeMillis()
@@ -207,7 +204,6 @@ class ServerV2SocketClient(
         }
     }
 
-    /** Send the standard token/identity probe immediately after connect. */
     fun hello(): Boolean {
         val identity = currentIdentity()
         return sendPacket(
@@ -221,7 +217,6 @@ class ServerV2SocketClient(
         )
     }
 
-    /** Send the lightweight keepalive packet used to detect stalled but not yet closed sockets. */
     private fun sendKeepaliveProbe(): Boolean {
         val identity = currentIdentity()
         return sendPacket(
@@ -235,7 +230,6 @@ class ServerV2SocketClient(
         )
     }
 
-    /** Update the externally visible state and remember TLS-failure hints for candidate rotation. */
     private fun updateState(event: String, detail: String?) {
         maybeMarkTlsRejectedEndpoint(detail)
         lastState = event
@@ -243,7 +237,6 @@ class ServerV2SocketClient(
         onState(event, detail)
     }
 
-    /** Return the currently selected endpoint candidate, or the fallback endpoint from config. */
     private fun currentEndpoint(): String {
         if (endpointCandidates.isEmpty()) {
             return ServerV2WireContract.resolve(config).endpointUrl.ifBlank { config.dispatchUrl }
@@ -251,19 +244,21 @@ class ServerV2SocketClient(
         return endpointCandidates[endpointIndex.coerceIn(0, endpointCandidates.lastIndex)]
     }
 
-    /** Re-resolve the wire identity against the current endpoint candidate. */
     private fun currentIdentity(): ServerV2WireIdentity {
         val base = ServerV2WireContract.resolve(config)
         val endpoint = currentEndpoint().ifBlank { base.endpointUrl }
-        return base.copy(endpointUrl = endpoint)
+        return base.copy(
+            endpointUrl = endpoint,
+            userKey = currentToken(),
+            userKeys = tokenCandidates.filter { it.isNotBlank() }
+        )
     }
 
-    /**
-     * Rotate to the next viable endpoint candidate.
-     *
-     * NOTE: secure endpoints already marked as TLS-rejected are skipped where
-     * possible so repeated reconnects move on to the next useful candidate.
-     */
+    private fun currentToken(): String {
+        if (tokenCandidates.isEmpty()) return ""
+        return tokenCandidates[tokenIndex.coerceIn(0, tokenCandidates.lastIndex)]
+    }
+
     private fun advanceEndpoint() {
         if (endpointCandidates.size <= 1) return
         val start = endpointIndex
@@ -278,14 +273,19 @@ class ServerV2SocketClient(
         endpointIndex = next
     }
 
-    /**
-     * Rebuild the websocket against the current or next candidate endpoint.
-     *
-     * AI-READ: this is the core transport state-machine method; most connection
-     * failures, candidate changes, and TLS fallbacks eventually pass through it.
-     */
+    private fun advanceRoute() {
+        if (tokenCandidates.size > 1) {
+            val nextToken = (tokenIndex + 1) % tokenCandidates.size
+            tokenIndex = nextToken
+            if (nextToken != 0) {
+                return
+            }
+        }
+        advanceEndpoint()
+    }
+
     private fun restartSocket(rotate: Boolean) {
-        if (rotate) advanceEndpoint()
+        if (rotate) advanceRoute()
         socket?.close(1001, "reconnect")
         socket = null
         val identity = currentIdentity()
@@ -351,7 +351,6 @@ class ServerV2SocketClient(
         })
     }
 
-    /** Remember endpoints that appear to fail due to TLS so later reconnects can de-prioritize them. */
     private fun maybeMarkTlsRejectedEndpoint(detail: String?) {
         val normalized = detail?.lowercase()?.trim().orEmpty()
         if (!isTlsHandshakeFailure(normalized) && !normalized.contains("unexpected end of stream")) return
@@ -363,7 +362,6 @@ class ServerV2SocketClient(
         }
     }
 
-    /** Best-effort detector for TLS/certificate mismatch failures reported by OkHttp/SSL. */
     private fun isTlsHandshakeFailure(detail: String?): Boolean {
         val normalized = detail?.lowercase()?.trim().orEmpty()
         if (normalized.isBlank()) return false
@@ -376,10 +374,6 @@ class ServerV2SocketClient(
             normalized.contains("ssl")
     }
 
-    /**
-     * Build the OkHttp websocket client with either insecure TLS, a custom CA,
-     * or the default platform trust configuration.
-     */
     private fun buildSocketClient(): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .retryOnConnectionFailure(true)
@@ -422,7 +416,6 @@ class ServerV2SocketClient(
         return builder.build()
     }
 
-    /** Resolve the custom CA file path from explicit config plus known config/storage fallbacks. */
     private fun resolveTrustedCaPath(raw: String?): String {
         val value = raw?.trim().orEmpty()
         val configDir = resolveConfigDirPath()
@@ -482,7 +475,6 @@ class ServerV2SocketClient(
         return trustManager ?: throw IllegalStateException("No X509 trust manager for custom CA")
     }
 
-    /** Skip secure endpoints already known to fail TLS validation for this session. */
     private fun shouldSkipEndpoint(endpoint: String): Boolean {
         if (!isSecureSocketScheme(endpoint)) return false
         val host = endpointHost(endpoint)
@@ -501,12 +493,6 @@ class ServerV2SocketClient(
         }
     }
 
-    /**
-     * Convert a server/api endpoint into the canonical websocket URL plus query.
-     *
-     * WHY: settings may start as HTTP API URLs or logical route targets, but
-     * the live socket must always converge on the explicit `/ws` handshake URL.
-     */
     private fun toCanonicalWsUrl(endpoint: String, identity: ServerV2WireIdentity): String {
         val source = try {
             URI(endpoint)
@@ -570,7 +556,6 @@ class ServerV2SocketClient(
         ).toString()
     }
 
-    /** Render a safe diagnostic endpoint string with secret-bearing query params redacted. */
     private fun endpointForDiagnostics(rawEndpoint: String): String {
         return try {
             val uri = URI(rawEndpoint)

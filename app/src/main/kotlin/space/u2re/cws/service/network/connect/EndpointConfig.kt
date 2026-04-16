@@ -3,18 +3,13 @@ package space.u2re.cws.network
 private const val DEFAULT_ENDPOINT_NAMESPACE = "default"
 private const val DEFAULT_ENDPOINT_ROLES = "endpoint,peer,node,app"
 
-/**
- * Resolved network configuration consumed by the Android v2 transport stack.
- *
- * It combines endpoint candidates, credentials, device identity, TLS options,
- * storage/config roots, and the legacy-bridge toggle into one immutable view.
- */
 data class EndpointCoreConfig(
     val endpointUrl: String,
     val endpointCandidates: List<String>,
     val dispatchUrl: String,
     val userId: String,
     val userKey: String,
+    val userKeys: List<String>,
     val deviceId: String,
     val namespace: String,
     val roles: String,
@@ -25,13 +20,10 @@ data class EndpointCoreConfig(
     val storagePath: String,
     val legacyBridgeEnabled: Boolean
 ) {
-    /** True when at least one remote endpoint candidate exists. */
     fun hasRemoteEndpoint(): Boolean = endpointCandidates.isNotEmpty() || endpointUrl.isNotBlank()
 
-    /** True when user identity plus credential material is present. */
-    fun hasCredentials(): Boolean = userId.isNotBlank() && userKey.isNotBlank()
+    fun hasCredentials(): Boolean = userId.isNotBlank()
 
-    /** Minimum readiness gate used before socket/http clients attempt to dial the backend. */
     fun isRemoteReady(): Boolean = hasRemoteEndpoint() && hasCredentials()
 }
 
@@ -72,17 +64,23 @@ private fun looksGeneratedDeviceId(value: String): Boolean {
     return trimmed.startsWith("android-") || trimmed.startsWith("ns-")
 }
 
+private fun parseAssociatedTokens(vararg rawValues: String): List<String> {
+    return rawValues
+        .flatMap { raw -> raw.split(Regex("[,;\n]")) }
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+}
+
 /**
- * Build the canonical Android network config from settings/runtime inputs.
- *
- * WHY: candidate ordering, route-target normalization, TLS flags, and bridge
- * enablement must be resolved once here so every transport layer behaves
- * consistently during reconnect and fallback.
+ * Keep these helpers in network core so endpoint candidate normalization and ordering
+ * stay identical across native Android runtime and any future JVM clients.
  */
 fun buildEndpointCoreConfig(
     endpointUrlRaw: String,
     hubClientId: String,
     authToken: String,
+    hubTokensRaw: String,
     deviceId: String,
     userIdOverride: String,
     userKeyOverride: String,
@@ -136,13 +134,15 @@ fun buildEndpointCoreConfig(
     val normalizedDestinations = destinations.mapNotNull {
         normalizeDestinationUrl(it, "/clipboard") ?: it.trim().ifBlank { null }
     }
+    val tokenCandidates = parseAssociatedTokens(userKeyOverride, hubTokensRaw, authToken)
 
     return EndpointCoreConfig(
         endpointUrl = normalizedEndpointUrl,
         endpointCandidates = endpointCandidates,
         dispatchUrl = normalizedDispatchUrl,
         userId = derivedUserId,
-        userKey = userKeyOverride.ifBlank { authToken },
+        userKey = tokenCandidates.firstOrNull().orEmpty(),
+        userKeys = tokenCandidates,
         deviceId = derivedDeviceId,
         namespace = namespaceOverride.ifBlank { DEFAULT_ENDPOINT_NAMESPACE },
         roles = rolesOverride.ifBlank { DEFAULT_ENDPOINT_ROLES },

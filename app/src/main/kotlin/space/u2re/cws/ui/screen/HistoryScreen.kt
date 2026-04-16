@@ -126,8 +126,8 @@ fun HistoryScreen(
             value = selectedTarget,
             onValueChange = viewModel::setSelectedTarget,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Remote target or URL") },
-            placeholder = { Text("192.168.0.110 or https://192.168.0.110:8443") },
+            label = { Text("Filter by target, URL, or tag") },
+            placeholder = { Text("e.g. 192.168.0.110 or [clipboard:sync]") },
             singleLine = true
         )
 
@@ -397,6 +397,14 @@ private fun copyText(context: Context, text: String) {
 private fun matchesTarget(selectedTarget: String, sourceId: String, targetId: String?): Boolean {
     val filter = selectedTarget.trim()
     if (filter.isBlank()) return true
+    
+    // Check if it's a diagnostic tag filter
+    if (filter.startsWith("[") && filter.endsWith("]")) {
+        // Tag filtering logic would go here if items had tags
+        // For now, just match against sourceId/targetId as string
+        return sourceId.contains(filter, ignoreCase = true) || (targetId?.contains(filter, ignoreCase = true) == true)
+    }
+    
     val normalizedFilter = EndpointIdentity.sourceIdFromTargetOrUrl(filter).ifBlank { filter }
     val aliases = EndpointIdentity.aliases(normalizedFilter)
     if (aliases.isEmpty()) return sourceId.contains(filter, ignoreCase = true) || (targetId?.contains(filter, ignoreCase = true) == true)

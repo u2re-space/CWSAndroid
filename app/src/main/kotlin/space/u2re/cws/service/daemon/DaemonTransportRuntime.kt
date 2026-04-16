@@ -11,13 +11,6 @@ import space.u2re.cws.reverse.ReverseGatewayConfig
 import java.net.URI
 import java.util.concurrent.atomic.AtomicLong
 
-/**
- * Runtime transport coordinator for Android.
- *
- * This class sits above the v2 network module and the optional legacy reverse
- * bridge, applying feature flags, deciding when fallback is allowed, and
- * exposing one diagnostics/metrics surface to the daemon layer.
- */
 class DaemonTransportRuntime(
     private val endpointConfig: EndpointCoreConfig,
     private val reverseConfig: ReverseGatewayConfig,
@@ -25,8 +18,6 @@ class DaemonTransportRuntime(
     private val onLegacyMessage: (String, String) -> Unit,
     private val onState: (String, String?) -> Unit
 ) {
-    // WHY: clipboard dispatch keeps both socket and HTTP paths available by
-    // default because "frame queued" is not the same as "remote applied it".
     private val clipboardDualPathEnabled = listOf(
         System.getenv("CWS_ANDROID_CLIPBOARD_DUAL_PATH"),
         System.getProperty("cws.android.clipboardDualPath")
@@ -38,8 +29,6 @@ class DaemonTransportRuntime(
             else -> null
         }
     } ?: true
-    // WHY: hard cutover lets testing force the app onto the v2 transport even
-    // when the legacy bridge would normally still act as a safety net.
     private val hardCutoverMode = listOf(
         System.getenv("CWS_ANDROID_HARD_CUTOVER"),
         System.getProperty("cws.android.hardCutover")
@@ -47,7 +36,6 @@ class DaemonTransportRuntime(
         val normalized = value?.trim()?.lowercase()
         normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
     }
-    // NOTE: this overrides all normal bridge-disabling heuristics.
     private val forceLegacyBridge = listOf(
         System.getenv("CWS_ANDROID_FORCE_LEGACY_BRIDGE"),
         System.getProperty("cws.android.forceLegacyBridge")
@@ -55,8 +43,6 @@ class DaemonTransportRuntime(
         val normalized = value?.trim()?.lowercase()
         normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
     }
-    // WHY: dual ingest is normally suppressed to avoid loops/duplicates when
-    // WS and the legacy bridge both deliver the same clipboard/dispatch event.
     private val allowLegacyInboundWhenWsConnected = listOf(
         System.getenv("CWS_ANDROID_ALLOW_LEGACY_INBOUND_WITH_WS"),
         System.getProperty("cws.android.allowLegacyInboundWithWs")
@@ -99,11 +85,6 @@ class DaemonTransportRuntime(
     @Volatile
     private var lastDetail: String? = "not-started"
 
-    /**
-     * Start the v2 transport and, if still allowed, the legacy bridge sidecar.
-     *
-     * AI-READ: this method defines the active transport topology for the app.
-     */
     fun start() {
         stop()
         if (!networkModule.start()) {
@@ -139,7 +120,6 @@ class DaemonTransportRuntime(
         }
     }
 
-    /** Decide whether the legacy bridge should be enabled for the resolved endpoint. */
     private fun shouldEnableLegacyBridge(endpointUrl: String): Boolean {
         if (forceLegacyBridge) return true
         val endpoint = endpointUrl.trim()
@@ -154,9 +134,16 @@ class DaemonTransportRuntime(
             }
             val path = (uri.path ?: "").trim().lowercase()
             val isRootLike = path.isBlank() || path == "/" || path == "/api"
+            val hasModernEndpointCandidates = endpointConfig.endpointCandidates.isNotEmpty()
             val isKnownLoopGateway = host == "192.168.0.200" && (port == 8443 || port == 443) && isRootLike
-            if (isKnownLoopGateway) {
-                updateState("bridge-disabled", "legacy bridge disabled for gateway root endpoint")
+            val disableForModernRootEndpoint = hasModernEndpointCandidates && isRootLike
+            if (isKnownLoopGateway || disableForModernRootEndpoint) {
+                val reason = if (isKnownLoopGateway) {
+                    "legacy bridge disabled for gateway root endpoint"
+                } else {
+                    "legacy bridge disabled for server-v2 root endpoint"
+                }
+                updateState("bridge-disabled", reason)
                 false
             } else {
                 true
@@ -166,7 +153,6 @@ class DaemonTransportRuntime(
         }
     }
 
-    /** Stop both transport paths and publish a stopped runtime state. */
     fun stop() {
         networkModule.stop()
         legacyBridge?.stop()
@@ -174,7 +160,6 @@ class DaemonTransportRuntime(
         updateState("stopped", "transport runtime stopped")
     }
 
-    /** Ask both transport paths to reconnect and record that request in metrics/state. */
     fun requestReconnect() {
         reconnectRequests.incrementAndGet()
         networkModule.requestReconnect()
@@ -184,10 +169,8 @@ class DaemonTransportRuntime(
 
     fun isConnected(): Boolean = networkModule.isConnected() || legacyBridge?.isConnected() == true
 
-    /** Expose the HTTP client that shares endpoint config with the live transport runtime. */
     fun getHttpClient(): ServerV2HttpClient = networkModule.getHttpClient()
 
-    /** Merge v2 and legacy-bridge diagnostics into the daemon-facing snapshot shape. */
     fun getDiagnostics(): TransportRuntimeDiagnostics {
         val v2Diagnostics = networkModule.getSocketDiagnostics()
         val legacyDiagnostics = legacyBridge?.getDiagnostics()
@@ -220,19 +203,12 @@ class DaemonTransportRuntime(
         reconnectSuccesses = reconnectSuccesses.get()
     )
 
-    /** Send one packet through v2 first, falling back to the legacy bridge only when policy allows it. */
     fun sendPacket(packet: ServerV2Packet): Boolean {
         if (networkModule.sendPacket(packet)) return true
         if (!shouldUseLegacyFallback()) return false
         return sendPacketViaBridge(packet)
     }
 
-    /**
-     * Decide whether failed v2 sends may fall back to the legacy bridge.
-     *
-     * NOTE: hard-cutover mode intentionally disables this unless explicitly
-     * overridden for debugging or staged rollouts.
-     */
     private fun shouldUseLegacyFallback(): Boolean {
         if (forceLegacyBridge) return true
         if (hardCutoverMode && !allowLegacySendFallback) return false
@@ -240,7 +216,6 @@ class DaemonTransportRuntime(
         return true
     }
 
-    /** Convert a v2 packet into the bridge relay shape and send it target-by-target. */
     private fun sendPacketViaBridge(packet: ServerV2Packet): Boolean {
         val bridge = legacyBridge ?: return false
         if (!bridge.isConnected()) return false
@@ -271,10 +246,6 @@ class DaemonTransportRuntime(
         return delivered
     }
 
-    /**
-     * Try clipboard delivery over sockets first, optionally keeping HTTP relay
-     * items pending when dual-path delivery is enabled.
-     */
     fun sendClipboardViaSockets(
         envelope: ClipboardEnvelope,
         items: List<HubDispatchPayloadItem>,
@@ -358,7 +329,6 @@ class DaemonTransportRuntime(
         return pending
     }
 
-    /** Send any remaining clipboard relay items through the HTTP broadcast path. */
     suspend fun dispatchClipboardRequests(items: List<HubDispatchPayloadItem>): Boolean {
         val requests = items.map { it.request }.filter { it.isNotEmpty() }
         if (requests.isEmpty()) return false
@@ -373,7 +343,6 @@ class DaemonTransportRuntime(
         }
     }
 
-    /** Persist and forward the latest runtime state for daemon/UI diagnostics. */
     private fun updateState(state: String, detail: String?) {
         lastState = state
         lastDetail = detail

@@ -67,7 +67,9 @@ internal fun buildTargetAliases(localDeviceId: String, settings: Settings, userI
         settings.hubClientId.ifBlank { null },
         settings.hubToken.ifBlank { null },
         userId?.ifBlank { null }
-    )
+    ) + settings.hubTokens
+        .split(Regex("[,;\n]"))
+        .mapNotNull { it.trim().ifBlank { null } }
     val aliases = linkedSetOf<String>()
     for (token in localTokens) {
         aliases.addAll(EndpointIdentity.aliases(token))
