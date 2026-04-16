@@ -527,7 +527,8 @@ fun ServerTab(
     onTlsKeystorePasswordChange: (String) -> Unit,
     onStartRestartServer: () -> Unit,
     onStopServer: () -> Unit,
-    isRunning: Boolean
+    isRunning: Boolean,
+    localIps: List<String>
 ) {
     val switchColors = settingsSwitchColors()
     
@@ -562,6 +563,23 @@ fun ServerTab(
         ) {
             Text("Stop Server")
         }
+    }
+    Spacer(Modifier.size(16.dp))
+
+    Text(
+        "AirPad & Device URLs",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    if (localIps.isNotEmpty()) {
+        localIps.forEach { ip ->
+            val base = if (tlsEnabled) "https://$ip:${listenPortHttps.ifBlank { "8443" }}" else "http://$ip:${listenPortHttp.ifBlank { "8080" }}"
+            Text("$ip")
+            Text("- AirPad Endpoint: $base")
+            Spacer(Modifier.size(8.dp))
+        }
+    } else {
+        Text("No local IP addresses found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Spacer(Modifier.size(16.dp))
 

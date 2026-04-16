@@ -48,11 +48,11 @@ class ServerV2SocketClient(
     private var reconnectMonitorJob: Job? = null
     private var keepaliveMonitorJob: Job? = null
     private var lastReconnectAtMs: Long = 0L
-    private val reconnectEveryMs: Long = 1_500L
+    private val reconnectEveryMs: Long = 2_000L
     private val keepaliveEveryMs: Long = listOf(
         System.getenv("CWS_ANDROID_WS_KEEPALIVE_MS"),
         System.getProperty("cws.android.wsKeepaliveMs")
-    ).firstNotNullOfOrNull { it?.trim()?.toLongOrNull() }?.coerceAtLeast(4_000L) ?: 15_000L
+    ).firstNotNullOfOrNull { it?.trim()?.toLongOrNull() }?.coerceAtLeast(4_000L) ?: 10_000L
     private val staleSocketAfterMs: Long = listOf(
         System.getenv("CWS_ANDROID_WS_STALE_MS"),
         System.getProperty("cws.android.wsStaleMs")

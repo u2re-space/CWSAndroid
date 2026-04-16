@@ -574,7 +574,8 @@ fun SettingsScreen(
                         }
                     }
                 },
-                isRunning = isRunning
+                isRunning = isRunning,
+                localIps = localIps
             )
 
             SettingsTab.CONTROL_CENTER -> ControlCenterTab(

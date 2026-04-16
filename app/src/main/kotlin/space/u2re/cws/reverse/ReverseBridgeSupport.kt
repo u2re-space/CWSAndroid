@@ -117,6 +117,7 @@ internal fun sendResultPacket(
     result: Any
 ): Boolean {
     val replyTarget = extractReplyTarget(requestPayload) ?: return false
+    val replySource = extractTarget(requestPayload)
     val requestUuid = extractString(requestPayload["uuid"])
         ?: nestedPayloadObject(requestPayload)?.let { nested -> extractString(nested["uuid"]) }
     return callbacks.sendPacket(
@@ -130,7 +131,12 @@ internal fun sendResultPacket(
             uuid = requestUuid,
             nodes = listOf(replyTarget),
             destinations = listOf(replyTarget),
-            sender = extractString(requestPayload["sender"]) ?: extractString(requestPayload["byId"]) ?: extractString(requestPayload["from"])
+            // WHY: replies must identify the local Android device as the source.
+            // Reusing the inbound sender makes diagnostics think the gateway or
+            // Windows host authored the result, which hides real target success.
+            byId = replySource,
+            from = replySource,
+            sender = replySource
         )
     )
 }

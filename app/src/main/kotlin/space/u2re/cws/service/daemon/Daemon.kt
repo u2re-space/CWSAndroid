@@ -972,7 +972,13 @@ class Daemon(
         if (hubItems.isEmpty()) return
         val pendingItems = trySendClipboardViaReverseGateway(envelope, hubItems)
         if (pendingItems.isEmpty()) return
-        val urls = pendingItems.mapNotNull { it.directFallbackUrl }
+        val directFallbackItems = pendingItems.filter { item ->
+            val url = item.request["url"] as? String ?: item.directFallbackUrl
+            !url.isNullOrBlank() && EndpointIdentity.isExplicitHttpUrl(url)
+        }
+        val hubPendingItems = pendingItems
+
+        val urls = directFallbackItems.mapNotNull { it.directFallbackUrl }
         val payloadJson = ClipboardEnvelopeCodec.canonicalJson(envelope.toMap())
 
         val headers = buildMap {
@@ -988,12 +994,14 @@ class Daemon(
             }
         }
 
+        if (hubPendingItems.isEmpty()) return
+
         val endpointConfig = currentEndpointConfig()
         val hub = endpointConfig.dispatchUrl.ifBlank { normalizeHubDispatchUrl(settings.hubDispatchUrl).orEmpty() }
         if (!hub.isNullOrBlank()) {
             val fallbackUrls = urls.toSet()
             val hubDispatched = runCatching {
-                transportRuntime?.dispatchClipboardRequests(pendingItems) == true
+                transportRuntime?.dispatchClipboardRequests(hubPendingItems) == true
             }.getOrElse { error ->
                 DaemonLog.warn("Daemon", "hub dispatch error", error)
                 false

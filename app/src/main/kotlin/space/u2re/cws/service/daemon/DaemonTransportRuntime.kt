@@ -28,7 +28,7 @@ class DaemonTransportRuntime(
             "0", "false", "no", "off" -> false
             else -> null
         }
-    } ?: true
+    } ?: false
     private val hardCutoverMode = listOf(
         System.getenv("CWS_ANDROID_HARD_CUTOVER"),
         System.getProperty("cws.android.hardCutover")
@@ -272,7 +272,7 @@ class DaemonTransportRuntime(
                 what = "clipboard:update",
                 type = "clipboard:update",
                 purpose = "clipboard",
-                protocol = "socket.io",
+                protocol = "ws",
                 payload = envelope.toMap(),
                 nodes = listOf(target),
                 destinations = listOf(target),
@@ -283,7 +283,7 @@ class DaemonTransportRuntime(
             if (v2Sent) {
                 relaySuccess.incrementAndGet()
                 // `send()` means frame is queued, not that target applied it.
-                // Keep HTTP dispatch as reliability path for cross-host clipboard delivery.
+                // HTTP fan-out is now opt-in so Android stays WS-first by default.
                 if (clipboardDualPathEnabled) {
                     pending.add(item)
                 }

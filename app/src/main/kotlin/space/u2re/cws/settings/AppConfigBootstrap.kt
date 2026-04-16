@@ -39,6 +39,73 @@ private val fallbackPortableEndpoint = """
     }
 """.trimIndent()
 
+private val fallbackClientsJson = """
+    {
+      "L-192.168.0.196": {
+        "origins": "192.168.0.196,45.150.9.153,android-native,android-pwa,vds-client",
+        "relations": "both ws,http,tcp,socketio"
+      },
+      "L-192.168.0.110": {
+        "origins": "192.168.0.110,192.168.0.111,desktop-110",
+        "relations": "both ws,http,tcp,socketio"
+      },
+      "L-192.168.0.200": {
+        "origins": "192.168.0.200,192.168.0.201,45.147.121.152,gateway-200",
+        "flags": { "gateway": true },
+        "relations": "both ws,http,tcp,socketio"
+      },
+      "L-192.168.0.208": {
+        "origins": "192.168.0.208",
+        "relations": "both ws,http,tcp,socketio"
+      }
+    }
+""".trimIndent()
+
+private val fallbackGatewaysJson = """
+    {
+      "gateways": [
+        "L-192.168.0.200",
+        "L-192.168.0.110"
+      ],
+      "destinations": [
+        "L-192.168.0.110"
+      ]
+    }
+""".trimIndent()
+
+private val fallbackNetworkJson = """
+    {
+      "version": 2,
+      "listenPort": 8443,
+      "httpPort": 8080,
+      "networkAliases": {
+        "192.168.0.200": "L-192.168.0.200",
+        "192.168.0.201": "L-192.168.0.200",
+        "45.147.121.152": "L-192.168.0.200",
+        "192.168.0.110": "L-192.168.0.110",
+        "192.168.0.111": "L-192.168.0.110",
+        "192.168.0.196": "L-192.168.0.196",
+        "45.150.9.153": "L-192.168.0.196",
+        "192.168.0.208": "L-192.168.0.208"
+      },
+      "endpoints": [
+        "https://45.147.121.152:8443/",
+        "https://192.168.0.200:8443/",
+        "https://192.168.0.201:8443/",
+        "https://192.168.0.110:8443/",
+        "https://192.168.0.111:8443/"
+      ],
+      "runtime": {
+        "clipboardPeerTargets": [
+          "L-192.168.0.110",
+          "L-192.168.0.200",
+          "L-192.168.0.196",
+          "L-192.168.0.208"
+        ]
+      }
+    }
+""".trimIndent()
+
 private val fallbackPortableConfig = """
     {
       "version": 2,
@@ -50,14 +117,36 @@ private val fallbackPortableConfig = """
         "core": "fs:./portable-core.json",
         "endpoint": "fs:./portable-endpoint.json"
       },
+      "destinations": [
+        "L-192.168.0.110"
+      ],
       "launcherEnv": {
         "CWS_PORTABLE_CONFIG_PATH": "fs:./portable.config.json",
+        "CWS_ASSOCIATED_ID": "L-192.168.0.196",
+        "CWS_ASSOCIATED_TOKEN": "n3v3rm1nd",
+        "CWS_BRIDGE_USER_ID": "L-192.168.0.196",
+        "CWS_BRIDGE_USER_KEY": "n3v3rm1nd",
+        "CWS_BRIDGE_DEVICE_ID": "L-192.168.0.196",
+        "CWS_BRIDGE_ENDPOINT_URL": "https://45.147.121.152:8443/",
+        "CWS_BRIDGE_ENDPOINTS": [
+          "https://45.147.121.152:8443/",
+          "https://192.168.0.200:8443/",
+          "https://192.168.0.201:8443/",
+          "https://192.168.0.110:8443/",
+          "https://192.168.0.111:8443/"
+        ],
+        "CWS_BRIDGE_PRECONNECT_TARGETS": [
+          "L-192.168.0.200",
+          "L-192.168.0.110"
+        ],
         "CWS_HTTPS_KEY": "fs:../https/local/multi.key",
         "CWS_HTTPS_CERT": "fs:../https/local/multi.crt",
         "CWS_HTTPS_CA": "fs:../https/local/rootCA.crt",
         "CWS_HTTPS_CERT_MODULE": "fs:./certificate.mjs",
         "CWS_NETWORK_SCHEMA_VERSION": 2,
-        "CWS_COORDINATOR_MODE": "unified"
+        "CWS_COORDINATOR_MODE": "unified",
+        "CWS_COMPAT_SOCKETIO": "false",
+        "CWS_WS_CANONICAL": "true"
       }
     }
 """.trimIndent()
@@ -119,8 +208,10 @@ object AppConfigBootstrap {
             runCatching {
                 val configDir = File(root, "config").apply { mkdirs() }
                 val httpsDir = File(root, "https").apply { mkdirs() }
+                val httpsLocalDir = File(httpsDir, "local").apply { mkdirs() }
                 copyMissingAssets(context, STOCK_CONFIG_ASSET_DIR, configDir, stockConfigFiles)
                 copyMissingAssets(context, STOCK_HTTPS_ASSET_DIR, httpsDir, stockHttpsFiles)
+                copyMissingAssets(context, STOCK_HTTPS_ASSET_DIR, httpsLocalDir, stockHttpsFiles)
                 ensureStockFallbackConfigFiles(configDir)
             }.onFailure { error ->
                 Log.w(TAG, "stock AppConfig bootstrap failed for $root: ${error.message}")
@@ -205,9 +296,9 @@ object AppConfigBootstrap {
      * daemon relies on for local config, HTTPS, and unified coordinator mode.
      */
     private fun ensureStockFallbackConfigFiles(configDir: File) {
-        writeIfMissing(File(configDir, "clients.json"), "{}\n")
-        writeIfMissing(File(configDir, "gateways.json"), "{}\n")
-        writeIfMissing(File(configDir, "network.json"), "{}\n")
+        writeIfMissing(File(configDir, "clients.json"), "$fallbackClientsJson\n")
+        writeIfMissing(File(configDir, "gateways.json"), "$fallbackGatewaysJson\n")
+        writeIfMissing(File(configDir, "network.json"), "$fallbackNetworkJson\n")
         writeIfMissing(File(configDir, "portable-core.json"), "$fallbackPortableCore\n")
         writeIfMissing(File(configDir, "portable-endpoint.json"), "$fallbackPortableEndpoint\n")
         writeIfMissing(File(configDir, "portable.config.json"), "$fallbackPortableConfig\n")

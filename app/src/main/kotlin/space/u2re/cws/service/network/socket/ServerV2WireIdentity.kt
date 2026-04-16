@@ -283,6 +283,10 @@ object ServerV2WireContract {
             identity.connectionType
         }
         return buildMap {
+            if (identity.userKey.isNotBlank()) {
+                put("token", identity.userKey)
+                put("airpadToken", identity.userKey)
+            }
             if (identity.clientId.isNotBlank()) {
                 put("clientId", identity.clientId)
                 put("userId", identity.userId)

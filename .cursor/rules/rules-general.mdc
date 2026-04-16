@@ -1,7 +1,6 @@
 ---
 description: Canonical repo-wide engineering workflow rule
-globs: *.ts,*.tsx,*.mjs,*.js,*.scss,*.css
-alwaysApply: false
+alwaysApply: true
 ---
 
 > NOTE: Canonical general rule. Keep cross-language workflow here; keep language specifics in `rules-js.mdc` and `rules-css.mdc`.
@@ -39,3 +38,61 @@ alwaysApply: false
 - Prefer cohesive feature modules over fragmented micro-files.
 - Avoid circular dependencies and unnecessary abstractions.
 - Preserve API boundaries; refactor behind stable exports.
+
+---
+
+## Model selection
+
+- **Analysis / architecture / planning:** Claude Opus 4.6, GPT 5.4 (`high` or `xhigh`), Gemini 3.1 Pro
+- **Coding / implementation / refactoring:** GPT-5.4 (`low` or `medium`), Claude 4.6 Sonnet, Gemini 3.1 Pro
+- **Edits / fixes / refinements:** `GPT-5.3-codex-spark`, GPT-5.4 (`instant`, `none`, or `minimal` reasoning), Claude 4.5 Haiku, Gemini 3 Flash
+- **Documentation / specs:** GPT-5.4 (`low` or `medium`), Claude 4.6 Sonnet, Gemini 3.1 Pro
+- **Recognition / scanning / images:** GPT-5.4 (`low`, `instant`, `none`, or `minimal`), Claude 4.6 Sonnet, Gemini 3.1 Pro, or Gemini 3 Flash
+
+---
+
+## Network stack:
+
+How &ould works our network.
+
+```
+[ Laptop/Ultrabook ] Bi-dir  {[ Server (Endpoint), Have External Entry IP ]}
+[ L-192.168.0.110  ] ←←---→→ {[ 192.168.0.200:8443 / 45.147.121.152:8443  ]}
+          ↑                         ↑                         ↑
+          ┷                         ↑                         ↑ 
+          |                         ↓                         ↓ 
+          ┗------------------{[ [L-192.168.0.196] |- - -| [L-192.168.0.208] ]}   # Phone device groups (cws-androids, PWA-airpad)
+                                [Android Phone 1]         [Android Phone 2]
+```
+
+### Topology
+
+**L-192.168.0.110 <---> L-192.168.0.196**
+- clipboard (via android application, and cwsp endpoint server)
+- `airpad` signals (PWA/WebView application)
+  - mouse
+  - keyboard
+  - clipboard
+- tunneling through 192.168.0.200:8443 / 45.147.121.152:8443 if in LTE/NAT mode, using identification client token
+
+**L-192.168.0.110 <---> L-192.168.0.208**
+- clipboard (via android application, and cwsp endpoint server)
+- `airpad` signals (PWA/WebView application)
+  - mouse
+  - keyboard
+  - clipboard
+- tunneling through 192.168.0.200:8443 / 45.147.121.152:8443 if in LTE/NAT mode, using identification client token
+
+**L-192.168.0.196 <---> L-192.168.0.208**
+- clipboard (via android application, and cwsp endpoint server)
+- tunneling through 192.168.0.200:8443 / 45.147.121.152:8443 if one of in LTE/NAT mode, using identification client token
+
+**L-192.168.0.110 <---> {[ 192.168.0.200:8443 / 45.147.121.152:8443 ]}**
+- initiated or initiator exchanger (bridge/tunnel/link)
+- `L-192.168.0.110` is AirPad controllable (by PWA apps)
+  - Or directly, or through bridge/proxy
+- `L-192.168.0.110` is one of `clipboard` (and/or other data) synchronize/exchanger member
+  - Devices through bridge/proxy can/may ask or pass `clipboard` (and/or other data) data
+
+**{[ 192.168.0.200:8443 / 45.147.121.152:8443 ]}** 
+- is in general a central coordinator (bridge, and/or tunnel/proxy)
