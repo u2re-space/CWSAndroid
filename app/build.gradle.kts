@@ -89,8 +89,6 @@ configurations.all {
 }
 
 dependencies {
-    implementation(project(":network"))
-
     // For local development with the LiveKit Compose SDK only.
     // implementation("io.livekit:livekit-compose-components")
 
@@ -119,8 +117,9 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.gson)
+    implementation(libs.java.websocket)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
-    implementation("io.socket:socket.io-client:2.1.2")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
     implementation(libs.timberkt)
     testImplementation(libs.junit)
@@ -214,23 +213,6 @@ tasks.register<Sync>("syncCwspStockAssets") {
 }
 
 android.sourceSets.getByName("main").assets.srcDir(generatedStockAssetsDir)
-// Network stack is compiled in :network module.
-android.sourceSets.getByName("main").java.apply {
-    exclude("space/u2re/cws/service/network/ServerV2NetworkModule.kt")
-    exclude("space/u2re/cws/service/network/connect/EndpointConfig.kt")
-    exclude("space/u2re/cws/service/network/connect/EndpointIdentity.kt")
-    exclude("space/u2re/cws/service/network/connect/EndpointUrl.kt")
-    exclude("space/u2re/cws/service/network/http/Codec.kt")
-    exclude("space/u2re/cws/service/network/http/ServerV2HttpClient.kt")
-    exclude("space/u2re/cws/service/network/http/TokenExt.kt")
-    exclude("space/u2re/cws/service/network/http/legacy/HttpClient.kt")
-    exclude("space/u2re/cws/service/network/http/routers/ResponsesApi.kt")
-    exclude("space/u2re/cws/service/network/socket/ServerV2Packet.kt")
-    exclude("space/u2re/cws/service/network/socket/ServerV2SocketClient.kt")
-    exclude("space/u2re/cws/service/network/socket/ServerV2WireIdentity.kt")
-    exclude("space/u2re/cws/service/network/utils/PeerAssociationStore.kt")
-}
-
 tasks.named("preBuild").configure {
     dependsOn(tasks.named("syncCwspCapacitorWeb"))
     dependsOn(tasks.named("syncCwspStockAssets"))

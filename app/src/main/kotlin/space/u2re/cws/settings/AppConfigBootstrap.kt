@@ -43,20 +43,20 @@ private val fallbackClientsJson = """
     {
       "L-192.168.0.196": {
         "origins": "192.168.0.196,45.150.9.153,android-native,android-pwa,vds-client",
-        "relations": "both ws,http,tcp,socketio"
+        "relations": "both ws,http,tcp"
       },
       "L-192.168.0.110": {
         "origins": "192.168.0.110,192.168.0.111,desktop-110",
-        "relations": "both ws,http,tcp,socketio"
+        "relations": "both ws,http,tcp"
       },
       "L-192.168.0.200": {
         "origins": "192.168.0.200,192.168.0.201,45.147.121.152,gateway-200",
         "flags": { "gateway": true },
-        "relations": "both ws,http,tcp,socketio"
+        "relations": "both ws,http,tcp"
       },
       "L-192.168.0.208": {
         "origins": "192.168.0.208",
-        "relations": "both ws,http,tcp,socketio"
+        "relations": "both ws,http,tcp"
       }
     }
 """.trimIndent()
@@ -89,11 +89,8 @@ private val fallbackNetworkJson = """
         "192.168.0.208": "L-192.168.0.208"
       },
       "endpoints": [
-        "https://45.147.121.152:8443/",
         "https://192.168.0.200:8443/",
-        "https://192.168.0.201:8443/",
-        "https://192.168.0.110:8443/",
-        "https://192.168.0.111:8443/"
+        "https://45.147.121.152:8443/"
       ],
       "runtime": {
         "clipboardPeerTargets": [
@@ -127,13 +124,10 @@ private val fallbackPortableConfig = """
         "CWS_BRIDGE_USER_ID": "L-192.168.0.196",
         "CWS_BRIDGE_USER_KEY": "n3v3rm1nd",
         "CWS_BRIDGE_DEVICE_ID": "L-192.168.0.196",
-        "CWS_BRIDGE_ENDPOINT_URL": "https://45.147.121.152:8443/",
+        "CWS_BRIDGE_ENDPOINT_URL": "https://192.168.0.200:8443/,https://45.147.121.152:8443/",
         "CWS_BRIDGE_ENDPOINTS": [
-          "https://45.147.121.152:8443/",
           "https://192.168.0.200:8443/",
-          "https://192.168.0.201:8443/",
-          "https://192.168.0.110:8443/",
-          "https://192.168.0.111:8443/"
+          "https://45.147.121.152:8443/"
         ],
         "CWS_BRIDGE_PRECONNECT_TARGETS": [
           "L-192.168.0.200",

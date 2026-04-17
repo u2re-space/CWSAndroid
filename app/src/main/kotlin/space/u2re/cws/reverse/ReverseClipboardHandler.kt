@@ -79,7 +79,7 @@ internal object ReverseClipboardHandler {
         }
         val headers = requestHeaders(settings) + mapOf("Content-Type" to "$contentType; charset=utf-8")
         val url = localBaseUrl(settings) + "/clipboard"
-        return postText(url, body, headers, allowInsecureTls = true, timeoutMs = 8000).ok
+        return postText(url, body, headers, allowInsecureTls = settings.allowInsecureTls, timeoutMs = 8000).ok
     }
 
     /**

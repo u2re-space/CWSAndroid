@@ -240,6 +240,7 @@ public class CwsBridgePlugin extends Plugin {
 
         socket.put("protocol", nativeSettings.optString("cwsSocketProtocol", "auto"));
         socket.put("routeTarget", nativeSettings.optString("cwsSocketRouteTarget", ""));
+        socket.put("airpadAuthToken", nativeSettings.optString("authToken", ""));
         socket.put("transportMode", nativeSettings.optString("cwsSocketTransportMode", "plaintext"));
         socket.put("transportSecret", nativeSettings.optString("cwsSocketTransportSecret", ""));
         socket.put("signingSecret", nativeSettings.optString("cwsSocketSigningSecret", ""));
@@ -275,7 +276,6 @@ public class CwsBridgePlugin extends Plugin {
                 String userKey = core.optString("userKey", "").trim();
                 if (!userKey.isEmpty()) {
                     safePut(patch, "hubToken", userKey);
-                    safePut(patch, "authToken", userKey);
                 }
             }
             if (core.has("allowInsecureTls")) {
@@ -303,6 +303,7 @@ public class CwsBridgePlugin extends Plugin {
             if (socket != null) {
                 putIfPresentString(socket, "protocol", patch, "cwsSocketProtocol");
                 putIfPresentString(socket, "routeTarget", patch, "cwsSocketRouteTarget");
+                putIfPresentString(socket, "airpadAuthToken", patch, "authToken");
                 putIfPresentString(socket, "transportMode", patch, "cwsSocketTransportMode");
                 putIfPresentString(socket, "transportSecret", patch, "cwsSocketTransportSecret");
                 putIfPresentString(socket, "signingSecret", patch, "cwsSocketSigningSecret");

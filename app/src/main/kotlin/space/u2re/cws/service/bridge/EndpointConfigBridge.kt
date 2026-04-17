@@ -11,11 +11,11 @@ fun Settings.toEndpointCoreConfig(reverseConfig: ReverseGatewayConfig? = null): 
     return buildEndpointCoreConfig(
         endpointUrlRaw = endpointRaw,
         hubClientId = hubClientId,
-        authToken = hubToken.ifBlank { authToken },
+        authToken = authToken,
         hubTokensRaw = hubTokens.ifBlank { hubToken },
         deviceId = reverseConfig?.deviceId.orEmpty().ifBlank { deviceId },
         userIdOverride = reverseConfig?.userId.orEmpty(),
-        userKeyOverride = reverseConfig?.userKey.orEmpty().ifBlank { hubToken.ifBlank { authToken } },
+        userKeyOverride = reverseConfig?.userKey.orEmpty().ifBlank { hubToken },
         namespaceOverride = reverseConfig?.namespace.orEmpty(),
         rolesOverride = reverseConfig?.roles.orEmpty(),
         allowInsecureTls = allowInsecureTls || (reverseConfig?.allowInsecureTls == true),

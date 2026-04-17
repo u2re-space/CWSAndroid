@@ -10,6 +10,7 @@ data class EndpointCoreConfig(
     val userId: String,
     val userKey: String,
     val userKeys: List<String>,
+    val airpadAuthToken: String,
     val deviceId: String,
     val namespace: String,
     val roles: String,
@@ -28,16 +29,33 @@ data class EndpointCoreConfig(
 }
 
 private fun normalizeAndSortEndpointCandidates(rawCandidates: List<String>): List<String> {
-    return rawCandidates
-        .mapNotNull { candidate ->
-            val trimmed = candidate.trim()
-            if (trimmed.isBlank()) return@mapNotNull null
-            if (EndpointIdentity.isLikelyNodeTarget(trimmed) && !EndpointIdentity.isExplicitHttpUrl(trimmed)) {
-                return@mapNotNull null
-            }
-            normalizeEndpointServerUrl(trimmed)?.ifBlank { null } ?: trimmed.ifBlank { null }
+    fun endpointPriority(candidate: String): Int {
+        val host = runCatching { java.net.URI(candidate).host?.trim().orEmpty() }.getOrDefault("")
+        if (host.isBlank()) return 3
+        if (host.equals("localhost", ignoreCase = true) || host == "127.0.0.1") return 0
+        val isIpv4 = host.matches(Regex("^\\d{1,3}(?:\\.\\d{1,3}){3}$"))
+        if (!isIpv4) return 1
+        return when {
+            host.startsWith("10.") -> 0
+            host.startsWith("192.168.") -> 0
+            Regex("^172\\.(1[6-9]|2\\d|3[01])\\.").containsMatchIn(host) -> 0
+            else -> 2
         }
-        .distinct()
+    }
+
+    return rawCandidates
+        .mapIndexedNotNull { index, candidate ->
+            val trimmed = candidate.trim()
+            if (trimmed.isBlank()) return@mapIndexedNotNull null
+            if (EndpointIdentity.isLikelyNodeTarget(trimmed) && !EndpointIdentity.isExplicitHttpUrl(trimmed)) {
+                return@mapIndexedNotNull null
+            }
+            val normalized = normalizeEndpointServerUrl(trimmed)?.ifBlank { null } ?: trimmed.ifBlank { null }
+            normalized?.let { Triple(endpointPriority(it), index, it) }
+        }
+        .distinctBy { it.third }
+        .sortedWith(compareBy<Triple<Int, Int, String>> { it.first }.thenBy { it.second })
+        .map { it.third }
 }
 
 private fun splitEndpointCandidates(raw: String): List<String> = normalizeAndSortEndpointCandidates(
@@ -87,13 +105,13 @@ fun buildEndpointCoreConfig(
     val derivedUserId = EndpointIdentity.bestRouteTarget(
         userIdOverride.ifBlank {
             hubClientId.ifBlank {
-                authToken.ifBlank { deviceId }
+                deviceId
             }
         }
     ).ifBlank {
         userIdOverride.ifBlank {
             hubClientId.ifBlank {
-                authToken.ifBlank { deviceId }
+                deviceId
             }
         }
     }
@@ -122,7 +140,7 @@ fun buildEndpointCoreConfig(
     val normalizedDestinations = destinations.mapNotNull {
         normalizeDestinationUrl(it, "/clipboard") ?: it.trim().ifBlank { null }
     }
-    val tokenCandidates = parseAssociatedTokens(userKeyOverride, hubTokensRaw, authToken)
+    val tokenCandidates = parseAssociatedTokens(userKeyOverride, hubTokensRaw)
 
     return EndpointCoreConfig(
         endpointUrl = normalizedEndpointUrl,
@@ -131,6 +149,7 @@ fun buildEndpointCoreConfig(
         userId = derivedUserId,
         userKey = tokenCandidates.firstOrNull().orEmpty(),
         userKeys = tokenCandidates,
+        airpadAuthToken = authToken.trim(),
         deviceId = derivedDeviceId,
         namespace = namespaceOverride.ifBlank { DEFAULT_ENDPOINT_NAMESPACE },
         roles = rolesOverride.ifBlank { DEFAULT_ENDPOINT_ROLES },

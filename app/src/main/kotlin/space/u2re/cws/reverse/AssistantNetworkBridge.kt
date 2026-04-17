@@ -66,7 +66,7 @@ object AssistantNetworkBridge {
     ): Boolean {
         val inbound = parseInboundMessage(rawPayload, messageType) ?: return false
         if (inbound.action == "result" || inbound.action == "resolve" || inbound.action == "error") {
-            val packet = ServerV2PacketCodec.fromJsonObject(inbound.payload).copy(
+            val packet = (ServerV2PacketCodec.decode(inbound.payload.toString()) ?: return false).copy(
                 op = extractString(inbound.payload["op"]) ?: inbound.action,
                 what = extractString(inbound.payload["what"]) ?: extractAction(inbound.payload, inbound.action)
             )

@@ -89,7 +89,7 @@ fun SettingsScreen(
     var hubDispatchUrl by rememberSaveable { mutableStateOf(endpointConfig.endpointUrl.ifBlank { settings.hubDispatchUrl }) }
     var configPath by rememberSaveable { mutableStateOf(settings.configPath) }
     var storagePath by rememberSaveable { mutableStateOf(settings.storagePath) }
-    var hubClientId by rememberSaveable { mutableStateOf(endpointConfig.userId.ifBlank { settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } } }) }
+    var hubClientId by rememberSaveable { mutableStateOf(endpointConfig.userId.ifBlank { settings.hubClientId.ifBlank { settings.deviceId } }) }
     var allowInsecure by rememberSaveable { mutableStateOf(settings.allowInsecureTls) }
     var apiEndpoint by rememberSaveable { mutableStateOf(settings.apiEndpoint) }
     var apiKey by rememberSaveable { mutableStateOf(settings.apiKey) }
@@ -680,7 +680,7 @@ fun SettingsScreen(
                     tlsKeystoreAssetPath = tlsKeystorePath.trim(),
                     tlsKeystoreType = tlsKeystoreType.ifBlank { settings.tlsKeystoreType },
                     tlsKeystorePassword = tlsKeystorePassword,
-                    hubClientId = hubClientId.ifBlank { settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } } },
+                    hubClientId = hubClientId.ifBlank { settings.hubClientId.ifBlank { settings.deviceId } },
                     hubToken = nextHubTokens.firstOrNull().orEmpty(),
                     hubTokens = nextHubTokens.joinToString("\n"),
                     configPath = configPath.trim(),

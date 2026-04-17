@@ -9,6 +9,7 @@ data class ServerV2WireIdentity(
     val clientId: String,
     val userKey: String,
     val userKeys: List<String> = emptyList(),
+    val airpadToken: String = "",
     val nodeId: String,
     val aliases: List<String> = emptyList(),
     val origins: List<String> = emptyList(),
@@ -52,6 +53,7 @@ object ServerV2WireContract {
             clientId = clientId,
             userKey = config.userKey.trim(),
             userKeys = config.userKeys,
+            airpadToken = config.airpadAuthToken.trim(),
             nodeId = nodeId.ifBlank { clientId },
             aliases = aliases,
             origins = listOfNotNull(
@@ -234,6 +236,10 @@ object ServerV2WireContract {
         return buildMap {
             if (identity.userKey.isNotBlank()) {
                 put("token", identity.userKey)
+                put("userKey", identity.userKey)
+            }
+            if (identity.airpadToken.isNotBlank()) {
+                put("airpadToken", identity.airpadToken)
             }
             if (identity.clientId.isNotBlank()) {
                 put("clientId", identity.clientId)
@@ -247,10 +253,13 @@ object ServerV2WireContract {
             if (identity.userKey.isNotBlank()) {
                 put("Authorization", "Bearer ${identity.userKey}")
                 put("X-CWS-Token", identity.userKey)
-                put("X-Auth-Token", identity.userKey)
             }
             if (identity.userKeys.size > 1) {
                 put("X-CWS-Token-Candidates", identity.userKeys.joinToString(","))
+            }
+            if (identity.airpadToken.isNotBlank()) {
+                put("X-CWS-Airpad-Token", identity.airpadToken)
+                put("X-Auth-Token", identity.airpadToken)
             }
             if (identity.clientId.isNotBlank()) {
                 put("X-CWS-Client-Id", identity.clientId)
@@ -285,7 +294,10 @@ object ServerV2WireContract {
         return buildMap {
             if (identity.userKey.isNotBlank()) {
                 put("token", identity.userKey)
-                put("airpadToken", identity.userKey)
+                put("userKey", identity.userKey)
+            }
+            if (identity.airpadToken.isNotBlank()) {
+                put("airpadToken", identity.airpadToken)
             }
             if (identity.clientId.isNotBlank()) {
                 put("clientId", identity.clientId)

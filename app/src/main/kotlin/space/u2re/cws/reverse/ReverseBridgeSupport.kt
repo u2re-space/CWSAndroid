@@ -63,7 +63,6 @@ internal fun buildTargetAliases(localDeviceId: String, settings: Settings, userI
     val localTokens = listOfNotNull(
         localDeviceId.ifBlank { null },
         settings.deviceId.ifBlank { null },
-        settings.authToken.ifBlank { null },
         settings.hubClientId.ifBlank { null },
         settings.hubToken.ifBlank { null },
         userId?.ifBlank { null }

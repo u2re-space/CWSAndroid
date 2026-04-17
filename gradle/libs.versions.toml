@@ -13,8 +13,10 @@ lifecycleRuntimeKtx = "2.9.4"
 activityCompose = "1.11.0"
 composeBom = "2025.10.00"
 gson = "2.13.2"
+javaWebSocket = "1.6.0"
 materialIconsExtended = "1.7.8"
 okhttp = "5.2.1"
+kotlinxSerializationJson = "1.9.0"
 timberkt = "1.5.1"
 navigationCompose = "2.9.5"
 
@@ -42,6 +44,8 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3" 
 livekit-lib = { group = "io.livekit", name = "livekit-android", version = "2.23.1" }
 livekit-components = { group = "io.livekit", name = "livekit-android-compose-components", version = "2.1.1" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+java-websocket = { group = "org.java-websocket", name = "Java-WebSocket", version.ref = "javaWebSocket" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 timberkt = { module = "com.github.ajalt:timberkt", version.ref = "timberkt" }
 

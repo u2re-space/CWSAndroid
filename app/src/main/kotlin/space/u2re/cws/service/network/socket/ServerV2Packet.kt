@@ -1,9 +1,15 @@
 package space.u2re.cws.network
 
-import com.google.gson.Gson
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 
 /**
  * Canonical packet shape used by the Android v2 transport stack.
@@ -46,23 +52,25 @@ data class ServerV2Packet(
  * expected by CWSP peers.
  */
 object ServerV2PacketCodec {
-    private val gson = Gson()
     private val coordinatorVerbs = setOf("ask", "act", "result", "request", "response", "signal", "notify", "redirect", "resolve", "error")
+    private val json = Json {
+        ignoreUnknownKeys = true
+        explicitNulls = false
+    }
 
     /** Serialize one packet into the normalized JSON envelope sent over the wire. */
     fun encode(packet: ServerV2Packet): String {
-        return gson.toJson(toMap(packet))
+        return json.encodeToString(JsonObject.serializer(), toJsonObject(packet))
     }
 
     /** Parse one raw JSON frame into the Android packet model, returning null for non-object payloads. */
     fun decode(raw: String): ServerV2Packet? {
-        return try {
-            val parsed = JsonParser.parseString(raw)
-            if (!parsed.isJsonObject) return null
-            fromJsonObject(parsed.asJsonObject)
-        } catch (_: Exception) {
-            null
-        }
+        return runCatching {
+            when (val parsed = json.parseToJsonElement(raw)) {
+                is JsonObject -> fromJsonObject(parsed)
+                else -> null
+            }
+        }.getOrNull()
     }
 
     /**
@@ -70,19 +78,13 @@ object ServerV2PacketCodec {
      * effective `op`, `what`, `type`, and list fields from legacy variants.
      */
     fun fromJsonObject(obj: JsonObject): ServerV2Packet {
-        val payloadElement = when {
-            obj.has("payload") -> obj.get("payload")
-            obj.has("data") -> obj.get("data")
-            obj.has("body") -> obj.get("body")
-            else -> null
-        }
-        val payloadObject = payloadElement?.takeIf { it.isJsonObject }?.asJsonObject
-        val opRaw = obj.get("op")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
-        val typeRaw = obj.get("type")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+        val payloadElement = firstJson(obj, "payload", "data", "body")
+        val payloadObject = payloadElement as? JsonObject
+        val opRaw = stringField(obj, "op")
+        val typeRaw = stringField(obj, "type")
         val normalizedOp = normalizeCoordinatorOp(opRaw.ifBlank { typeRaw })
         val what = inferWhat(obj, payloadObject)
         val type = inferType(obj, what)
-        val payload = payloadElement?.let { gson.fromJson(it, Any::class.java) }
         val nodes = readStringList(obj, "nodes")
         val destinations = readStringList(obj, "destinations").ifEmpty { nodes }
         val ids = readStringList(obj, "ids").ifEmpty { destinations.ifEmpty { nodes } }
@@ -90,31 +92,30 @@ object ServerV2PacketCodec {
             op = normalizedOp,
             what = what,
             type = type,
-            purpose = obj.get("purpose")?.takeIf { it.isJsonPrimitive }?.asString?.trim()?.ifBlank { null }
-                ?: inferPurpose(what),
-            protocol = obj.get("protocol")?.takeIf { it.isJsonPrimitive }?.asString?.trim()?.ifBlank { null },
-            payload = payload,
+            purpose = stringField(obj, "purpose").ifBlank { inferPurpose(what) ?: "" }.takeIf { it.isNotBlank() },
+            protocol = stringField(obj, "protocol").takeIf { it.isNotBlank() },
+            payload = payloadElement?.let(::jsonElementToAny),
             nodes = nodes,
             destinations = destinations,
-            uuid = obj.get("uuid")?.takeIf { it.isJsonPrimitive }?.asString?.trim()?.ifBlank { null },
-            result = gson.fromJson(obj.get("result"), Any::class.java),
-            results = gson.fromJson(obj.get("results"), Any::class.java),
-            error = gson.fromJson(obj.get("error"), Any::class.java),
-            byId = obj.get("byId")?.takeIf { it.isJsonPrimitive }?.asString?.trim()?.ifBlank { null },
-            from = obj.get("from")?.takeIf { it.isJsonPrimitive }?.asString?.trim()?.ifBlank { null },
-            sender = obj.get("sender")?.takeIf { it.isJsonPrimitive }?.asString?.trim()?.ifBlank { null },
+            uuid = stringField(obj, "uuid").takeIf { it.isNotBlank() },
+            result = obj["result"]?.let(::jsonElementToAny),
+            results = obj["results"]?.let(::jsonElementToAny),
+            error = obj["error"]?.let(::jsonElementToAny),
+            byId = stringField(obj, "byId").takeIf { it.isNotBlank() },
+            from = stringField(obj, "from").takeIf { it.isNotBlank() },
+            sender = stringField(obj, "sender").takeIf { it.isNotBlank() },
             ids = ids,
             urls = readStringList(obj, "urls"),
             tokens = readStringList(obj, "tokens"),
             toRoles = readStringList(obj, "toRoles"),
             srcPlatform = readStringList(obj, "srcPlatform"),
             dstPlatform = readStringList(obj, "dstPlatform"),
-            flags = readStringAnyMap(obj.get("flags")),
+            flags = readStringAnyMap(obj["flags"]),
             extensions = readGenericList(obj, "extensions"),
-            defer = obj.get("defer")?.takeIf { it.isJsonPrimitive }?.asString?.trim()?.ifBlank { null },
-            status = obj.get("status")?.takeIf { it.isJsonPrimitive }?.asInt,
-            redirect = obj.get("redirect")?.takeIf { it.isJsonPrimitive }?.asBoolean,
-            timestamp = obj.get("timestamp")?.takeIf { it.isJsonPrimitive }?.asLong ?: System.currentTimeMillis()
+            defer = stringField(obj, "defer").takeIf { it.isNotBlank() },
+            status = (obj["status"] as? JsonPrimitive)?.intOrNull,
+            redirect = (obj["redirect"] as? JsonPrimitive)?.booleanOrNull,
+            timestamp = (obj["timestamp"] as? JsonPrimitive)?.longOrNull ?: System.currentTimeMillis()
         )
     }
 
@@ -179,6 +180,14 @@ object ServerV2PacketCodec {
         put("timestamp", if (packet.timestamp > 0L) packet.timestamp else System.currentTimeMillis())
     }
 
+    private fun toJsonObject(packet: ServerV2Packet): JsonObject {
+        return JsonObject(
+            toMap(packet)
+                .mapValues { (_, value) -> anyToJsonElement(value) }
+                .filterValues { it !== JsonNull }
+        )
+    }
+
     /** Infer a legacy relay type string for older bridge paths that still route by coarse message type. */
     fun inferLegacyRelayType(packet: ServerV2Packet): String {
         val what = packet.what.trim().lowercase()
@@ -194,21 +203,21 @@ object ServerV2PacketCodec {
     }
 
     private fun inferWhat(root: JsonObject, payload: JsonObject?): String {
-        val direct = root.get("what")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+        val direct = stringField(root, "what")
         if (direct.isNotBlank()) return direct
         val nested = listOf("what", "action", "type", "op")
             .asSequence()
-            .mapNotNull { key -> payload?.get(key)?.takeIf { it.isJsonPrimitive }?.asString?.trim() }
-            .firstOrNull { !it.isNullOrBlank() }
+            .map { key -> payload?.let { stringField(it, key) }.orEmpty() }
+            .firstOrNull { it.isNotBlank() }
             .orEmpty()
         if (nested.isNotBlank()) return nested
-        return root.get("type")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+        return stringField(root, "type")
     }
 
     private fun inferType(root: JsonObject, what: String): String? {
-        val direct = root.get("type")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+        val direct = stringField(root, "type")
         if (direct.isNotBlank() && !coordinatorVerbs.contains(direct.lowercase())) return direct
-        return what.ifBlank { null }
+        return what.takeIf { it.isNotBlank() }
     }
 
     private fun inferPurpose(what: String): String? {
@@ -225,26 +234,66 @@ object ServerV2PacketCodec {
         }
     }
 
+    private fun firstJson(root: JsonObject, vararg keys: String): JsonElement? {
+        for (key in keys) {
+            val value = root[key] ?: continue
+            return value
+        }
+        return null
+    }
+
+    private fun stringField(root: JsonObject, key: String): String {
+        return (root[key] as? JsonPrimitive)?.content?.trim().orEmpty()
+    }
+
     private fun readStringList(root: JsonObject, key: String): List<String> {
-        val value = root.get(key) ?: return emptyList()
-        return when {
-            value.isJsonArray -> value.asJsonArray.mapNotNull { entry ->
-                runCatching { entry.asString.trim() }.getOrNull()?.ifBlank { null }
+        val value = root[key] ?: return emptyList()
+        return when (value) {
+            is JsonArray -> value.mapNotNull { entry ->
+                (entry as? JsonPrimitive)?.content?.trim()?.ifBlank { null }
             }
-            value.isJsonPrimitive -> listOfNotNull(value.asString.trim().ifBlank { null })
+            is JsonPrimitive -> listOfNotNull(value.content.trim().ifBlank { null })
             else -> emptyList()
         }.distinct()
     }
 
     private fun readGenericList(root: JsonObject, key: String): List<Any?> {
-        val value = root.get(key) ?: return emptyList()
-        if (!value.isJsonArray) return emptyList()
-        return value.asJsonArray.map { entry: JsonElement -> gson.fromJson(entry, Any::class.java) }
+        val value = root[key] as? JsonArray ?: return emptyList()
+        return value.map(::jsonElementToAny)
     }
 
     private fun readStringAnyMap(value: JsonElement?): Map<String, Any?>? {
-        if (value == null || !value.isJsonObject) return null
-        val decoded = gson.fromJson(value, Map::class.java) as? Map<*, *> ?: return null
-        return decoded.entries.associate { (key, v) -> key.toString() to v }
+        val obj = value as? JsonObject ?: return null
+        return obj.entries.associate { (key, nested) -> key to jsonElementToAny(nested) }
+    }
+
+    private fun jsonElementToAny(value: JsonElement): Any? {
+        return when (value) {
+            JsonNull -> null
+            is JsonObject -> value.entries.associate { (key, nested) -> key to jsonElementToAny(nested) }
+            is JsonArray -> value.map(::jsonElementToAny)
+            is JsonPrimitive -> value.booleanOrNull ?: value.longOrNull ?: value.content
+        }
+    }
+
+    private fun anyToJsonElement(value: Any?): JsonElement {
+        return when (value) {
+            null -> JsonNull
+            is JsonElement -> value
+            is String -> JsonPrimitive(value)
+            is Number -> JsonPrimitive(value)
+            is Boolean -> JsonPrimitive(value)
+            is Map<*, *> -> JsonObject(
+                value.entries
+                    .mapNotNull { (key, nested) ->
+                        val name = key?.toString()?.trim().orEmpty()
+                        if (name.isBlank()) null else name to anyToJsonElement(nested)
+                    }
+                    .toMap()
+            )
+            is Iterable<*> -> JsonArray(value.map(::anyToJsonElement))
+            is Array<*> -> JsonArray(value.map(::anyToJsonElement))
+            else -> JsonPrimitive(value.toString())
+        }
     }
 }

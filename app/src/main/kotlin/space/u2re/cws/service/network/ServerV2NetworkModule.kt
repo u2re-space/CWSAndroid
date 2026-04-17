@@ -78,7 +78,7 @@ class ServerV2NetworkModule(
             ready = config.isRemoteReady(),
             connected = isConnected(),
             endpoint = socketDiagnostics?.endpoint?.ifBlank { null } ?: config.endpointUrl.ifBlank { config.dispatchUrl },
-            transport = socketDiagnostics?.activeTransport ?: "socketio",
+            transport = socketDiagnostics?.activeTransport ?: "ws",
             state = socketDiagnostics?.lastState ?: "stopped",
             detail = socketDiagnostics?.lastDetail
         )

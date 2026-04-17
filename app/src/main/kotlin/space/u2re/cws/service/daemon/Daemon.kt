@@ -49,6 +49,7 @@ import space.u2re.cws.settings.SettingsStore
 import space.u2re.cws.settings.resolve
 import java.net.URI
 import java.util.UUID
+import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -96,6 +97,7 @@ class Daemon(
     private @Volatile var reverseGatewayStateDetail: String? = "not-started"
     private @Volatile var reverseGatewayStateUpdatedAtMs = 0L
     private @Volatile var reverseGatewayConfigured = false
+    private val serverV2PacketObservers = CopyOnWriteArraySet<(ServerV2Packet) -> Unit>()
     private var lastReverseGatewayLogKey: String? = null
     private var lastReverseGatewayLogAtMs = 0L
     private var lastReverseGatewaySuppressedCount = 0
@@ -249,6 +251,7 @@ class Daemon(
             endpointConfig = endpointConfig,
             reverseConfig = reverseConfig,
             onV2Packet = { packet ->
+                runCatching { notifyServerV2PacketObservers(packet) }
                 scope.launch {
                     runCatching {
                         AssistantNetworkBridge.handleServerV2Packet(
@@ -478,6 +481,21 @@ class Daemon(
         )
     }
 
+    /** Register a packet observer for coordinator-level inbound packet handling and return an unsubscribe closure. */
+    fun observeServerV2Packets(observer: (ServerV2Packet) -> Unit): () -> Unit {
+        serverV2PacketObservers.add(observer)
+        return { serverV2PacketObservers.remove(observer) }
+    }
+
+    private fun notifyServerV2PacketObservers(packet: ServerV2Packet) {
+        if (serverV2PacketObservers.isEmpty()) return
+        serverV2PacketObservers.forEach { observer ->
+            runCatching { observer(packet) }.onFailure {
+                DaemonLog.warn("Daemon", "server v2 packet observer failed")
+            }
+        }
+    }
+
     private fun logReverseRoutingMetricsIfNeeded() {
         val eventCount = reverseRelayAttempts.get() + reverseHttpAttempts.get()
         if (eventCount % 10L != 1L) return
@@ -654,6 +672,10 @@ class Daemon(
             what = "notifications:list",
             payload = mapOf("limit" to limit.coerceIn(1, 200))
         )
+    }
+
+    fun sendPacket(packet: ServerV2Packet): Boolean {
+        return transportRuntime?.sendPacket(packet) == true
     }
 
     private fun startPeriodicSync() {
@@ -937,7 +959,7 @@ class Daemon(
         val endpointConfig = currentEndpointConfig()
         return EndpointIdentity.bestRouteTarget(
             endpointConfig.userId.ifBlank {
-                settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
+                settings.hubClientId.ifBlank { settings.deviceId }
             }
         ).ifBlank { "local-device" }
     }
@@ -1154,8 +1176,8 @@ class Daemon(
             val target = raw.trim()
             if (target.isBlank()) continue
 
-            val lower = target.lowercase()
-            val isDeviceTarget = lower.startsWith("device:") || lower.startsWith("local-device:") || lower.startsWith("id:") || lower.startsWith("l-") || lower.startsWith("p-") || (!lower.contains(".") && !lower.contains(":") && !lower.contains("/"))
+            val normalizedLower = target.lowercase()
+            val isDeviceTarget = EndpointIdentity.isLikelyNodeTarget(normalizedLower)
             val normalizedTarget = normalizeDestinationHost(target).trim()
             if (normalizedTarget.isBlank()) continue
             val peerAddressHint = normalizedTarget.lowercase().replace(Regex("^[a-z]+-", RegexOption.IGNORE_CASE), "")
@@ -1304,7 +1326,7 @@ class Daemon(
         val trimmed = rawDeviceId.trim()
         if (!trimmed.startsWith("ns-")) return trimmed
         if (trimmed != settings.deviceId) return trimmed
-        return currentEndpointConfig().userId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
+        return currentEndpointConfig().userId.ifBlank { settings.hubClientId.ifBlank { settings.deviceId } }
     }
 
     data class DaemonConnectionSnapshot(

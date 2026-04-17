@@ -102,7 +102,7 @@ internal object ReverseDispatchHandler {
             else -> mapOf("requests" to requestsObj)
         }
         val url = localBaseUrl(settings) + "/core/ops/http/dispatch"
-        return postJson(url, routeBody, allowInsecureTls = true, headers = requestHeaders(settings)).ok
+        return postJson(url, routeBody, allowInsecureTls = settings.allowInsecureTls, headers = requestHeaders(settings)).ok
     }
 
     /**

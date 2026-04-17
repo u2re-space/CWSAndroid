@@ -2,8 +2,10 @@ package space.u2re.cws.daemon
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 private const val PREF_NAME_PEER_ASSOCIATIONS = "peer_associations_v1"
 private const val PREF_KEY_ASSOCIATIONS = "associations"
@@ -11,8 +13,11 @@ private const val PREF_KEY_ASSOCIATIONS = "associations"
 private fun peerAssociationPrefs(context: Context): SharedPreferences =
     context.getSharedPreferences(PREF_NAME_PEER_ASSOCIATIONS, Context.MODE_PRIVATE)
 
-private val peerAssociationGson = Gson()
-private val emptyAssociationsType = object : TypeToken<Map<String, String>>() {}.type
+private val peerAssociationJson = Json {
+    ignoreUnknownKeys = true
+    explicitNulls = false
+}
+private val peerAssociationSerializer = MapSerializer(String.serializer(), String.serializer())
 
 object PeerAssociationStore {
     private fun normalizePeerId(value: String): String = value.trim().lowercase()
@@ -20,9 +25,9 @@ object PeerAssociationStore {
     fun load(context: Context): Map<String, String> {
         return try {
             val raw = peerAssociationPrefs(context).getString(PREF_KEY_ASSOCIATIONS, null) ?: return emptyMap()
-            val parsed = peerAssociationGson.fromJson(raw, emptyAssociationsType) as? Map<*, *> ?: return emptyMap()
+            val parsed = peerAssociationJson.decodeFromString(peerAssociationSerializer, raw)
             parsed.entries.associate { (key, value) ->
-                normalizePeerId(key?.toString().orEmpty()) to (value?.toString()?.trim().orEmpty())
+                normalizePeerId(key) to value.trim()
             }.filterValues { it.isNotBlank() }
         } catch (_: Exception) {
             emptyMap()
@@ -40,7 +45,7 @@ object PeerAssociationStore {
         if (normalizedId.isBlank() || normalizedAddress.isBlank()) return
         val current = load(context).toMutableMap()
         current[normalizedId] = normalizedAddress
-        peerAssociationPrefs(context).edit().putString(PREF_KEY_ASSOCIATIONS, peerAssociationGson.toJson(current)).apply()
+        peerAssociationPrefs(context).edit().putString(PREF_KEY_ASSOCIATIONS, peerAssociationJson.encodeToString(peerAssociationSerializer, current)).apply()
     }
 
     fun saveMany(context: Context, associations: Map<String, String>) {
@@ -53,7 +58,7 @@ object PeerAssociationStore {
             current[normalizedId] = normalizedAddress
         }
         if (current.isNotEmpty()) {
-            peerAssociationPrefs(context).edit().putString(PREF_KEY_ASSOCIATIONS, peerAssociationGson.toJson(current)).apply()
+            peerAssociationPrefs(context).edit().putString(PREF_KEY_ASSOCIATIONS, peerAssociationJson.encodeToString(peerAssociationSerializer, current)).apply()
         }
     }
 }

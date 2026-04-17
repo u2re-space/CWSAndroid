@@ -2,9 +2,20 @@ package space.u2re.cws.settings
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.google.gson.Gson
 import java.util.UUID
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 
+@Serializable
 data class Settings(
     val listenPortHttps: Int,
     val listenPortHttp: Int,
@@ -41,6 +52,7 @@ data class Settings(
     val storagePath: String,
 )
 
+@Serializable
 data class SettingsPatch(
     val listenPortHttps: Int? = null,
     val listenPortHttp: Int? = null,
@@ -80,9 +92,12 @@ data class SettingsPatch(
 private const val PREF_NAME = "settings_v1"
 private const val PREF_NAME_LEGACY = "settings_v1_legacy"
 private const val DEFAULT_APP_CONFIG_ROOT = "/storage/emulated/0/AppConfig"
+private val settingsJson = Json {
+    ignoreUnknownKeys = true
+    explicitNulls = false
+}
 
 private fun randomId(): String = "ns-${UUID.randomUUID().toString().replace("-", "").take(8)}"
-private fun isGeneratedLegacyDeviceId(value: String): Boolean = value.trim().lowercase().startsWith("ns-")
 
 private fun normalizePort(value: Int, fallback: Int): Int = if (value > 0) value else fallback
 private fun appConfigPath(root: String): String = "fs:${root.trimEnd('/')}/config"
@@ -96,6 +111,29 @@ private fun splitMultiValueText(raw: String): List<String> =
         .distinct()
 
 private fun normalizeMultiValueText(raw: String): String = splitMultiValueText(raw).joinToString("\n")
+
+private fun jsonElementToAny(value: JsonElement): Any? {
+    return when (value) {
+        JsonNull -> null
+        is JsonObject -> value.entries.associate { (key, nested) -> key to jsonElementToAny(nested) }
+        is JsonArray -> value.map { nested -> jsonElementToAny(nested) }
+        is JsonPrimitive -> {
+            value.booleanOrNull
+                ?: value.longOrNull
+                ?: value.doubleOrNull
+                ?: value.content
+        }
+    }
+}
+
+private fun parseUntypedMap(raw: String): Map<*, *> {
+    return runCatching {
+        when (val parsed = settingsJson.parseToJsonElement(raw)) {
+            is JsonObject -> jsonElementToAny(parsed) as? Map<*, *> ?: emptyMap<String, Any>()
+            else -> emptyMap<String, Any>()
+        }
+    }.getOrDefault(emptyMap<String, Any>())
+}
 
 private fun applyDefaultAppConfigPaths(settings: Settings, rootPath: String = DEFAULT_APP_CONFIG_ROOT): Settings {
     val normalizedRoot = rootPath.trim().ifBlank { DEFAULT_APP_CONFIG_ROOT }
@@ -161,8 +199,6 @@ fun Settings.resolve(): Settings {
 }
 
 object SettingsStore {
-    private val gson = Gson()
-
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
@@ -172,18 +208,8 @@ object SettingsStore {
         return try {
             val raw = prefs(context).getString(PREF_NAME, null)
                 ?: prefs(context).getString(PREF_NAME_LEGACY, null)
-            val parsed = raw
-                ?.let { gson.fromJson(it, Map::class.java) as? Map<*, *> }
-                ?: emptyMap<String, Any>()
+            val parsed = raw?.let(::parseUntypedMap) ?: emptyMap<String, Any>()
             var merged = defaults.mergeFromMap(parsed)
-            
-            // Migration: carry legacy userKey into authToken if needed.
-            if (merged.authToken.isBlank() && parsed["userKey"] is String) {
-                merged = merged.copy(authToken = (parsed["userKey"] as? String) ?: merged.authToken)
-            }
-            if (merged.authToken.isBlank() && isGeneratedLegacyDeviceId(merged.deviceId)) {
-                merged = merged.copy(authToken = merged.deviceId)
-            }
             if (merged.hubTokens.isBlank() && merged.hubToken.isNotBlank()) {
                 merged = merged.copy(hubTokens = merged.hubToken)
             }
@@ -224,7 +250,7 @@ object SettingsStore {
                         for (fileCandidate in fileCandidates) {
                             if (fileCandidate.exists() && fileCandidate.isFile) {
                                 val raw = fileCandidate.readText()
-                                val parsed = gson.fromJson(raw, Map::class.java) as? Map<*, *> ?: emptyMap<String, Any>()
+                                val parsed = parseUntypedMap(raw)
                                 val fromClients = defaults.mergeFromMap(parsed)
                                 
                                 merged = merged.copy(
@@ -244,7 +270,7 @@ object SettingsStore {
                         val gatewaysFile = if (baseFile.isDirectory) java.io.File(baseFile, "gateways.json") else null
                         if (gatewaysFile?.exists() == true && gatewaysFile.isFile) {
                             val gatewaysRaw = gatewaysFile.readText()
-                            val gatewaysParsed = gson.fromJson(gatewaysRaw, Map::class.java) as? Map<*, *>
+                            val gatewaysParsed = parseUntypedMap(gatewaysRaw)
                             val gatewaysList = (gatewaysParsed?.get("gateways") as? List<*>)?.mapNotNull { it?.toString() }
                                 ?: (gatewaysParsed?.get("destinations") as? List<*>)?.mapNotNull { it?.toString() }
                                 ?: emptyList()
@@ -293,7 +319,7 @@ object SettingsStore {
                 else -> defaultSettings().logLevel
             }
         )
-        prefs(context).edit().putString(PREF_NAME, gson.toJson(normalized)).apply()
+        prefs(context).edit().putString(PREF_NAME, settingsJson.encodeToString(normalized)).apply()
         return normalized
     }
 
@@ -366,6 +392,12 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
                 mergedSource[to] = coreAlias[from]
             }
         }
+        val coreOpsAlias = coreAlias["ops"] as? Map<*, *>
+        if (coreOpsAlias != null) {
+            if (!mergedSource.containsKey("allowInsecureTls") && coreOpsAlias.containsKey("allowInsecureTls")) {
+                mergedSource["allowInsecureTls"] = coreOpsAlias["allowInsecureTls"]
+            }
+        }
     }
     val launcherEnvAlias = raw["launcherEnv"] as? Map<*, *>
     if (launcherEnvAlias != null) {
@@ -412,6 +444,25 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
             }
         }
         result ?: defaults.destinations
+    }
+
+    val pickBoolean: (Map<Any?, Any?>, Iterable<String>) -> Boolean? = { source, keys ->
+        var result: Boolean? = null
+        for (key in keys) {
+            result = when (val value = source[key]) {
+                is Boolean -> value
+                is String -> when (value.trim().lowercase()) {
+                    "1", "true", "yes", "on" -> true
+                    "0", "false", "no", "off" -> false
+                    else -> null
+                }
+                else -> null
+            }
+            if (result != null) {
+                break
+            }
+        }
+        result
     }
 
     val extractRemoteTargetUrls: (Any?) -> List<String> = { value ->
@@ -468,6 +519,32 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
         addAll(extractEndpointCandidates(bridgeAlias?.get("endpoints")))
     }.distinct().joinToString(",")
 
+    val splitCandidateText: (String?) -> List<String> = { value ->
+        value
+            ?.split(Regex("[,;\n]"))
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+    }
+
+    val explicitHubDispatchUrl = pickString(
+        mergedSource,
+        listOf(
+            "hubDispatchUrl",
+            "gatewayUrl",
+            "dispatchUrl",
+            "endpointUrl",
+            "CWS_HUB_URL",
+            "CWS_ENDPOINT_URL",
+            "CWS_BRIDGE_ENDPOINT_URL"
+        )
+    )
+    val explicitHubDispatchCandidates = splitCandidateText(explicitHubDispatchUrl)
+    val shouldPromoteEndpointCandidates =
+        explicitHubDispatchCandidates.size <= 1 &&
+            endpointCandidatesText.isNotBlank() &&
+            explicitHubDispatchUrl?.trim() != endpointCandidatesText
+
     return copy(
         listenPortHttps = (mergedSource["listenPortHttps"] as? Number)?.toInt() ?: defaults.listenPortHttps,
         listenPortHttp = (mergedSource["listenPortHttp"] as? Number)?.toInt() ?: defaults.listenPortHttp,
@@ -512,21 +589,14 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
         tlsKeystoreAssetPath = (mergedSource["tlsKeystoreAssetPath"] as? String) ?: defaults.tlsKeystoreAssetPath,
         tlsKeystoreType = (mergedSource["tlsKeystoreType"] as? String) ?: defaults.tlsKeystoreType,
         tlsKeystorePassword = (mergedSource["tlsKeystorePassword"] as? String) ?: defaults.tlsKeystorePassword,
-        hubDispatchUrl = pickString(
-            mergedSource,
-            listOf(
-                "hubDispatchUrl",
-                "gatewayUrl",
-                "dispatchUrl",
-                "endpointUrl",
-                "CWS_HUB_URL",
-                "CWS_ENDPOINT_URL",
-                "CWS_BRIDGE_ENDPOINT_URL"
-            )
-        ) ?: endpointCandidatesText.ifBlank { defaults.hubDispatchUrl },
+        hubDispatchUrl = if (explicitHubDispatchUrl == null || shouldPromoteEndpointCandidates) {
+            endpointCandidatesText.ifBlank { defaults.hubDispatchUrl }
+        } else {
+            explicitHubDispatchUrl
+        },
         apiEndpoint = pickString(mergedSource, listOf("apiEndpoint", "apiUrl", "llmEndpoint")) ?: defaults.apiEndpoint,
         apiKey = pickString(mergedSource, listOf("apiKey", "api_token", "apiToken")) ?: defaults.apiKey,
-        allowInsecureTls = mergedSource["allowInsecureTls"] as? Boolean ?: defaults.allowInsecureTls,
+        allowInsecureTls = pickBoolean(mergedSource, listOf("allowInsecureTls")) ?: defaults.allowInsecureTls,
         reverseTrustedCa = pickString(
             mergedSource,
             listOf("reverseTrustedCa", "reverseTrustedCertificate", "reverseTrustedCA", "reverseCa", "reverseCaPem", "CWS_REVERSE_CA", "CWS_HTTPS_CA")

@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import space.u2re.cws.daemon.DaemonLog
 import space.u2re.cws.daemon.DaemonController
+import space.u2re.cws.daemon.AndroidNetworkCoordinator
 import space.u2re.cws.daemon.SmsItem
 import space.u2re.cws.daemon.readSmsInbox
 import space.u2re.cws.data.ClipboardEnvelopeCodec
@@ -110,6 +111,7 @@ class HistoryViewModel(
             _statusMessage.value = "Select a target first"
             return
         }
+        AndroidNetworkCoordinator.start(getApplication())
         viewModelScope.launch {
             val isUrlTarget = isExplicitHttpTarget(trimmed)
             val outcome = try {
@@ -140,7 +142,7 @@ class HistoryViewModel(
             return RefreshOutcome(ok = false, detail = "target is empty")
         }
         val sent = when (type) {
-            RemoteRefreshType.CLIPBOARD -> daemon.requestClipboardHistory(normalizedTarget)
+            RemoteRefreshType.CLIPBOARD -> AndroidNetworkCoordinator.requestClipboardHistory(normalizedTarget)
             RemoteRefreshType.SMS -> daemon.requestSmsHistory(normalizedTarget)
             RemoteRefreshType.NOTIFICATIONS -> daemon.requestNotificationHistory(normalizedTarget)
         }
@@ -235,7 +237,7 @@ class HistoryViewModel(
     private fun currentLocalSourceId(): String {
         val settings = SettingsStore.load(getApplication()).resolve()
         return EndpointIdentity.bestRouteTarget(
-            settings.hubClientId.ifBlank { settings.authToken.ifBlank { settings.deviceId } }
+            settings.hubClientId.ifBlank { settings.deviceId }
         ).ifBlank { "local-device" }
     }
 

@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.jetbrainsKotlinAndroid)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 val networkCoreRoot = file("../app/src/main/kotlin/space/u2re/cws/service/network")
@@ -48,6 +49,8 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class.java).conf
 
 dependencies {
     implementation(libs.gson)
+    implementation(libs.java.websocket)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.androidx.lifecycle.runtime.ktx)
 }

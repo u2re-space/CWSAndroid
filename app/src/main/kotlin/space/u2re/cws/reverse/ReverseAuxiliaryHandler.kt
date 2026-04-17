@@ -37,7 +37,7 @@ internal object ReverseAuxiliaryHandler {
             return true
         }
         val url = localBaseUrl(settings) + "/sms"
-        return postJson(url, request, allowInsecureTls = true, headers = requestHeaders(settings)).ok
+        return postJson(url, request, allowInsecureTls = settings.allowInsecureTls, headers = requestHeaders(settings)).ok
     }
 
     suspend fun handleSmsQuery(
@@ -91,7 +91,7 @@ internal object ReverseAuxiliaryHandler {
             return true
         }
         val url = localBaseUrl(settings) + "/notifications/speak"
-        return postJson(url, request, allowInsecureTls = true, headers = requestHeaders(settings)).ok
+        return postJson(url, request, allowInsecureTls = settings.allowInsecureTls, headers = requestHeaders(settings)).ok
     }
 
     suspend fun handleNotificationsQuery(

@@ -8,7 +8,6 @@ import java.security.KeyStore
 import java.security.SecureRandom
 import java.security.cert.CertificateFactory
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,13 +15,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
+import org.java_websocket.client.WebSocketClient
+import org.java_websocket.drafts.Draft_6455
+import org.java_websocket.handshake.ServerHandshake
 import javax.net.ssl.SSLContext
-import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
@@ -59,8 +56,7 @@ class ServerV2SocketClient(
     ).firstNotNullOfOrNull { it?.trim()?.toLongOrNull() }?.coerceAtLeast(keepaliveEveryMs + 2_000L) ?: 45_000L
     private var lastInboundAtMs: Long = 0L
 
-    private var client: OkHttpClient? = null
-    private var socket: WebSocket? = null
+    private var socket: WebSocketClient? = null
     private val endpointCandidates = ServerV2WireContract.resolveSocketEndpointCandidates(config)
     private val tokenCandidates = config.userKeys.ifEmpty {
         listOf(config.userKey).map { it.trim() }.filter { it.isNotBlank() }.ifEmpty { listOf("") }
@@ -72,14 +68,6 @@ class ServerV2SocketClient(
     private var connected = false
     private var lastState = "stopped"
     private var lastDetail: String? = "not-started"
-    private val relaxIpHostnameMismatch: Boolean = listOf(
-        System.getenv("CWS_ANDROID_TLS_RELAX_IP_HOSTNAME"),
-        System.getProperty("cws.android.tlsRelaxIpHostname")
-    ).firstNotNullOfOrNull { it?.trim() }
-        ?.lowercase()
-        ?.let { it == "1" || it == "true" || it == "yes" || it == "on" }
-        ?: true
-
     fun start() {
         if (started) return
         if (!config.isRemoteReady()) {
@@ -143,8 +131,6 @@ class ServerV2SocketClient(
         keepaliveMonitorJob = null
         socket?.close(1001, "stop")
         socket = null
-        client?.dispatcher?.executorService?.shutdown()
-        client = null
         updateState("stopped", "server-v2 socket stopped")
     }
 
@@ -199,6 +185,7 @@ class ServerV2SocketClient(
         )
         return try {
             active.send(ServerV2PacketCodec.encode(normalized))
+            true
         } catch (_: Exception) {
             false
         }
@@ -291,52 +278,40 @@ class ServerV2SocketClient(
         val identity = currentIdentity()
         val endpoint = toCanonicalWsUrl(identity.endpointUrl, identity)
         val endpointLog = endpointForDiagnostics(endpoint)
-        if (client == null) {
-            client = buildSocketClient()
-        }
         updateState("connecting", endpointLog)
-        val requestBuilder = Request.Builder().url(endpoint)
-        ServerV2WireContract.buildHeaders(identity).forEach { (key, value) ->
-            if (key.isNotBlank() && value.isNotBlank()) {
-                requestBuilder.header(key, value)
-            }
-        }
-        val request = requestBuilder.build()
-        socket = client?.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                if (webSocket != socket) return
+        val nextSocket: WebSocketClient = object : WebSocketClient(
+            URI(endpoint),
+            Draft_6455(),
+            ServerV2WireContract.buildHeaders(identity),
+            0
+        ) {
+            override fun onOpen(handshakedata: ServerHandshake?) {
+                if (this !== this@ServerV2SocketClient.socket) return
                 connected = true
                 lastInboundAtMs = System.currentTimeMillis()
                 updateState("connected", endpointLog)
                 hello()
             }
 
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                if (webSocket != socket) return
+            override fun onMessage(text: String?) {
+                if (this !== this@ServerV2SocketClient.socket || text == null) return
                 lastInboundAtMs = System.currentTimeMillis()
                 val packet = ServerV2PacketCodec.decode(text) ?: return
                 onPacket(packet)
             }
 
-            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                if (webSocket != socket) return
+            override fun onClose(code: Int, reason: String?, remote: Boolean) {
+                if (this !== this@ServerV2SocketClient.socket) return
                 connected = false
-                updateState("closing", "$endpointLog code=$code reason=$reason")
+                updateState("closed", "$endpointLog code=$code reason=${reason.orEmpty()}")
             }
 
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                if (webSocket != socket) return
-                connected = false
-                updateState("closed", "$endpointLog code=$code reason=$reason")
-            }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                if (webSocket != socket) return
+            override fun onError(ex: Exception?) {
+                if (this !== this@ServerV2SocketClient.socket) return
                 connected = false
                 val details = listOfNotNull(
                     endpointLog,
-                    t.message,
-                    response?.code?.let { "http=$it" }
+                    ex?.message
                 ).joinToString(" | ")
                 updateState("failed", details)
                 if (isTlsHandshakeFailure(details) && started) {
@@ -348,7 +323,11 @@ class ServerV2SocketClient(
                     )
                 }
             }
-        })
+        }
+        nextSocket.setConnectionLostTimeout(0)
+        buildSocketFactory(endpoint)?.let(nextSocket::setSocketFactory)
+        socket = nextSocket
+        nextSocket.connect()
     }
 
     private fun maybeMarkTlsRejectedEndpoint(detail: String?) {
@@ -374,12 +353,8 @@ class ServerV2SocketClient(
             normalized.contains("ssl")
     }
 
-    private fun buildSocketClient(): OkHttpClient {
-        val builder = OkHttpClient.Builder()
-            .retryOnConnectionFailure(true)
-            .pingInterval(20, TimeUnit.SECONDS)
-            .pingInterval(keepaliveEveryMs, java.util.concurrent.TimeUnit.MILLISECONDS)
-
+    private fun buildSocketFactory(endpoint: String): SSLSocketFactory? {
+        if (!isSecureSocketScheme(endpoint)) return null
         if (config.allowInsecureTls) {
             val trustAllManager = object : X509TrustManager {
                 override fun checkClientTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) = Unit
@@ -388,32 +363,24 @@ class ServerV2SocketClient(
             }
             val sslContext = SSLContext.getInstance("TLS")
             sslContext.init(null, arrayOf<TrustManager>(trustAllManager), SecureRandom())
-            builder.sslSocketFactory(sslContext.socketFactory, trustAllManager)
-            builder.hostnameVerifier { _, _ -> true }
-            return builder.build()
+            return sslContext.socketFactory
         }
 
         val trustedCaPath = resolveTrustedCaPath(config.trustedCa)
         if (trustedCaPath.isNotBlank()) {
-            runCatching {
-                val trustManager = trustManagerFromCustomCa(trustedCaPath)
+            return runCatching {
+                val trustManager = compositeTrustManager(
+                    primary = trustManagerFromCustomCa(trustedCaPath),
+                    fallback = systemTrustManager()
+                )
                 val sslContext = SSLContext.getInstance("TLS")
                 sslContext.init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
-                builder.sslSocketFactory(sslContext.socketFactory, trustManager)
-                builder.hostnameVerifier { hostname, session ->
-                    val defaultVerifier = HttpsURLConnection.getDefaultHostnameVerifier()
-                    if (defaultVerifier.verify(hostname, session)) {
-                        true
-                    } else {
-                        val isIpHost = hostname.matches(Regex("^\\d{1,3}(?:\\.\\d{1,3}){3}$"))
-                        relaxIpHostnameMismatch && isIpHost
-                    }
-                }
+                sslContext.socketFactory
             }.onFailure { error ->
                 updateState("tls-ca-load-failed", "${trustedCaPath}: ${error.message}")
-            }
+            }.getOrNull()
         }
-        return builder.build()
+        return null
     }
 
     private fun resolveTrustedCaPath(raw: String?): String {
@@ -473,6 +440,33 @@ class ServerV2SocketClient(
         trustManagerFactory.init(keyStore)
         val trustManager = trustManagerFactory.trustManagers.firstOrNull { it is X509TrustManager } as? X509TrustManager
         return trustManager ?: throw IllegalStateException("No X509 trust manager for custom CA")
+    }
+
+    private fun systemTrustManager(): X509TrustManager {
+        val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+        trustManagerFactory.init(null as KeyStore?)
+        val trustManager = trustManagerFactory.trustManagers.firstOrNull { it is X509TrustManager } as? X509TrustManager
+        return trustManager ?: throw IllegalStateException("No default X509 trust manager")
+    }
+
+    private fun compositeTrustManager(primary: X509TrustManager, fallback: X509TrustManager): X509TrustManager {
+        return object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {
+                runCatching { primary.checkClientTrusted(chain, authType) }
+                    .getOrElse { fallback.checkClientTrusted(chain, authType) }
+            }
+
+            override fun checkServerTrusted(chain: Array<java.security.cert.X509Certificate>, authType: String) {
+                runCatching { primary.checkServerTrusted(chain, authType) }
+                    .getOrElse { fallback.checkServerTrusted(chain, authType) }
+            }
+
+            override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> {
+                return (primary.acceptedIssuers.asList() + fallback.acceptedIssuers.asList())
+                    .distinctBy { it.subjectX500Principal.name }
+                    .toTypedArray()
+            }
+        }
     }
 
     private fun shouldSkipEndpoint(endpoint: String): Boolean {
@@ -551,7 +545,7 @@ class ServerV2SocketClient(
             host,
             port,
             path,
-            renderedQuery.ifBlank { null },
+            renderedQuery.takeIf { it.isNotBlank() },
             null
         ).toString()
     }
@@ -572,7 +566,7 @@ class ServerV2SocketClient(
                     }
                 }
                 ?.joinToString("&")
-                ?.ifBlank { null }
+                ?.takeIf { it.isNotBlank() }
             URI(
                 uri.scheme,
                 uri.rawAuthority,

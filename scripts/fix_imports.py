@@ -22,7 +22,6 @@ imports_to_replace = [
     (r"import space\.u2re\.service\.daemon\.DispatchResult", r"import space.u2re.cws.network.DispatchResult"),
     (r"import space\.u2re\.service\.reverse\.ReverseGatewayClient", r"import space.u2re.cws.network.ReverseGatewayClient"),
     (r"import space\.u2re\.service\.reverse\.ReverseRelayCodec", r"import space.u2re.cws.network.ReverseRelayCodec"),
-    (r"import space\.u2re\.service\.endpoint\.SocketIoTunnelClient", r"import space.u2re.cws.network.SocketIoTunnelClient"),
 ]
 
 for root, _, files in os.walk(directory):

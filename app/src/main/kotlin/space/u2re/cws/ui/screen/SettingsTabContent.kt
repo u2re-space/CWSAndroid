@@ -328,13 +328,13 @@ fun GatewayTab(
     OutlinedTextField(
         value = authToken,
         onValueChange = onAuthTokenChange,
-        label = { Text("Local Auth Token") },
+        label = { Text("AirPad / control auth token") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
     Spacer(Modifier.size(8.dp))
     Text(
-        "Used by the Android app's own local HTTP/legacy routes. This is not the same thing as the associated client token(s) above and can stay empty if you only use outbound endpoint auth.",
+        "Optional. Use this only when a remote control route expects an AirPad/control/master auth token. It may be the same literal token as the endpoint master token, but it stays separate from the client-id + client-token identity pair.",
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Spacer(Modifier.size(8.dp))
