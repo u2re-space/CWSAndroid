@@ -127,9 +127,8 @@ fun buildEndpointCoreConfig(
         effectiveDeviceSource
     }
 
-    val destinationEndpointCandidates = destinations.mapNotNull { normalizeEndpointServerUrl(it) }
     val endpointCandidates = normalizeAndSortEndpointCandidates(
-        splitEndpointCandidates(endpointUrlRaw) + destinationEndpointCandidates
+        splitEndpointCandidates(endpointUrlRaw)
     )
     val normalizedEndpointUrl = endpointCandidates.joinToString(",").ifBlank {
         normalizeEndpointServerUrl(endpointUrlRaw).orEmpty()

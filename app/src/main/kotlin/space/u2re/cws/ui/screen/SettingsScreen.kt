@@ -62,7 +62,6 @@ import space.u2re.cws.daemon.DaemonForegroundService
 import space.u2re.cws.overlay.FloatingButtonService
 import space.u2re.cws.accessibility.ClipboardAccessibilityService
 import space.u2re.cws.network.ServerV2HttpClient
-import space.u2re.cws.network.normalizeHubDispatchUrl
 import space.u2re.cws.network.normalizeResponsesEndpoint
 import space.u2re.cws.network.postJson
 import space.u2re.cws.network.toEndpointCoreConfig
@@ -86,15 +85,16 @@ fun SettingsScreen(
     val endpointConfig = remember(settings) { settings.resolve().toEndpointCoreConfig() }
 
     var destinationText by rememberSaveable { mutableStateOf(settings.destinations.joinToString("\n")) }
+    var allowedSourcesText by rememberSaveable { mutableStateOf(settings.clipboardAllowedSources.joinToString("\n")) }
     var hubDispatchUrl by rememberSaveable { mutableStateOf(endpointConfig.endpointUrl.ifBlank { settings.hubDispatchUrl }) }
-    var configPath by rememberSaveable { mutableStateOf(settings.configPath) }
-    var storagePath by rememberSaveable { mutableStateOf(settings.storagePath) }
     var hubClientId by rememberSaveable { mutableStateOf(endpointConfig.userId.ifBlank { settings.hubClientId.ifBlank { settings.deviceId } }) }
     var allowInsecure by rememberSaveable { mutableStateOf(settings.allowInsecureTls) }
     var apiEndpoint by rememberSaveable { mutableStateOf(settings.apiEndpoint) }
     var apiKey by rememberSaveable { mutableStateOf(settings.apiKey) }
     var shareTarget by rememberSaveable { mutableStateOf(settings.shareTarget) }
     var clipboardSync by rememberSaveable { mutableStateOf(settings.clipboardSync) }
+    var clipboardRoutingEnabled by rememberSaveable { mutableStateOf(settings.clipboardRoutingEnabled) }
+    var clipboardSendingEnabled by rememberSaveable { mutableStateOf(settings.clipboardSendingEnabled) }
     var contactsSync by rememberSaveable { mutableStateOf(settings.contactsSync) }
     var smsSync by rememberSaveable { mutableStateOf(settings.smsSync) }
     var syncInterval by rememberSaveable { mutableStateOf(settings.syncIntervalSec.toString()) }
@@ -115,8 +115,8 @@ fun SettingsScreen(
     var authToken by rememberSaveable { mutableStateOf(settings.authToken) }
     var hubTokens by rememberSaveable {
         mutableStateOf(
-            settings.hubTokens.ifBlank {
-                endpointConfig.userKeys.joinToString("\n").ifBlank { settings.hubToken }
+            endpointConfig.userKeys.firstOrNull().orEmpty().ifBlank {
+                settings.hubToken.ifBlank { settings.hubTokens }
             }
         )
     }
@@ -142,8 +142,7 @@ fun SettingsScreen(
         authToken = authToken.trim(),
         allowInsecureTls = allowInsecure,
         destinations = destinationText.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toList(),
-        configPath = configPath.trim(),
-        storagePath = storagePath.trim()
+        clipboardAllowedSources = allowedSourcesText.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toList()
     ).resolve().toEndpointCoreConfig()
 
     LaunchedEffect(Unit) {
@@ -178,51 +177,6 @@ fun SettingsScreen(
         val granted = results.values.all { it }
         smsSync = granted
         if (!granted) message = "SMS permissions denied"
-    }
-
-    val storagePathLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-                val absolutePath = getAbsolutePathFromUri(context, uri)
-                storagePath = absolutePath ?: uri.toString()
-                message = "Storage folder selected"
-            } catch (e: Exception) {
-                message = "Error taking permission: ${e.message}"
-            }
-        }
-    }
-
-    val configPathLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val absolutePath = getAbsolutePathFromUri(context, uri)
-            if (absolutePath != null) {
-                configPath = "fs:$absolutePath"
-                message = "Config file selected"
-            } else {
-                message = "Copying config file..."
-                scope.launch {
-                    try {
-                        val path = withContext(Dispatchers.IO) { handleFilePicked(context, uri) }
-                        if (path != null) {
-                            configPath = path
-                            message = "Config file selected"
-                        } else {
-                            message = "Could not read config file"
-                        }
-                    } catch (e: Exception) {
-                        message = "Error: ${e.message}"
-                    }
-                }
-            }
-        }
     }
 
     val tlsKeystorePathLauncher = rememberLauncherForActivityResult(
@@ -367,11 +321,71 @@ fun SettingsScreen(
                 }
             )
 
+            SettingsTab.ENDPOINT -> EndpointTab(
+                endpointUrls = hubDispatchUrl,
+                onEndpointUrlsChange = { hubDispatchUrl = it },
+                allowInsecure = allowInsecure,
+                onAllowInsecureChange = { allowInsecure = it },
+                testingHub = testingHub,
+                onTestHub = {
+                    val previewConfig = previewEndpointConfig()
+                    if (!previewConfig.hasRemoteEndpoint()) {
+                        message = "Set a valid endpoint URL first"
+                    } else {
+                        testingHub = true
+                        message = "Testing endpoint..."
+                        scope.launch {
+                            try {
+                                val response = withContext(Dispatchers.IO) {
+                                    val client = ServerV2HttpClient(previewConfig)
+                                    client.probe().takeIf { it.ok } ?: client.broadcastDispatch(emptyList())
+                                }
+                                message = "Endpoint test status: ${response.status}"
+                            } catch (e: Exception) {
+                                message = "Endpoint test failed: ${e.message ?: "error"}"
+                            } finally {
+                                testingHub = false
+                            }
+                        }
+                    } 
+                },
+                authToken = authToken,
+                onAuthTokenChange = { authToken = it },
+                endpointSummary = previewEndpointConfig().let { preview ->
+                    "Resolved endpoint: ${preview.endpointUrl.ifBlank { preview.dispatchUrl.ifBlank { "not set" } }}"
+                },
+                endpointWarning = previewEndpointConfig().let { preview ->
+                    when {
+                        !preview.hasRemoteEndpoint() -> "Endpoint URL is missing."
+                        preview.userId.isBlank() -> "Associated Client ID is missing."
+                        preview.dispatchUrl.isBlank() -> "Legacy /api/broadcast fallback is unavailable for this endpoint."
+                        else -> null
+                    }
+                },
+                daemonSnapshot = daemonSnapshot,
+                onRefreshDaemonStatus = { refreshDaemonSnapshot() }
+            )
+
+            SettingsTab.CLIENT -> ClientTab(
+                hubClientId = hubClientId,
+                onHubClientIdChange = { hubClientId = it },
+                hubTokens = hubTokens,
+                onHubTokensChange = { hubTokens = it }
+            )
+
             SettingsTab.ACCESS -> AccessTab(
                 shareTarget = shareTarget,
                 onShareTargetChange = { shareTarget = it },
                 clipboardSync = clipboardSync,
                 onClipboardSyncChange = { clipboardSync = it },
+                clipboardRoutingEnabled = clipboardRoutingEnabled,
+                onClipboardRoutingEnabledChange = { clipboardRoutingEnabled = it },
+                clipboardSendingEnabled = clipboardSendingEnabled,
+                onClipboardSendingEnabledChange = { clipboardSendingEnabled = it },
+                destinationText = destinationText,
+                onDestinationTextChange = { destinationText = it },
+                allowedSourcesText = allowedSourcesText,
+                onAllowedSourcesTextChange = { allowedSourcesText = it },
                 quickActionCopyOnly = quickActionCopyOnly,
                 onQuickActionCopyOnlyChange = { quickActionCopyOnly = it },
                 quickActionHandleImage = quickActionHandleImage,
@@ -452,72 +466,7 @@ fun SettingsScreen(
                         smsSync = false
                     }
                 },
-                hubClientId = hubClientId,
-                onHubClientIdChange = { hubClientId = it },
-                hubTokens = hubTokens,
-                onHubTokensChange = { hubTokens = it },
-                listenPortHttp = listenPortHttp,
                 localIps = localIps,
-                onCopyBaseUrl = { ip ->
-                    val clip = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                    val base = "http://$ip:${listenPortHttp.ifBlank { "8080" }}"
-                    clip?.setPrimaryClip(android.content.ClipData.newPlainText("base-url", base))
-                    message = "Copied $base"
-                }
-            )
-
-            SettingsTab.GATEWAY -> GatewayTab(
-                gatewayUrls = hubDispatchUrl,
-                onGatewayUrlsChange = { hubDispatchUrl = it },
-                configPath = configPath,
-                onConfigPathChange = { configPath = it },
-                onPickConfigPath = { configPathLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream", "*/*")) },
-                storagePath = storagePath,
-                onStoragePathChange = { storagePath = it },
-                onPickStoragePath = { storagePathLauncher.launch(null) },
-                allowInsecure = allowInsecure,
-                onAllowInsecureChange = { allowInsecure = it },
-                testingHub = testingHub,
-                onTestHub = {
-                    val previewConfig = previewEndpointConfig()
-                    if (!previewConfig.hasRemoteEndpoint()) {
-                        message = "Set a valid endpoint URL (for example http://192.168.0.200/api or http://192.168.0.200/api/broadcast)"
-                        return@GatewayTab
-                    }
-                    testingHub = true
-                    message = "Testing endpoint…"
-                    scope.launch {
-                        try {
-                            val response = withContext(Dispatchers.IO) {
-                                val client = ServerV2HttpClient(previewConfig)
-                                client.probe().takeIf { it.ok } ?: client.broadcastDispatch(emptyList())
-                            }
-                            message = "Endpoint test status: ${response.status}"
-                        } catch (e: Exception) {
-                            message = "Endpoint test failed: ${e.message ?: "error"}"
-                        } finally {
-                            testingHub = false
-                        }
-                    }
-                },
-                authToken = authToken,
-                onAuthTokenChange = { authToken = it },
-                endpointSummary = previewEndpointConfig().let { preview ->
-                    "Resolved endpoint: ${preview.endpointUrl.ifBlank { preview.dispatchUrl.ifBlank { "not set" } }} | clientId=${preview.userId.ifBlank { "-" }} | tokens=${preview.userKeys.size}"
-                },
-                endpointWarning = previewEndpointConfig().let { preview ->
-                    when {
-                        !preview.hasRemoteEndpoint() -> "Endpoint URL is missing."
-                        preview.userId.isBlank() -> "Associated Client ID is missing."
-                        preview.userKeys.isEmpty() -> "Associated Client Token is optional. Leave it empty only if this endpoint accepts the client id without token auth."
-                        preview.dispatchUrl.isBlank() -> "Legacy /api/broadcast fallback is unavailable for this endpoint."
-                        else -> null
-                    }
-                },
-                destinationText = destinationText,
-                onDestinationTextChange = { destinationText = it },
-                localIps = localIps,
-                onScanLocal = { localIps = loadLocalIpAddresses() },
                 onAppendLocalAsDestinations = {
                     val existing = destinationText
                         .lineSequence()
@@ -525,15 +474,25 @@ fun SettingsScreen(
                         .filter { it.isNotBlank() }
                         .toMutableList()
                     localIps
-                        .map { ip -> "id:$ip:${listenPortHttp.ifBlank { "8080" }}" }
+                        .map { ip -> "L-$ip" }
                         .filterNot(existing::contains)
                         .forEach(existing::add)
                     destinationText = existing.joinToString("\n")
                     message = "Added ${localIps.size} local device targets"
                 },
-                onSelectHubFromDestination = { target -> hubDispatchUrl = target },
-                daemonSnapshot = daemonSnapshot,
-                onRefreshDaemonStatus = { refreshDaemonSnapshot() }
+                onAppendLocalAsAllowedSources = {
+                    val existing = allowedSourcesText
+                        .lineSequence()
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                        .toMutableList()
+                    localIps
+                        .map { ip -> "L-$ip" }
+                        .filterNot(existing::contains)
+                        .forEach(existing::add)
+                    allowedSourcesText = existing.joinToString("\n")
+                    message = "Added ${localIps.size} local ids to whitelist"
+                }
             )
 
             SettingsTab.SERVER -> ServerTab(
@@ -654,15 +613,23 @@ fun SettingsScreen(
                     .map { it.trim() }
                     .filter { it.isNotBlank() }
                     .toList()
+                val nextAllowedSources = allowedSourcesText
+                    .lineSequence()
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                    .toList()
                 val patch = SettingsPatch(
                     listenPortHttp = nextHttp,
                     listenPortHttps = nextHttps,
                     enableLocalServer = enableLocalServer,
                     destinations = nextDestinations,
+                    clipboardAllowedSources = nextAllowedSources,
                     hubDispatchUrl = hubDispatchUrl.trim(),
                     allowInsecureTls = allowInsecure,
                     shareTarget = shareTarget,
                     clipboardSync = clipboardSync,
+                    clipboardRoutingEnabled = clipboardRoutingEnabled,
+                    clipboardSendingEnabled = clipboardSendingEnabled,
                     contactsSync = contactsSync,
                     smsSync = smsSync,
                     syncIntervalSec = nextSyncInterval,
@@ -683,8 +650,6 @@ fun SettingsScreen(
                     hubClientId = hubClientId.ifBlank { settings.hubClientId.ifBlank { settings.deviceId } },
                     hubToken = nextHubTokens.firstOrNull().orEmpty(),
                     hubTokens = nextHubTokens.joinToString("\n"),
-                    configPath = configPath.trim(),
-                    storagePath = storagePath.trim(),
                     logLevel = settings.logLevel
                 )
                 saving = true
@@ -743,8 +708,8 @@ fun SettingsScreen(
         var isInitialLoad by remember { mutableStateOf(true) }
 
         LaunchedEffect(
-            destinationText, hubDispatchUrl, configPath, storagePath, hubClientId,
-            allowInsecure, apiEndpoint, apiKey, shareTarget, clipboardSync,
+            destinationText, allowedSourcesText, hubDispatchUrl, hubClientId,
+            allowInsecure, apiEndpoint, apiKey, shareTarget, clipboardSync, clipboardRoutingEnabled, clipboardSendingEnabled,
             contactsSync, smsSync, syncInterval, clipboardSyncInterval,
             runDaemonForeground, runDaemonOnBoot, useAccessibilityService,
             showFloatingButton, quickActionCopyOnly, quickActionHandleImage,

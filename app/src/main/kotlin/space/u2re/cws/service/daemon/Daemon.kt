@@ -818,6 +818,29 @@ class Daemon(
         return sourceAliases.any { localAliases.contains(it) }
     }
 
+    private fun isAllowedClipboardSource(sourceId: String?): Boolean {
+        val allowedSources = settings.clipboardAllowedSources
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        if (allowedSources.isEmpty()) return true
+
+        val normalizedSource = sourceId?.trim().orEmpty()
+        if (normalizedSource.isBlank()) return false
+
+        val sourceAliases = EndpointIdentity.aliases(normalizedSource)
+            .map { it.trim().lowercase() }
+            .filter { it.isNotBlank() }
+            .toSet()
+        if (sourceAliases.isEmpty()) return false
+
+        val allowedAliases = allowedSources
+            .flatMap { EndpointIdentity.aliases(it).toList() }
+            .map { it.trim().lowercase() }
+            .filter { it.isNotBlank() }
+            .toSet()
+        return sourceAliases.any { allowedAliases.contains(it) }
+    }
+
     private suspend fun handleLocalClipboardObservation(text: String) {
         val trimmed = text.trim()
         if (trimmed.isBlank()) return
@@ -851,6 +874,10 @@ class Daemon(
         }
         if (isSelfSourceClipboard(sourceId)) {
             DaemonLog.debug("Daemon", "skip inbound clipboard reason=self-source-loop")
+            return false
+        }
+        if (!isAllowedClipboardSource(sourceId)) {
+            DaemonLog.debug("Daemon", "skip inbound clipboard reason=source-not-allowed source=${sourceId ?: "-"}")
             return false
         }
         val inbound = clipboardRuntime.evaluateInbound(envelope, uuid, sourceId, targetId)
@@ -984,6 +1011,10 @@ class Daemon(
 
     private suspend fun postClipboardToPeers(envelope: ClipboardEnvelope, requestedTargets: List<String>? = null) {
         if (!envelope.hasContent()) return
+        if (!settings.clipboardSendingEnabled) {
+            DaemonLog.debug("Daemon", "skip outbound clipboard reason=sending-disabled")
+            return
+        }
         clipboardRuntime.recordOutbound(
             payload = envelope,
             uuid = envelope.uuid,
@@ -1254,6 +1285,10 @@ class Daemon(
             ?.map { it.trim() }
             ?.filter { it.isNotBlank() }
             ?: emptyList()
+
+        if (!settings.clipboardRoutingEnabled) {
+            return explicitTargets
+        }
 
         if (explicitTargets.isEmpty()) {
             return settings.destinations

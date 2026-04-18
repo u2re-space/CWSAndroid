@@ -20,6 +20,7 @@ data class Settings(
     val listenPortHttps: Int,
     val listenPortHttp: Int,
     val destinations: List<String>,
+    val clipboardAllowedSources: List<String>,
     val deviceId: String,
     val authToken: String,
     val hubClientId: String,
@@ -35,6 +36,8 @@ data class Settings(
     val apiEndpoint: String,
     val apiKey: String,
     val clipboardSync: Boolean,
+    val clipboardRoutingEnabled: Boolean,
+    val clipboardSendingEnabled: Boolean,
     val reverseTrustedCa: String,
     val contactsSync: Boolean,
     val smsSync: Boolean,
@@ -57,6 +60,7 @@ data class SettingsPatch(
     val listenPortHttps: Int? = null,
     val listenPortHttp: Int? = null,
     val destinations: List<String>? = null,
+    val clipboardAllowedSources: List<String>? = null,
     val deviceId: String? = null,
     val authToken: String? = null,
     val hubClientId: String? = null,
@@ -73,6 +77,8 @@ data class SettingsPatch(
     val allowInsecureTls: Boolean? = null,
     val reverseTrustedCa: String? = null,
     val clipboardSync: Boolean? = null,
+    val clipboardRoutingEnabled: Boolean? = null,
+    val clipboardSendingEnabled: Boolean? = null,
     val contactsSync: Boolean? = null,
     val smsSync: Boolean? = null,
     val shareTarget: Boolean? = null,
@@ -91,7 +97,6 @@ data class SettingsPatch(
 
 private const val PREF_NAME = "settings_v1"
 private const val PREF_NAME_LEGACY = "settings_v1_legacy"
-private const val DEFAULT_APP_CONFIG_ROOT = "/storage/emulated/0/AppConfig"
 private val settingsJson = Json {
     ignoreUnknownKeys = true
     explicitNulls = false
@@ -100,9 +105,6 @@ private val settingsJson = Json {
 private fun randomId(): String = "ns-${UUID.randomUUID().toString().replace("-", "").take(8)}"
 
 private fun normalizePort(value: Int, fallback: Int): Int = if (value > 0) value else fallback
-private fun appConfigPath(root: String): String = "fs:${root.trimEnd('/')}/config"
-private fun appStoragePath(root: String): String = root.trimEnd('/')
-private fun appTrustedCaPath(root: String): String = "fs:${root.trimEnd('/')}/https/rootCA.crt"
 private fun splitMultiValueText(raw: String): List<String> =
     raw
         .split(Regex("[,;\n]"))
@@ -135,18 +137,11 @@ private fun parseUntypedMap(raw: String): Map<*, *> {
     }.getOrDefault(emptyMap<String, Any>())
 }
 
-private fun applyDefaultAppConfigPaths(settings: Settings, rootPath: String = DEFAULT_APP_CONFIG_ROOT): Settings {
-    val normalizedRoot = rootPath.trim().ifBlank { DEFAULT_APP_CONFIG_ROOT }
-    val nextConfigPath = settings.configPath.trim().ifBlank { appConfigPath(normalizedRoot) }
-    val nextStoragePath = settings.storagePath.trim().ifBlank { appStoragePath(normalizedRoot) }
-    val nextTrustedCa = settings.reverseTrustedCa.trim().ifBlank { appTrustedCaPath(normalizedRoot) }
-    return settings.copy(configPath = nextConfigPath, storagePath = nextStoragePath, reverseTrustedCa = nextTrustedCa)
-}
-
 private fun defaultSettings(): Settings = Settings(
     listenPortHttps = 8443,
     listenPortHttp = 8080,
     destinations = emptyList(),
+    clipboardAllowedSources = emptyList(),
     deviceId = randomId(),
     authToken = "",
     hubClientId = "",
@@ -157,12 +152,14 @@ private fun defaultSettings(): Settings = Settings(
     tlsKeystoreType = "PKCS12",
     tlsKeystorePassword = "",
     hubDispatchUrl = "",
-    configPath = appConfigPath(DEFAULT_APP_CONFIG_ROOT),
+    configPath = "",
     apiEndpoint = "",
     apiKey = "",
     allowInsecureTls = true,
-    reverseTrustedCa = appTrustedCaPath(DEFAULT_APP_CONFIG_ROOT),
+    reverseTrustedCa = "",
     clipboardSync = true,
+    clipboardRoutingEnabled = true,
+    clipboardSendingEnabled = true,
     contactsSync = false,
     smsSync = false,
     shareTarget = true,
@@ -175,8 +172,8 @@ private fun defaultSettings(): Settings = Settings(
     showFloatingButton = false,
     quickActionCopyOnly = false,
     quickActionHandleImage = false,
-    enableLocalServer = true,
-    storagePath = appStoragePath(DEFAULT_APP_CONFIG_ROOT)
+    enableLocalServer = false,
+    storagePath = ""
 )
 
 
@@ -193,7 +190,8 @@ fun Settings.resolve(): Settings {
         hubDispatchUrl = ConfigResolver.resolve(this.hubDispatchUrl, context),
         apiEndpoint = ConfigResolver.resolve(this.apiEndpoint, context),
         apiKey = ConfigResolver.resolve(this.apiKey, context),
-            reverseTrustedCa = ConfigResolver.resolve(this.reverseTrustedCa, context),
+        reverseTrustedCa = ConfigResolver.resolve(this.reverseTrustedCa, context),
+        clipboardAllowedSources = this.clipboardAllowedSources.map { ConfigResolver.resolve(it, context) },
         destinations = this.destinations.map { ConfigResolver.resolve(it, context) }
     )
 }
@@ -203,8 +201,7 @@ object SettingsStore {
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
     fun load(context: Context): Settings {
-        val bootstrapRoot = AppConfigBootstrap.ensureStockConfig(context)
-        val defaults = applyDefaultAppConfigPaths(defaultSettings(), bootstrapRoot)
+        val defaults = defaultSettings()
         return try {
             val raw = prefs(context).getString(PREF_NAME, null)
                 ?: prefs(context).getString(PREF_NAME_LEGACY, null)
@@ -213,77 +210,7 @@ object SettingsStore {
             if (merged.hubTokens.isBlank() && merged.hubToken.isNotBlank()) {
                 merged = merged.copy(hubTokens = merged.hubToken)
             }
-            
-            merged = applyDefaultAppConfigPaths(merged, bootstrapRoot)
 
-            // Merge from config files if configPath is provided
-            if (merged.configPath.isNotBlank()) {
-                val basePath = merged.configPath.trim().removePrefix("fs:").removePrefix("file:")
-                if (basePath.isNotBlank()) {
-                    try {
-                        val baseFile = ConfigResolver.resolveFile(basePath)
-                        
-                        val fileCandidates = if (baseFile.isDirectory) {
-                            val names = listOf(
-                                "clients.json",
-                                "gateways.json",
-                                "network.json",
-                                "portable-core.json",
-                                "portable-endpoint.json",
-                                "portable.config.json",
-                                "portable.config.110.json",
-                                "portable.config.vds.json",
-                                "config.json",
-                                "package.json"
-                            )
-                            buildList {
-                                addAll(names.map { java.io.File(baseFile, it) })
-                                val nestedConfig = java.io.File(baseFile, "config")
-                                if (nestedConfig.exists() && nestedConfig.isDirectory) {
-                                    addAll(names.map { java.io.File(nestedConfig, it) })
-                                }
-                            }
-                        } else {
-                            listOf(baseFile)
-                        }
-                        
-                        for (fileCandidate in fileCandidates) {
-                            if (fileCandidate.exists() && fileCandidate.isFile) {
-                                val raw = fileCandidate.readText()
-                                val parsed = parseUntypedMap(raw)
-                                val fromClients = defaults.mergeFromMap(parsed)
-                                
-                                merged = merged.copy(
-                                    hubDispatchUrl = merged.hubDispatchUrl.ifBlank { fromClients.hubDispatchUrl },
-                                    authToken = merged.authToken.ifBlank { fromClients.authToken },
-                                    hubToken = merged.hubToken.ifBlank { fromClients.hubToken },
-                                    hubTokens = merged.hubTokens.ifBlank { fromClients.hubTokens.ifBlank { fromClients.hubToken } },
-                                    hubClientId = merged.hubClientId.ifBlank { fromClients.hubClientId },
-                                    apiEndpoint = merged.apiEndpoint.ifBlank { fromClients.apiEndpoint },
-                                    apiKey = merged.apiKey.ifBlank { fromClients.apiKey },
-                                    reverseTrustedCa = merged.reverseTrustedCa.ifBlank { fromClients.reverseTrustedCa },
-                                    destinations = if (merged.destinations.isEmpty()) fromClients.destinations else merged.destinations
-                                )
-                            }
-                        }
-
-                        val gatewaysFile = if (baseFile.isDirectory) java.io.File(baseFile, "gateways.json") else null
-                        if (gatewaysFile?.exists() == true && gatewaysFile.isFile) {
-                            val gatewaysRaw = gatewaysFile.readText()
-                            val gatewaysParsed = parseUntypedMap(gatewaysRaw)
-                            val gatewaysList = (gatewaysParsed?.get("gateways") as? List<*>)?.mapNotNull { it?.toString() }
-                                ?: (gatewaysParsed?.get("destinations") as? List<*>)?.mapNotNull { it?.toString() }
-                                ?: emptyList()
-                            if (gatewaysList.isNotEmpty() && merged.destinations.isEmpty()) {
-                                merged = merged.copy(destinations = gatewaysList)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        // Ignore errors reading configs
-                    }
-                }
-            }
-            
             save(context, merged)
             merged
         } catch (_: Exception) {
@@ -305,7 +232,7 @@ object SettingsStore {
             quickActionHandleImage = next.quickActionHandleImage,
             reverseTrustedCa = next.reverseTrustedCa.trim(),
             enableLocalServer = next.enableLocalServer,
-            storagePath = next.storagePath,
+            storagePath = next.storagePath.trim(),
             tlsEnabled = next.tlsEnabled,
             tlsKeystoreAssetPath = next.tlsKeystoreAssetPath.ifBlank { defaultSettings().tlsKeystoreAssetPath },
             tlsKeystoreType = next.tlsKeystoreType.ifBlank { defaultSettings().tlsKeystoreType },
@@ -313,7 +240,10 @@ object SettingsStore {
             hubToken = splitMultiValueText(next.hubTokens).firstOrNull().orEmpty().ifBlank { next.hubToken.trim() },
             hubTokens = normalizeMultiValueText(next.hubTokens.ifBlank { next.hubToken }),
             destinations = next.destinations.filter { it.isNotBlank() },
-            configPath = next.configPath,
+            clipboardAllowedSources = next.clipboardAllowedSources.filter { it.isNotBlank() }.distinct(),
+            clipboardRoutingEnabled = next.clipboardRoutingEnabled,
+            clipboardSendingEnabled = next.clipboardSendingEnabled,
+            configPath = next.configPath.trim(),
             logLevel = when (next.logLevel.lowercase()) {
                 "debug", "info", "warn", "error" -> next.logLevel.lowercase()
                 else -> defaultSettings().logLevel
@@ -329,6 +259,7 @@ object SettingsStore {
             listenPortHttps = patch.listenPortHttps ?: current.listenPortHttps,
             listenPortHttp = patch.listenPortHttp ?: current.listenPortHttp,
             destinations = patch.destinations ?: current.destinations,
+            clipboardAllowedSources = patch.clipboardAllowedSources ?: current.clipboardAllowedSources,
             deviceId = patch.deviceId ?: current.deviceId,
             authToken = patch.authToken ?: current.authToken,
             hubClientId = patch.hubClientId ?: current.hubClientId,
@@ -345,6 +276,8 @@ object SettingsStore {
             allowInsecureTls = patch.allowInsecureTls ?: current.allowInsecureTls,
             reverseTrustedCa = patch.reverseTrustedCa ?: current.reverseTrustedCa,
             clipboardSync = patch.clipboardSync ?: current.clipboardSync,
+            clipboardRoutingEnabled = patch.clipboardRoutingEnabled ?: current.clipboardRoutingEnabled,
+            clipboardSendingEnabled = patch.clipboardSendingEnabled ?: current.clipboardSendingEnabled,
             contactsSync = patch.contactsSync ?: current.contactsSync,
             smsSync = patch.smsSync ?: current.smsSync,
             shareTarget = patch.shareTarget ?: current.shareTarget,
@@ -399,6 +332,30 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
             }
         }
     }
+    val accessAlias = raw["access"] as? Map<*, *>
+    if (accessAlias != null) {
+        for (entry in accessAlias.entries) {
+            if (entry.key is String && !mergedSource.containsKey(entry.key)) {
+                mergedSource[entry.key] = entry.value
+            }
+        }
+        val clipboardAlias = accessAlias["clipboard"] as? Map<*, *>
+        if (clipboardAlias != null) {
+            val clipboardAliases = mapOf(
+                "destinations" to "destinations",
+                "allowedSources" to "clipboardAllowedSources",
+                "acceptFrom" to "clipboardAllowedSources",
+                "enabled" to "clipboardSync",
+                "routingEnabled" to "clipboardRoutingEnabled",
+                "sendingEnabled" to "clipboardSendingEnabled"
+            )
+            for ((from, to) in clipboardAliases) {
+                if (!mergedSource.containsKey(to) && clipboardAlias.containsKey(from)) {
+                    mergedSource[to] = clipboardAlias[from]
+                }
+            }
+        }
+    }
     val launcherEnvAlias = raw["launcherEnv"] as? Map<*, *>
     if (launcherEnvAlias != null) {
         for (entry in launcherEnvAlias.entries) {
@@ -431,19 +388,21 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
         result
     }
 
-    val pickStringList: (Map<Any?, Any?>, Iterable<String>) -> List<String> = { source, keys ->
+    val pickStringList: (Map<Any?, Any?>, Iterable<String>, List<String>) -> List<String> = { source, keys, fallback ->
         var result: List<String>? = null
         for (key in keys) {
             val value = source[key]
-            if (value is List<*>) {
-                val mapped = value.mapNotNull { it?.toString()?.trim()?.takeIf { it.isNotBlank() } }
-                if (mapped.isNotEmpty()) {
-                    result = mapped
-                    break
-                }
+            val mapped = when (value) {
+                is List<*> -> value.mapNotNull { it?.toString()?.trim()?.takeIf { it.isNotBlank() } }
+                is String -> splitMultiValueText(value)
+                else -> emptyList()
+            }
+            if (mapped.isNotEmpty()) {
+                result = mapped
+                break
             }
         }
-        result ?: defaults.destinations
+        result ?: fallback
     }
 
     val pickBoolean: (Map<Any?, Any?>, Iterable<String>) -> Boolean? = { source, keys ->
@@ -548,18 +507,28 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
     return copy(
         listenPortHttps = (mergedSource["listenPortHttps"] as? Number)?.toInt() ?: defaults.listenPortHttps,
         listenPortHttp = (mergedSource["listenPortHttp"] as? Number)?.toInt() ?: defaults.listenPortHttp,
-        destinations = pickStringList(mergedSource, listOf("destinations", "targets", "peers")).ifEmpty {
+        destinations = pickStringList(
+            mergedSource,
+            listOf("destinations", "targets", "peers", "clipboardDestinations", "shareTo"),
+            defaults.destinations
+        ).ifEmpty {
             if (opsTargets.isNotEmpty()) opsTargets else defaults.destinations
         },
+        clipboardAllowedSources = pickStringList(
+            mergedSource,
+            listOf("clipboardAllowedSources", "clipboardWriteWhitelist", "clipboardAcceptFrom", "acceptFrom", "whitelist"),
+            defaults.clipboardAllowedSources
+        ),
         deviceId = pickString(mergedSource, listOf("deviceId", "device_id", "clientDeviceId", "CWS_DEVICE_ID")) ?: defaults.deviceId,
         authToken = pickString(
             mergedSource,
-            listOf("authToken", "apiToken", "CWS_AUTH_TOKEN", "clientSecret")
+            listOf("authToken", "apiToken", "masterToken", "controlToken", "airpadToken", "CWS_AUTH_TOKEN", "clientSecret")
         ) ?: defaults.authToken,
         hubClientId = pickString(
             mergedSource,
             listOf(
                 "hubClientId",
+                "associatedClientId",
                 "CWS_ASSOCIATED_ID",
                 "clientId",
                 "associatedId",
@@ -572,7 +541,7 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
         ) ?: defaults.hubClientId,
         hubToken = pickString(
             mergedSource,
-            listOf("hubToken", "CWS_ASSOCIATED_TOKEN", "userKey", "CWS_BRIDGE_USER_KEY", "token", "clientToken")
+            listOf("hubToken", "associatedClientToken", "identifierToken", "identificatorToken", "CWS_ASSOCIATED_TOKEN", "userKey", "CWS_BRIDGE_USER_KEY", "token", "clientToken")
         ) ?: defaults.hubToken,
         hubTokens = normalizeMultiValueText(
             pickString(
@@ -582,7 +551,7 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
                 ?: ((mergedSource["tokens"] as? List<*>)?.joinToString("\n") { it?.toString()?.trim().orEmpty() })
                 ?: pickString(
                     mergedSource,
-                    listOf("hubToken", "CWS_ASSOCIATED_TOKEN", "userKey", "CWS_BRIDGE_USER_KEY", "token", "clientToken")
+                    listOf("hubToken", "associatedClientToken", "identifierToken", "identificatorToken", "CWS_ASSOCIATED_TOKEN", "userKey", "CWS_BRIDGE_USER_KEY", "token", "clientToken")
                 ).orEmpty()
         ),
         tlsEnabled = mergedSource["tlsEnabled"] as? Boolean ?: defaults.tlsEnabled,
@@ -602,6 +571,14 @@ private fun Settings.mergeFromMap(raw: Map<*, *>): Settings {
             listOf("reverseTrustedCa", "reverseTrustedCertificate", "reverseTrustedCA", "reverseCa", "reverseCaPem", "CWS_REVERSE_CA", "CWS_HTTPS_CA")
         ) ?: defaults.reverseTrustedCa,
         clipboardSync = mergedSource["clipboardSync"] as? Boolean ?: defaults.clipboardSync,
+        clipboardRoutingEnabled = pickBoolean(
+            mergedSource,
+            listOf("clipboardRoutingEnabled", "routingEnabled", "enableRouting")
+        ) ?: defaults.clipboardRoutingEnabled,
+        clipboardSendingEnabled = pickBoolean(
+            mergedSource,
+            listOf("clipboardSendingEnabled", "sendingEnabled", "enableSending")
+        ) ?: defaults.clipboardSendingEnabled,
         contactsSync = mergedSource["contactsSync"] as? Boolean ?: defaults.contactsSync,
         smsSync = mergedSource["smsSync"] as? Boolean ?: defaults.smsSync,
         shareTarget = mergedSource["shareTarget"] as? Boolean ?: defaults.shareTarget,

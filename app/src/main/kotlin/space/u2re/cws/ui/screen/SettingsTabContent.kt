@@ -103,15 +103,15 @@ fun GeneralSettingsTab(
     }
     Spacer(Modifier.size(16.dp))
     Text(
-        "Use Access for app/API/ports and device URL access.",
+        "Use Endpoint for the control server URL, optional master token, and connection checks.",
         color = MaterialTheme.colorScheme.onSurface
     )
     Text(
-        "Use Gateway for endpoint URL and remote connectivity tests.",
+        "Use Client for the associated client ID and identifier token.",
         color = MaterialTheme.colorScheme.onSurface
     )
     Text(
-        "Use Peers for destinations/devices/ids/apps/computers and hub selection from discovered targets.",
+        "Use Access for feature flags, destinations, and clipboard write whitelist rules.",
         color = MaterialTheme.colorScheme.onSurface
     )
     if (testingAi) {
@@ -121,11 +121,58 @@ fun GeneralSettingsTab(
 }
 
 @Composable
+fun ClientTab(
+    hubClientId: String,
+    onHubClientIdChange: (String) -> Unit,
+    hubTokens: String,
+    onHubTokensChange: (String) -> Unit
+) {
+    Text(
+        "Client Identity",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    OutlinedTextField(
+        value = hubClientId,
+        onValueChange = onHubClientIdChange,
+        label = { Text("Associated Client ID") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    Text(
+        "Stable node/client id used by this Android device when it connects through the endpoint.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.size(12.dp))
+    OutlinedTextField(
+        value = hubTokens,
+        onValueChange = onHubTokensChange,
+        label = { Text("Identificator Token") },
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    Text(
+        "Optional identification token for this client. Keep it stable when the endpoint requires client auth.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
 fun AccessTab(
     shareTarget: Boolean,
     onShareTargetChange: (Boolean) -> Unit,
     clipboardSync: Boolean,
     onClipboardSyncChange: (Boolean) -> Unit,
+    clipboardRoutingEnabled: Boolean,
+    onClipboardRoutingEnabledChange: (Boolean) -> Unit,
+    clipboardSendingEnabled: Boolean,
+    onClipboardSendingEnabledChange: (Boolean) -> Unit,
+    destinationText: String,
+    onDestinationTextChange: (String) -> Unit,
+    allowedSourcesText: String,
+    onAllowedSourcesTextChange: (String) -> Unit,
     quickActionCopyOnly: Boolean,
     onQuickActionCopyOnlyChange: (Boolean) -> Unit,
     quickActionHandleImage: Boolean,
@@ -146,73 +193,30 @@ fun AccessTab(
     onContactsSyncChange: (Boolean) -> Unit,
     smsSync: Boolean,
     onSmsSyncChange: (Boolean) -> Unit,
-    hubClientId: String,
-    onHubClientIdChange: (String) -> Unit,
-    hubTokens: String,
-    onHubTokensChange: (String) -> Unit,
-    listenPortHttp: String,
     localIps: List<String>,
-    onCopyBaseUrl: (String) -> Unit
+    onAppendLocalAsDestinations: () -> Unit,
+    onAppendLocalAsAllowedSources: () -> Unit
 ) {
     val switchColors = settingsSwitchColors()
 
     Text(
-        "Identity & Access",
+        "Access & Routing",
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurface
     )
-    OutlinedTextField(
-        value = hubClientId,
-        onValueChange = onHubClientIdChange,
-        label = { Text("Associated Client ID") },
-        modifier = Modifier.fillMaxWidth(),
-        colors = OutlinedTextFieldDefaults.colors()
-    )
-    Spacer(Modifier.size(8.dp))
     Text(
-        "How this Android device identifies itself when it initiates a connection to CWSP. Usually this is a stable peer/node id such as L-192.168.0.208.",
+        "Enable only the exchange and routing paths this Android client should use.",
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    Spacer(Modifier.size(8.dp))
-    OutlinedTextField(
-        value = hubTokens,
-        onValueChange = onHubTokensChange,
-        label = { Text("Associated Client Token(s)") },
-        modifier = Modifier.fillMaxWidth(),
-        colors = OutlinedTextFieldDefaults.colors()
-    )
-    Spacer(Modifier.size(8.dp))
-    Text(
-        "Optional. If the endpoint requires auth, Android will try these tokens as fallbacks when it connects as initiator. Use one token per line or comma-separated, especially for NAT/gateway routes.",
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-
     Spacer(Modifier.size(16.dp))
-    Text("Device URLs", color = MaterialTheme.colorScheme.onSurface)
-    if (localIps.isNotEmpty()) {
-        localIps.forEach { ip ->
-            val base = "http://$ip:${listenPortHttp.ifBlank { "8080" }}"
-            Text("$ip")
-            Text("- $base/clipboard")
-            Text("- $base/sms")
-            Text("- $base/api/dispatch")
-            TextButton(onClick = { onCopyBaseUrl(ip) }) {
-                Text("Copy base URL")
-            }
-            Spacer(Modifier.size(8.dp))
-        }
-    }
-
-    Spacer(Modifier.size(16.dp))
-    Text(
-        "App/API access",
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurface
-    )
-    Text("Share target", color = MaterialTheme.colorScheme.onSurface)
-    Switch(checked = shareTarget, onCheckedChange = onShareTargetChange, colors = switchColors)
-    Text("Clipboard sync", color = MaterialTheme.colorScheme.onSurface)
+    Text("Clipboard exchange", color = MaterialTheme.colorScheme.onSurface)
     Switch(checked = clipboardSync, onCheckedChange = onClipboardSyncChange, colors = switchColors)
+    Text("Clipboard routing", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = clipboardRoutingEnabled, onCheckedChange = onClipboardRoutingEnabledChange, colors = switchColors)
+    Text("Clipboard sending", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = clipboardSendingEnabled, onCheckedChange = onClipboardSendingEnabledChange, colors = switchColors)
+    Text("Android share target", color = MaterialTheme.colorScheme.onSurface)
+    Switch(checked = shareTarget, onCheckedChange = onShareTargetChange, colors = switchColors)
     Text(
         "Quick action mode: ${if (quickActionCopyOnly) "close-only" else "copy + sync"}",
         color = MaterialTheme.colorScheme.onSurface
@@ -259,37 +263,86 @@ fun AccessTab(
     Text("SMS sync", color = MaterialTheme.colorScheme.onSurface)
     Switch(checked = smsSync, onCheckedChange = onSmsSyncChange, colors = switchColors)
 
+    Spacer(Modifier.size(16.dp))
+    Text(
+        "Clipboard routes",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    OutlinedTextField(
+        value = destinationText,
+        onValueChange = onDestinationTextChange,
+        label = { Text("Destination list for clipboard write") },
+        modifier = Modifier.fillMaxWidth(),
+        minLines = 3,
+        maxLines = 6,
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    Text(
+        "One route target per line. Prefer stable ids such as L-192.168.0.110 instead of raw URLs when routing through the endpoint.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.size(8.dp))
+    OutlinedTextField(
+        value = allowedSourcesText,
+        onValueChange = onAllowedSourcesTextChange,
+        label = { Text("Who can send clipboard write to this device") },
+        modifier = Modifier.fillMaxWidth(),
+        minLines = 3,
+        maxLines = 6,
+        colors = OutlinedTextFieldDefaults.colors()
+    )
+    Spacer(Modifier.size(8.dp))
+    Text(
+        "Optional whitelist. When empty, clipboard writes are accepted from any connected source. Fill it with trusted ids to restrict inbound writes.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    if (localIps.isNotEmpty()) {
+        Spacer(Modifier.size(8.dp))
+        Text(
+            "Local ids: ${localIps.joinToString(", ") { "L-$it" }}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(
+                onClick = onAppendLocalAsDestinations,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Text("Add local ids to destinations")
+            }
+            Button(
+                onClick = onAppendLocalAsAllowedSources,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary
+                )
+            ) {
+                Text("Add local ids to whitelist")
+            }
+        }
+    }
 }
 
 @Composable
-fun GatewayTab(
-    gatewayUrls: String,
-    onGatewayUrlsChange: (String) -> Unit,
-    configPath: String,
-    onConfigPathChange: (String) -> Unit,
-    onPickConfigPath: () -> Unit,
-    storagePath: String,
-    onStoragePathChange: (String) -> Unit,
-    onPickStoragePath: () -> Unit,
+fun EndpointTab(
+    endpointUrls: String,
+    onEndpointUrlsChange: (String) -> Unit,
     allowInsecure: Boolean,
     onAllowInsecureChange: (Boolean) -> Unit,
     testingHub: Boolean,
     onTestHub: () -> Unit,
-    destinationText: String,
-    onDestinationTextChange: (String) -> Unit,
-    localIps: List<String>,
-    onScanLocal: () -> Unit,
-    onAppendLocalAsDestinations: () -> Unit,
     authToken: String,
     onAuthTokenChange: (String) -> Unit,
     endpointSummary: String,
     endpointWarning: String?,
-    onSelectHubFromDestination: (String) -> Unit,
     daemonSnapshot: DaemonConnectionSnapshot,
     onRefreshDaemonStatus: () -> Unit
 ) {
     val switchColors = settingsSwitchColors()
-    var showPeers by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var showAdvancedStatus by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val userStatus = daemonSnapshot.userStatusSummary()
     val userHints = daemonSnapshot.userStatusHints()
@@ -313,61 +366,29 @@ fun GatewayTab(
     }
     Spacer(Modifier.size(8.dp))
     OutlinedTextField(
-        value = gatewayUrls,
-        onValueChange = onGatewayUrlsChange,
-        label = { Text("Endpoint URL(s) / gateway URL(s)") },
+        value = endpointUrls,
+        onValueChange = onEndpointUrlsChange,
+        label = { Text("Endpoint URL") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
     Spacer(Modifier.size(8.dp))
     Text(
-        "One or more CWSP endpoints to dial. You can enter direct LAN URLs, WAN/NAT relay URLs, or several fallback URLs separated by commas/new lines.",
+        "One or more CWSP endpoint URLs. You can use LAN, WAN, or relay URLs separated by commas or new lines.",
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Spacer(Modifier.size(8.dp))
     OutlinedTextField(
         value = authToken,
         onValueChange = onAuthTokenChange,
-        label = { Text("AirPad / control auth token") },
+        label = { Text("Master / control token") },
         modifier = Modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors()
     )
     Spacer(Modifier.size(8.dp))
     Text(
-        "Optional. Use this only when a remote control route expects an AirPad/control/master auth token. It may be the same literal token as the endpoint master token, but it stays separate from the client-id + client-token identity pair.",
+        "Optional. Use this only when the endpoint expects a master/control token for AirPad or control-plane actions.",
         color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(Modifier.size(8.dp))
-    OutlinedTextField(
-        value = configPath,
-        onValueChange = onConfigPathChange,
-        label = { Text("Configuration Path (e.g. fs:/storage/emulated/0/AppConfig/config)") },
-        trailingIcon = {
-            androidx.compose.material3.IconButton(onClick = onPickConfigPath) {
-                Icon(
-                    androidx.compose.material.icons.Icons.Default.MoreVert,
-                    contentDescription = "Pick file"
-                )
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-        colors = OutlinedTextFieldDefaults.colors()
-    )
-    Spacer(Modifier.size(8.dp))
-    OutlinedTextField(
-        value = storagePath,
-        onValueChange = onStoragePathChange,
-        label = { Text("Storage Base Path (e.g. /storage/emulated/0/AppConfig)") },
-        trailingIcon = {
-            androidx.compose.material3.IconButton(onClick = onPickStoragePath) {
-                Icon(
-                    androidx.compose.material.icons.Icons.Default.MoreVert,
-                    contentDescription = "Pick folder"
-                )
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-        colors = OutlinedTextFieldDefaults.colors()
     )
     Spacer(Modifier.size(8.dp))
     Text("Allow insecure TLS", color = MaterialTheme.colorScheme.onSurface)
@@ -382,90 +403,6 @@ fun GatewayTab(
         )
     ) {
         Text(if (testingHub) "Testing..." else "Test Endpoint")
-    }
-
-    Spacer(Modifier.size(16.dp))
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { showPeers = !showPeers }
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            "Peers & Available Devices",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Icon(
-            imageVector = if (showPeers) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-            contentDescription = "Expand",
-            tint = MaterialTheme.colorScheme.onSurface
-        )
-    }
-
-    AnimatedVisibility(visible = showPeers) {
-        Column {
-            val discoveredTargets = androidx.compose.runtime.remember(destinationText, localIps, gatewayUrls) {
-                buildDiscoveredTargets(destinationText, localIps, gatewayUrls)
-            }
-
-            Text(
-                "Destinations",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            OutlinedTextField(
-                value = destinationText,
-                onValueChange = onDestinationTextChange,
-                label = { Text("Destinations: peer ID (id:...), URL, hub:/server:/proxy:/tunnel:") },
-                modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors()
-            )
-            Spacer(Modifier.size(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = onScanLocal,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                ) {
-                    Text("Scan local")
-                }
-                Button(
-                    onClick = onAppendLocalAsDestinations,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                ) {
-                    Text("Add local as destinations")
-                }
-            }
-
-            Spacer(Modifier.size(16.dp))
-            Text(
-                "Available devices/apps/hubs",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            if (discoveredTargets.isEmpty()) {
-                Text("No discovered targets yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                discoveredTargets.forEach { target ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("[${target.kind}] ${target.label}", color = MaterialTheme.colorScheme.onSurface)
-                        TextButton(onClick = { onSelectHubFromDestination(target.value) }) {
-                            Text("Use as hub")
-                        }
-                    }
-                }
-            }
-        }
     }
 
     Spacer(Modifier.size(16.dp))
@@ -749,12 +686,12 @@ private fun settingsSwitchColors() = SwitchDefaults.colors(
 
 private fun DaemonConnectionSnapshot.userStatusSummary(): String {
     if (!daemonRunning) return "Daemon is stopped. Start daemon to enable clipboard sync."
-    if (!reverseGatewayConfigured) return "Gateway is not configured yet. Set endpoint URL, user ID and user key."
+    if (!reverseGatewayConfigured) return "Endpoint is not configured yet. Set endpoint URL and client identity."
     if (reverseGatewayConnected) {
         val endpoint = compactEndpointForUi(reverseGatewayActiveCandidate).ifBlank { "ws candidate" }
         return "Connected via $endpoint; relay success ${reverseRelaySuccess}/${reverseRelayAttempts}."
     }
-    return "Gateway is configured but not connected (${reverseGatewayState})."
+    return "Endpoint is configured but not connected (${reverseGatewayState})."
 }
 
 private fun DaemonConnectionSnapshot.userStatusHints(): List<String> {

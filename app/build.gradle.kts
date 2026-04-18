@@ -156,25 +156,10 @@ fun findCwspDistCapacitor(start: File): File? {
     )
 }
 
-fun findCwspEndpointDir(start: File): File? {
-    return findWorkspaceDir(
-        start,
-        listOf(
-            "runtime/cwsp/endpoint",
-            "U2RE.space/runtime/cwsp/endpoint",
-            "../U2RE.space/runtime/cwsp/endpoint"
-        )
-    )
-}
-
 val cwspCapacitorWebDir =
     findCwspDistCapacitor(rootProject.rootDir)
         ?: rootProject.file("../../runtime/cwsp/dist/capacitor")
-val cwspEndpointDir =
-    findCwspEndpointDir(rootProject.rootDir)
-        ?: rootProject.file("../cwsp/endpoint")
 val capacitorPublicAssets = layout.projectDirectory.dir("src/main/assets/public")
-val generatedStockAssetsDir = layout.buildDirectory.dir("generated/cwspStockAssets")
 
 tasks.register<Sync>("syncCwspCapacitorWeb") {
     group = "build"
@@ -183,39 +168,8 @@ tasks.register<Sync>("syncCwspCapacitorWeb") {
     from(cwspCapacitorWebDir)
     into(capacitorPublicAssets)
 }
-
-tasks.register<Sync>("syncCwspStockAssets") {
-    group = "build"
-    description = "Copy CWSP endpoint config+https into app assets/stock for first-run Android bootstrap"
-    val sourceConfig = File(cwspEndpointDir, "config")
-    val sourceHttps = File(cwspEndpointDir, "https/local")
-    onlyIf { sourceConfig.isDirectory || sourceHttps.isDirectory }
-
-    from(sourceConfig) {
-        include(
-            "clients.json",
-            "gateways.json",
-            "network.json",
-            "portable-endpoint.json",
-            "portable-core.json",
-            "portable.config.json",
-            "portable.config.110.json",
-            "portable.config.vds.json",
-            "certificate.mjs"
-        )
-        into("stock/config")
-    }
-    from(sourceHttps) {
-        include("rootCA.crt", "multi.crt", "multi.key", "server.cnf")
-        into("stock/https")
-    }
-    into(generatedStockAssetsDir)
-}
-
-android.sourceSets.getByName("main").assets.srcDir(generatedStockAssetsDir)
 tasks.named("preBuild").configure {
     dependsOn(tasks.named("syncCwspCapacitorWeb"))
-    dependsOn(tasks.named("syncCwspStockAssets"))
 }
 
 /** Which flavor `attachDebug` installs/launches: `cws` (Kotlin-only, default) or `cwsp` (hybrid CWSP + WebView). */

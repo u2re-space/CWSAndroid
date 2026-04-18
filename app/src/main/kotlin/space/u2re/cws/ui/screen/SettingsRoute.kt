@@ -7,8 +7,9 @@ object SettingsRoute
 
 enum class SettingsTab(val title: String) {
     GENERAL("General"),
+    ENDPOINT("Endpoint"),
+    CLIENT("Client"),
     ACCESS("Access"),
-    GATEWAY("Gateway"),
     SERVER("Server"),
     CONTROL_CENTER("Control Center")
 }
